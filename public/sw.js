@@ -1,4 +1,4 @@
-const CACHE = 'bt8-v7';
+const CACHE = 'bt8-v8';
 
 self.addEventListener('install', e => { self.skipWaiting(); });
 
