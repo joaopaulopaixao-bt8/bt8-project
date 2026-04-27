@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e ' *)",
+      "Bash(node)",
+      "Skill(ai-image-generator)",
+      "Skill(ai-image-generator:*)"
+    ]
+  }
+}

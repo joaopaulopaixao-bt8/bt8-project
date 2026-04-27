@@ -1,0 +1,9 @@
+dist/
+node_modules/
+*.zip
+bt8-netlify-*/
+bt8-*.png
+.mcp.json
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
