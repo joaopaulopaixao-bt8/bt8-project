@@ -196,6 +196,9 @@ exports.handler = async (event) => {
         free_limit_blocks_recent: eventCount('free_limit_reached')
       },
       top_modes: topModes,
+      users: profiles || [],
+      subscriptions: subscriptions || [],
+      tournaments: tournaments || [],
       recent_users: (profiles || []).slice(0, 10),
       recent_subscriptions: (subscriptions || []).slice(0, 10),
       recent_events: events || []

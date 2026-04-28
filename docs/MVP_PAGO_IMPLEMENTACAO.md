@@ -232,7 +232,7 @@ Implementado no MVP inicial:
 - [x] Bloquear checkout para conta Admin.
 - [x] Limpar assinaturas Stripe/Supabase vinculadas ao Admin ao abrir o dashboard.
 - [x] Mostrar cards de usuarios, planos, receita estimada, torneios, bloqueios e modalidades.
-- [x] Mostrar usuarios, assinaturas e eventos recentes.
+- [x] Criar abas de controle para visao geral, usuarios, assinaturas, torneios e eventos.
 
 Seguranca:
 - Admin validado por `role = admin`.

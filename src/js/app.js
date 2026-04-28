@@ -306,6 +306,107 @@ function formatAdminDate(value) {
   return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date(value));
 }
 
+let ADMIN_DATA = null;
+
+function adminListItem(title, meta, right) {
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+      <div style="min-width:0;">
+        <div style="color:#fff;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${safeAdminText(title)}</div>
+        <div style="font-size:11px;color:#7aa8c4;line-height:1.45;margin-top:2px;">${safeAdminText(meta)}</div>
+      </div>
+      ${right ? `<div style="font-family:'Bebas Neue';font-size:17px;color:#ffd84d;letter-spacing:.8px;white-space:nowrap;">${safeAdminText(right)}</div>` : ''}
+    </div>`;
+}
+
+function adminSection(title, content) {
+  return `
+    <div style="border:1px solid rgba(26,127,196,.20);border-radius:10px;padding:12px;background:rgba(255,255,255,.03);">
+      <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">${title}</div>
+      ${content || '<div style="color:#7aa8c4;font-size:12px;">Sem dados ainda.</div>'}
+    </div>`;
+}
+
+function renderAdminTab(tab) {
+  if (!ADMIN_DATA) return;
+  const target = document.getElementById('admin-tab-content');
+  if (!target) return;
+  document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+    const active = btn.dataset.tab === tab;
+    btn.style.background = active ? '#ffd84d' : 'rgba(255,255,255,.06)';
+    btn.style.color = active ? '#07111c' : '#cfe8f5';
+    btn.style.borderColor = active ? '#ffd84d' : 'rgba(255,255,255,.12)';
+  });
+
+  const data = ADMIN_DATA;
+  if (tab === 'overview') {
+    const stats = data.stats || {};
+    const statCards = [
+      ['Usuarios', stats.users_total],
+      ['Novos no mes', stats.users_new_month],
+      ['Free ativos', stats.free_active],
+      ['Pro mensal', stats.pro_recurring_active],
+      ['Pro 30 dias', stats.pro_30d_active],
+      ['Pro expirados', stats.pro_expired],
+      ['MRR estimado', formatAdminMoney(stats.mrr_estimated_brl)],
+      ['Receita 30d', formatAdminMoney(stats.revenue_30d_estimated_brl)],
+      ['Torneios mes', stats.tournaments_month],
+      ['Sem login mes', stats.guest_tournaments_month],
+      ['Bloq. visitante', stats.guest_limit_blocks_recent],
+      ['Bloq. Free', stats.free_limit_blocks_recent]
+    ].map(([label, value]) => `
+      <div style="background:rgba(26,127,196,.12);border:1px solid rgba(26,127,196,.20);border-radius:10px;padding:12px;min-height:76px;">
+        <div style="font-family:'Bebas Neue';font-size:23px;color:#ffd84d;letter-spacing:1px;">${safeAdminText(value)}</div>
+        <div style="font-size:10px;color:#7aa8c4;text-transform:uppercase;letter-spacing:.8px;margin-top:3px;">${safeAdminText(label)}</div>
+      </div>`).join('');
+    const modes = (data.top_modes || []).map(item => adminListItem(item.label, 'Modalidade no mes', item.count)).join('');
+    target.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">${statCards}</div>
+      ${adminSection('MODALIDADES DO MES', modes)}`;
+    return;
+  }
+
+  if (tab === 'users') {
+    target.innerHTML = adminSection('USUARIOS', (data.users || []).map(user =>
+      adminListItem(
+        user.nome || user.email || user.id,
+        `${user.email || '-'} · ${user.role || 'user'} · ${user.subscription_status || '-'} · criado ${formatAdminDate(user.created_at)}`,
+        user.role === 'admin' ? 'ADMIN' : user.plan
+      )
+    ).join(''));
+    return;
+  }
+
+  if (tab === 'subscriptions') {
+    target.innerHTML = adminSection('ASSINATURAS', (data.subscriptions || []).map(sub =>
+      adminListItem(
+        `${sub.plan_type || '-'} · ${sub.status || '-'}`,
+        `fim: ${formatAdminDate(sub.current_period_end)} · criado: ${formatAdminDate(sub.created_at)}`,
+        sub.status
+      )
+    ).join(''));
+    return;
+  }
+
+  if (tab === 'tournaments') {
+    target.innerHTML = adminSection('TORNEIOS', (data.tournaments || []).map(t => {
+      const count = Array.isArray(t.players) ? t.players.length : 0;
+      return adminListItem(MODE_INFO[t.mode]?.label || t.mode || 'Torneio', `${t.category || '-'} · ${count} participantes · ${formatAdminDate(t.created_at)}`, count);
+    }).join(''));
+    return;
+  }
+
+  if (tab === 'events') {
+    target.innerHTML = adminSection('EVENTOS', (data.recent_events || []).map(e =>
+      adminListItem(
+        e.event_type,
+        `${formatAdminDate(e.created_at)}${e.metadata?.format ? ' · ' + e.metadata.format : ''}${e.metadata?.players ? ' · ' + e.metadata.players + ' participantes' : ''}`,
+        e.metadata?.plan_type || e.metadata?.plan || ''
+      )
+    ).join(''));
+  }
+}
+
 // Acesso: usuário precisa ter role=admin no perfil, validado também no backend.
 async function openAdmin() {
   closeUserMenu();
@@ -341,72 +442,21 @@ async function openAdmin() {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'Erro ao carregar Admin.');
 
-    const stats = data.stats || {};
-    const statCards = [
-      ['Usuarios', stats.users_total],
-      ['Novos no mes', stats.users_new_month],
-      ['Free ativos', stats.free_active],
-      ['Pro mensal', stats.pro_recurring_active],
-      ['Pro 30 dias', stats.pro_30d_active],
-      ['Pro expirados', stats.pro_expired],
-      ['MRR estimado', formatAdminMoney(stats.mrr_estimated_brl)],
-      ['Receita 30d', formatAdminMoney(stats.revenue_30d_estimated_brl)],
-      ['Torneios mes', stats.tournaments_month],
-      ['Sem login mes', stats.guest_tournaments_month],
-      ['Bloq. visitante', stats.guest_limit_blocks_recent],
-      ['Bloq. Free', stats.free_limit_blocks_recent]
-    ].map(([label, value]) => `
-      <div style="background:rgba(26,127,196,.12);border:1px solid rgba(26,127,196,.20);border-radius:10px;padding:12px;min-height:76px;">
-        <div style="font-family:'Bebas Neue';font-size:23px;color:#ffd84d;letter-spacing:1px;">${safeAdminText(value)}</div>
-        <div style="font-size:10px;color:#7aa8c4;text-transform:uppercase;letter-spacing:.8px;margin-top:3px;">${safeAdminText(label)}</div>
-      </div>`).join('');
-
-    const modes = (data.top_modes || []).map(item => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
-        <span>${safeAdminText(item.label)}</span>
-        <b style="color:#ffd84d">${safeAdminText(item.count)}</b>
-      </div>`).join('');
-
-    const users = (data.recent_users || []).map(user => `
-      <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
-        <div style="color:#fff;font-weight:700;">${safeAdminText(user.nome || user.email || user.id)}</div>
-        <div style="font-size:11px;color:#7aa8c4;">${safeAdminText(user.email)} · ${safeAdminText(user.plan)} · ${safeAdminText(user.subscription_status || '-')}</div>
-      </div>`).join('');
-
-    const subs = (data.recent_subscriptions || []).map(sub => `
-      <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
-        <div style="color:#fff;font-weight:700;">${safeAdminText(sub.plan_type)} · ${safeAdminText(sub.status)}</div>
-        <div style="font-size:11px;color:#7aa8c4;">fim: ${formatAdminDate(sub.current_period_end)} · criado: ${formatAdminDate(sub.created_at)}</div>
-      </div>`).join('');
-
-    const eventRows = (data.recent_events || []).slice(0, 20).map(e => `
-      <div style="font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07);color:#a8c4d4;">
-        <span style="color:#ffd84d">${safeAdminText(e.event_type)}</span>
-        ${e.metadata?.format ? ' · ' + safeAdminText(e.metadata.format) : ''}
-        ${e.metadata?.players ? ' · ' + safeAdminText(e.metadata.players) + ' jogadores' : ''}
-      </div>`).join('');
-
+    ADMIN_DATA = data;
     document.getElementById('admin-content').innerHTML = `
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;">${statCards}</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;">
-        <div>
-          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">MODALIDADES DO MES</div>
-          ${modes || '<div style="color:#7aa8c4;font-size:12px;">Sem torneios ainda.</div>'}
-        </div>
-        <div>
-          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">USUARIOS RECENTES</div>
-          ${users || '<div style="color:#7aa8c4;font-size:12px;">Sem usuarios ainda.</div>'}
-        </div>
-        <div>
-          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">ASSINATURAS RECENTES</div>
-          ${subs || '<div style="color:#7aa8c4;font-size:12px;">Sem assinaturas ainda.</div>'}
-        </div>
-        <div>
-          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">ULTIMOS EVENTOS</div>
-          ${eventRows || '<div style="color:#7aa8c4;font-size:12px;">Nenhum evento ainda.</div>'}
-        </div>
+      <div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:10px;margin-bottom:12px;">
+        ${[
+          ['overview','Visao geral'],
+          ['users','Usuarios'],
+          ['subscriptions','Assinaturas'],
+          ['tournaments','Torneios'],
+          ['events','Eventos']
+        ].map(([id,label]) => `<button class="admin-tab-btn" data-tab="${id}" onclick="renderAdminTab('${id}')"
+          style="border:1px solid rgba(255,255,255,.12);border-radius:9px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:800;font-size:12px;padding:9px 11px;white-space:nowrap;cursor:pointer;">${label}</button>`).join('')}
       </div>
+      <div id="admin-tab-content"></div>
     `;
+    renderAdminTab('overview');
   } catch(e) {
     document.getElementById('admin-content').innerHTML = `<div style="color:#f87171;font-size:13px;">Erro ao carregar: ${e.message}</div>`;
   }
