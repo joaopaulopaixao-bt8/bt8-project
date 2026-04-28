@@ -23,14 +23,14 @@ const MODE_INFO = {
   mista:{ label:'Super Mista',icon:'⚥', desc:'Duplas mistas rotativas · Cada homem joga com cada mulher 1x · N ímpar gera bye rotativo · Ranking individual', stats:['NxN jogadores','Duplas rotativas','Ranking indiv.','H+M obrigatório'] },
   df:  { label:'Duplas Fixas',icon:'👥', desc:'Você forma as duplas manualmente · Mínimo 3 duplas · Número ímpar gera bye rotativo · Round Robin completo', stats:['3+ duplas','Round Robin','Bye automático','Você forma'] },
   dm:  { label:'Duplas Mistas',icon:'👫', desc:'Cada dupla obrigatoriamente 1 Homem + 1 Mulher · Cadastro manual · Round Robin completo', stats:['3+ duplas','Mistas','Round Robin','1H + 1M'] },
-  da:  { label:'Duplas Aleatórias',icon:'🎲', desc:'Cadastre jogadores individualmente · Sorteio automático de duplas · Par → Round Robin · Ímpar → Chaves eliminatórias', stats:['6+ jogadores','Sorteio','RR ou Chaves','Automático'] },
+  da:  { label:'Duplas Aleatórias',icon:'🎲', desc:'Cadastre jogadores individualmente · Sorteio automático de duplas · Precisa ter número par de participantes', stats:['6+ jogadores','Sorteio','Participantes pares','Automático'] },
 };
 const MAX_PLAYERS = { s4:4,s6:6,s8:8,s8x:8,s12:12 }; // mista: sem máximo fixo
 const IS_SOMA = { s8x:true };
 const IS_DUPLA_FIXA  = { df:true, dm:true, da:true };
 const IS_MISTA_DUPLA = { dm:true };
 const IS_ALEATORIO   = { da:true };
-const IS_ELIMINATORIO = {}; // definido dinamicamente ao gerar (ímpar→chaves)
+const IS_ELIMINATORIO = {}; // definido dinamicamente ao gerar
 const IS_MISTA_ROTATIVA = { mista:true }; // super mista dinâmica: H+M rotativos, ranking individual
 
 

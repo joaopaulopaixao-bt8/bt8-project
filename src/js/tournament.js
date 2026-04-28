@@ -96,7 +96,7 @@ function renderConfigScreen() {
     const nDuplas = Math.floor(n/2);
     const parStr = n>=6 ? (n%2===0
       ? `<span style="color:#4ade80">✓ ${n} jogadores → ${nDuplas} duplas → Round Robin</span>`
-      : `<span style="color:var(--yellow)">⚡ ${n} jogadores → ${nDuplas} duplas + bye → Chaves</span>`)
+      : `<span style="color:var(--yellow)">⚠ ${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
       : `<span style="color:var(--muted2)">Mínimo 6 jogadores (3 duplas)</span>`;
     playerInput = `
     <div class="section-label">Jogadores <span style="color:var(--yellow)">${n}</span></div>
@@ -354,7 +354,7 @@ function renderPlayerList() {
     const nD = Math.floor(n/2);
     const parStr = n>=6 ? (n%2===0
       ? `<span style="color:#4ade80">✓ ${n} jogadores → ${nD} duplas → Round Robin</span>`
-      : `<span style="color:var(--yellow)">⚡ ${n} jogadores → ${nD} duplas + 1 → Chaves</span>`)
+      : `<span style="color:var(--yellow)">⚠ ${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
       : `<span style="color:var(--muted2)">Mínimo 6 jogadores (3 duplas)</span>`;
     hintEl.innerHTML = `Duplas sorteadas automaticamente. ${parStr}`;
   }
@@ -387,13 +387,14 @@ function updateGerarBtn() {
   } else if(isAleatorio) {
     // da: mínimo 6 jogadores (3 duplas)
     const n = APP.players.length;
-    const ok = n >= 6;
+    const ok = n >= 6 && n % 2 === 0;
     btn.disabled = !ok;
     if(ok) {
-      const tipo = n%2===0 ? 'Round Robin' : 'Chaves';
-      btn.textContent = `🎲 Sortear e Gerar (${tipo})`;
+      btn.textContent = '🎲 Sortear e Gerar (Round Robin)';
     } else {
-      btn.textContent = `⚡ Adicione mais ${6-n} jogador(es)`;
+      btn.textContent = n >= 6 && n % 2 !== 0
+        ? '⚠ Adicione mais 1 participante'
+        : `⚡ Adicione mais ${6-n} jogador(es)`;
     }
   } else if(isDuplasFixas) {
     // df ou dm: mínimo 3 duplas, sem máximo
@@ -466,30 +467,21 @@ function gerarTorneio() {
   // ── da: Duplas Aleatórias ──────────────────────────────
   if(isAleatorio) {
     if(ps.length < 6){alert('Adicione pelo menos 6 jogadores!');return;}
+    if(ps.length % 2 !== 0){
+      alert('Adicione mais 1 participante para fechar as duplas. Torneios de duplas precisam ter número par de participantes.');
+      return;
+    }
     const shuffled = shuffle(ps.map(p=>p.name));
     APP.duplasSorteadas = [];
     for(let i=0;i<shuffled.length;i+=2){
-      if(i+1<shuffled.length){
-        APP.duplasSorteadas.push({p1:shuffled[i], p2:shuffled[i+1]});
-      }
+      APP.duplasSorteadas.push({p1:shuffled[i], p2:shuffled[i+1]});
     }
-    // Ímpar: último jogador sozinho → eliminatória
-    if(shuffled.length%2===1){
-      APP.duplasSorteadas.push({p1:shuffled[shuffled.length-1], p2:null, bye:true});
-    }
-    const temBye = APP.duplasSorteadas.some(d=>d.bye);
-    APP._modoReal = temBye ? 'da_elim' : 'da';
+    APP._modoReal = 'da';
     APP.players = APP.duplasSorteadas.map(d=>({
-      name: d.bye ? d.p1 : `${d.p1} / ${d.p2}`,
-      p1: d.p1, p2: d.p2||null, bye: d.bye||false
+      name: `${d.p1} / ${d.p2}`,
+      p1: d.p1, p2: d.p2
     }));
-    if(temBye) {
-      // Ímpar → eliminatória (reaproveitar buildEliminatoria)
-      APP.fmt = 'elim';
-      IS_ELIMINATORIO[m] = true;
-    } else {
-      IS_ELIMINATORIO[m] = false;
-    }
+    IS_ELIMINATORIO[m] = false;
     buildMatches();
     APP.tourneyClosed = false;
     APP._autoNavigateResult = false;
