@@ -61,6 +61,7 @@ const APP = {
   tourneyClosed: false,
   isGuest: false,
   _savedCurrentTournament: false,
+  _trackedTournamentFinished: false,
 };
 
 // ── NAVIGATION ──────────────────────────────────────────

@@ -460,6 +460,7 @@ async function gerarTorneio() {
 
   // Etapa 3: rastrear criação de torneio
   APP._savedCurrentTournament = false;
+  APP._trackedTournamentFinished = false;
   try {
     const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent('tournament_created', {
@@ -1478,6 +1479,20 @@ function getStandings(){
   const m=APP.mode;
   const isDupla=IS_DUPLA_FIXA[m];
   const isSoma=IS_SOMA[m];
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+
+  if (!APP._trackedTournamentFinished) {
+    APP._trackedTournamentFinished = true;
+    trackEvent('tournament_finished', {
+      format: m || '',
+      category: APP.category || '',
+      players: (APP.players || []).filter(p => !p.isBye).length,
+      plan: access?.plan || (APP.isGuest ? 'guest' : 'free'),
+      auto_open: !!isAutoOpen,
+      champion: stand[0]?.name || champ || '',
+      top3: stand.slice(0, 3).map(p => p.name)
+    });
+  }
   const isElim=IS_ELIMINATORIO[m];
 
   // Eliminatória: ranking por resultado no bracket
@@ -1662,6 +1677,7 @@ function voltarParaCorrecao() {
 function _doNewTourney(){
   APP.category=null; APP.mode=null; APP.players=[]; APP.matches=[];
   APP.fmt='rr'; APP.tourneyClosed=false;
+  APP._savedCurrentTournament=false; APP._trackedTournamentFinished=false;
   APP.history=['screen-home'];
   document.querySelectorAll('.screen').forEach(s=>{ s.classList.remove('active','leaving'); s.style.transform=''; });
   document.getElementById('screen-home').classList.add('active');

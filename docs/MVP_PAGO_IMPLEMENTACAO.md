@@ -142,12 +142,15 @@ Eventos minimos:
 - `pro_expired`
 - `tournament_created`
 - `tournament_finished`
+- `ranking_image_downloaded`
+- `ranking_shared`
 
 Tarefas:
 - [x] Padronizar `trackEvent`.
 - [x] Registrar eventos iniciais de visitante, Free e Pro.
 - [ ] Registrar modalidade e quantidade de participantes quando criar torneio.
-- [ ] Registrar finalizacao de torneio.
+- [x] Registrar finalizacao de torneio.
+- [x] Registrar download/compartilhamento do ranking.
 
 Entrega:
 - Dados suficientes para dashboard admin inicial.

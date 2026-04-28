@@ -341,6 +341,10 @@ async function downloadPNG(){
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    trackEvent('ranking_image_downloaded', {
+      format: APP.mode || '',
+      players: (APP.players || []).filter(p => !p.isBye).length
+    });
   } catch(e){ console.error(e); alert('Erro ao gerar PNG'); }
   btn.disabled = false; btn.textContent = '⬇ Salvar PNG';
 }
@@ -355,6 +359,11 @@ async function nativeShare(){
     const file=new File([blob],`BT8-${label}-ranking.png`,{type:'image/png'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
       await navigator.share({title:'BT8 — Ranking',text:`Resultado do torneio ${MODE_INFO[m]?.label||''} 🏖️`,files:[file]});
+      trackEvent('ranking_shared', {
+        format: APP.mode || '',
+        players: (APP.players || []).filter(p => !p.isBye).length,
+        method: 'native'
+      });
     } else {
       // Fallback: download direto
       await downloadPNG();
