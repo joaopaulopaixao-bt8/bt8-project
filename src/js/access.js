@@ -7,13 +7,16 @@ const BT8_ACCESS = {
   isAdmin: false,
   isPro: false,
   proExpired: false,
-  proUntil: null
+  proUntil: null,
+  planType: null,
+  subscriptionStatus: null
 };
 const FREE_MONTHLY_TOURNAMENT_LIMIT = 3;
 
-function normalizeAccess(profile, user) {
+function normalizeAccess(profile, user, subscription) {
   const now = Date.now();
-  const proUntil = profile?.pro_until ? new Date(profile.pro_until) : null;
+  const periodEnd = profile?.pro_until || subscription?.current_period_end;
+  const proUntil = periodEnd ? new Date(periodEnd) : null;
   const plan = profile?.plan || (user ? 'free' : 'guest');
   const isProByDate = !!(proUntil && proUntil.getTime() > now);
   const isPro = plan === 'pro' && (!proUntil || isProByDate);
@@ -26,7 +29,9 @@ function normalizeAccess(profile, user) {
     isAdmin: profile?.role === 'admin' || user?.email === ADMIN_EMAIL,
     isPro,
     proExpired: plan === 'pro' && !!proUntil && !isProByDate,
-    proUntil
+    proUntil,
+    planType: subscription?.plan_type || null,
+    subscriptionStatus: profile?.subscription_status || subscription?.status || null
   };
 }
 
@@ -43,7 +48,18 @@ async function refreshAccess(user) {
       .eq('id', user.id)
       .maybeSingle();
     if (error) throw error;
-    Object.assign(BT8_ACCESS, normalizeAccess(data, user));
+    let subscription = null;
+    if (data) {
+      const latest = await SUPA
+        .from('subscriptions')
+        .select('plan_type,status,current_period_end,created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      subscription = latest.data || null;
+    }
+    Object.assign(BT8_ACCESS, normalizeAccess(data, user, subscription));
   } catch (e) {
     Object.assign(BT8_ACCESS, normalizeAccess(null, user));
   }
@@ -57,9 +73,53 @@ function currentAccess() {
 
 function accessLabel(access) {
   if (!access || access.isGuest) return 'Visitante';
-  if (access.isAdmin) return 'Admin Pro';
+  if (access.isPro && access.planType === 'one_time_30d') return 'Pro 30 Dias';
+  if (access.isPro && access.planType === 'recurring') return 'Pro Mensal';
   if (access.isPro) return 'Pro';
+  if (access.isAdmin) return 'Admin';
   return 'Free';
+}
+
+function formatPlanDate(date) {
+  if (!date) return '';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+}
+
+function planDescription(access) {
+  if (!access || access.isGuest) return 'Teste sem cadastro';
+  if (access.isPro && access.planType === 'recurring') {
+    return access.proUntil ? `Renova em ${formatPlanDate(access.proUntil)}` : 'Assinatura mensal ativa';
+  }
+  if (access.isPro && access.planType === 'one_time_30d') {
+    return access.proUntil ? `Ativo ate ${formatPlanDate(access.proUntil)}` : 'Acesso Pro por 30 dias';
+  }
+  if (access.isPro) return 'Torneios ilimitados liberados';
+  return `Salva ate ${FREE_MONTHLY_TOURNAMENT_LIMIT} torneios por mes`;
+}
+
+function planCardHtml(access, context) {
+  const isPro = !!access?.isPro;
+  const isAdmin = !!access?.isAdmin;
+  const label = accessLabel(access);
+  const desc = planDescription(access);
+  const compact = context === 'menu';
+  const bg = isPro ? 'rgba(244,192,38,.12)' : 'rgba(45,156,190,.10)';
+  const border = isPro ? 'rgba(244,192,38,.45)' : 'rgba(45,156,190,.35)';
+  const color = isPro ? '#ffd84d' : '#5cc8f2';
+  return `
+    <div style="margin:${compact ? '6px 10px 8px' : '6px 0 14px'};padding:${compact ? '9px 10px' : '13px 14px'};border:1px solid ${border};border-radius:12px;background:${bg};">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <div style="font-size:${compact ? '11px' : '12px'};color:#7aa8c4;text-transform:uppercase;letter-spacing:.8px;">Plano atual</div>
+        ${isAdmin ? '<div style="font-size:10px;color:#cfe8f5;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:3px 7px;">ADMIN</div>' : ''}
+      </div>
+      <div style="font-family:'Bebas Neue';font-size:${compact ? '18px' : '26px'};letter-spacing:1px;color:${color};margin-top:3px;">${label}</div>
+      <div style="font-size:${compact ? '11px' : '13px'};line-height:1.4;color:#a8c4d4;margin-top:2px;">${desc}</div>
+    </div>`;
+}
+
+function renderPlanSurfaces(access) {
+  const profilePlan = document.getElementById('profile-plan-card');
+  if (profilePlan) profilePlan.innerHTML = planCardHtml(access, 'profile');
 }
 
 function showCheckoutReturnModal(status) {
@@ -103,6 +163,8 @@ async function handleCheckoutReturn() {
       if (access.isPro) {
         const msg = document.getElementById('checkout-return-msg');
         if (msg) msg.textContent = `Plano atualizado: ${accessLabel(access)}. Torneios ilimitados liberados.`;
+        if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
+        if (SUPA_USER && typeof buildUserMenu === 'function') buildUserMenu(SUPA_USER);
         if (typeof loadHomeHistory === 'function') loadHomeHistory();
         return;
       }
@@ -212,13 +274,24 @@ function openPlansModal() {
   if (existing) existing.remove();
 
   const modal = document.createElement('div');
-  modal.id = 'plans-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:1650;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto;';
-  modal.innerHTML = `
-    <div style="width:100%;max-width:460px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:22px 18px;box-shadow:0 20px 60px rgba(0,0,0,.45);position:relative;">
-      <button onclick="document.getElementById('plans-modal').remove()" style="position:absolute;top:12px;right:12px;border:0;background:transparent;color:#7aa8c4;font-size:20px;cursor:pointer;">x</button>
-      <div style="font-family:'Bebas Neue';font-size:28px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:6px;">BT8 PRO</div>
-      <div style="font-size:13px;line-height:1.5;color:#a8c4d4;text-align:center;margin-bottom:18px;">Salve torneios ilimitados, mantenha seu histórico completo e use o BT8 sem travas na organização.</div>
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  const isPro = !!access?.isPro;
+  const planStatus = planCardHtml(access, 'profile');
+  const planBody = isPro
+    ? `
+      ${planStatus}
+      <div style="border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:16px;background:rgba(255,255,255,.05);text-align:center;">
+        <div style="font-weight:800;color:#fff;font-size:15px;">Seu acesso Pro esta ativo</div>
+        <div style="font-size:12px;color:#a8c4d4;line-height:1.5;margin-top:6px;">
+          Voce ja esta com torneios ilimitados liberados nesta conta. A gestao de cancelamento e troca de plano pelo Stripe entra no proximo passo.
+        </div>
+      </div>
+      <button onclick="document.getElementById('plans-modal').remove()"
+        style="width:100%;margin-top:12px;border:0;border-radius:11px;background:#ffd84d;color:#07111c;font-weight:800;padding:12px;cursor:pointer;">
+        ENTENDI
+      </button>`
+    : `
+      ${planStatus}
       <div style="display:grid;gap:10px;">
         <div style="border:1px solid rgba(244,192,38,.45);border-radius:14px;padding:16px;background:rgba(244,192,38,.08);">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
@@ -234,13 +307,21 @@ function openPlansModal() {
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
             <div>
               <div style="font-weight:800;color:#fff;font-size:15px;">Pro 30 Dias</div>
-              <div style="font-size:12px;color:#a8c4d4;margin-top:3px;">Pagamento único para testar sem recorrência.</div>
+              <div style="font-size:12px;color:#a8c4d4;margin-top:3px;">Pagamento unico para testar sem recorrencia.</div>
             </div>
             <div style="font-family:'Bebas Neue';font-size:24px;color:#5cc8f2;white-space:nowrap;">R$ 14,90</div>
           </div>
           <button id="btn-checkout-30d" onclick="startCheckout('pro_30d')" style="width:100%;margin-top:12px;border:1px solid rgba(92,200,242,.4);border-radius:11px;background:rgba(92,200,242,.16);color:#dff7ff;font-weight:800;padding:12px;cursor:pointer;">COMPRAR 30 DIAS</button>
         </div>
-      </div>
+      </div>`;
+  modal.id = 'plans-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1650;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto;';
+  modal.innerHTML = `
+    <div style="width:100%;max-width:460px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:22px 18px;box-shadow:0 20px 60px rgba(0,0,0,.45);position:relative;">
+      <button onclick="document.getElementById('plans-modal').remove()" style="position:absolute;top:12px;right:12px;border:0;background:transparent;color:#7aa8c4;font-size:20px;cursor:pointer;">x</button>
+      <div style="font-family:'Bebas Neue';font-size:28px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:6px;">${isPro ? 'MEU PLANO' : 'BT8 PRO'}</div>
+      <div style="font-size:13px;line-height:1.5;color:#a8c4d4;text-align:center;margin-bottom:18px;">${isPro ? 'Este e o plano ativo nesta conta.' : 'Salve torneios ilimitados, mantenha seu historico completo e use o BT8 sem travas na organizacao.'}</div>
+      ${planBody}
       <div id="plans-msg" style="min-height:18px;margin-top:12px;text-align:center;font-size:12px;color:#f87171;"></div>
     </div>`;
   document.body.appendChild(modal);

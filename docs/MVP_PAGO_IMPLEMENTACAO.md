@@ -167,14 +167,14 @@ Tarefas:
 - [ ] Criar produtos/precos no Stripe test.
 - [x] Criar funcao backend para iniciar checkout.
 - [x] Criar webhook Stripe.
-- [ ] Validar eventos:
+- [x] Validar eventos:
   - `checkout.session.completed`
   - `customer.subscription.updated`
   - `customer.subscription.deleted`
   - `invoice.payment_succeeded`
   - `invoice.payment_failed`
 - [x] Atualizar Supabase somente via webhook/backend.
-- [ ] Nunca ativar Pro diretamente no front.
+- [x] Nunca ativar Pro diretamente no front.
 
 Entrega:
 - Checkout testavel.
@@ -186,8 +186,9 @@ Objetivo: fazer o usuario entender o valor do Pro no momento certo.
 
 Tarefas:
 - [x] Criar tela/modal de planos.
+- [x] Exibir plano atual no menu, Meu Perfil e modal de planos.
 - [ ] Adicionar CTA para Pro no limite de visitante.
-- [ ] Adicionar CTA para Pro no limite Free.
+- [x] Adicionar CTA para Pro no limite Free.
 - [ ] Adicionar aviso para Pro expirado.
 - [ ] Ajustar landing com secao de precos.
 - [ ] Explicar que o historico nao e perdido quando o Pro expira.

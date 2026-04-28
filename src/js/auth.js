@@ -59,6 +59,8 @@ function handleAuthStateChange(user) {
   if (typeof refreshAccess === 'function') {
     refreshAccess(user).then(access => {
       updateAdminButton(access);
+      if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
+      if (user) buildUserMenu(user);
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
   }

@@ -6,11 +6,15 @@ function buildUserMenu(user) {
   const menu = document.getElementById('user-menu');
   if (!menu) return;
   const name = user.user_metadata?.full_name || user.user_metadata?.name || 'Usuário';
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  const planCard = typeof planCardHtml === 'function' ? planCardHtml(access, 'menu') : '';
+  const planItemLabel = access?.isPro ? '⭐ &nbsp;Meu plano Pro' : '⭐ &nbsp;Planos BT8 Pro';
   menu.innerHTML = `
     <div class="user-menu-name">${name}</div>
     <div class="user-menu-email">${user.email}</div>
+    ${planCard}
     <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
-    <div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">⭐ &nbsp;Planos BT8 Pro</div>
+    <div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>
     <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">🎾 &nbsp;Meus Torneios</div>
     <div class="user-menu-item" id="admin-menu-btn" onclick="openAdmin()" style="display:none;">⚙️ &nbsp;Admin</div>
     <div class="user-menu-item danger" onclick="logoutUser()">↩ &nbsp;Sair</div>
@@ -109,6 +113,11 @@ async function loadProfile() {
   if (!SUPA || !SUPA_USER) return;
   const msg = document.getElementById('profile-msg');
   const avatarWrap = document.getElementById('profile-avatar-wrap');
+  if (typeof refreshAccess === 'function') {
+    const access = await refreshAccess(SUPA_USER);
+    if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
+    if (typeof buildUserMenu === 'function') buildUserMenu(SUPA_USER);
+  }
   // Avatar
   PROFILE_AVATAR_URL = SUPA_USER.user_metadata?.avatar_url || SUPA_USER.user_metadata?.picture || '';
   const avatar = PROFILE_AVATAR_URL;
