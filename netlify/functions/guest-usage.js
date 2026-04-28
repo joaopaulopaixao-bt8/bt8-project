@@ -46,7 +46,14 @@ exports.handler = async (event) => {
   const hashSecret = process.env.BT8_GUEST_USAGE_HASH_SECRET || process.env.GUEST_USAGE_HASH_SECRET;
 
   if (!supabaseUrl || !serviceKey || !hashSecret) {
-    return json(500, { error: 'Guest usage service is not configured.' });
+    return json(500, {
+      error: 'Guest usage service is not configured.',
+      missing: [
+        !supabaseUrl ? 'BT8_SUPABASE_URL' : null,
+        !serviceKey ? 'BT8_SUPABASE_SERVICE_ROLE_KEY' : null,
+        !hashSecret ? 'BT8_GUEST_USAGE_HASH_SECRET' : null
+      ].filter(Boolean)
+    });
   }
 
   let body = {};
