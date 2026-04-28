@@ -122,6 +122,15 @@ const trackEvent = async (supabaseUrl, serviceKey, event) => {
   }).catch(() => {});
 };
 
+const getProfileById = async (supabaseUrl, serviceKey, userId) => {
+  const rows = await supabaseFetch(
+    supabaseUrl,
+    serviceKey,
+    `profiles?select=id,email,role&id=eq.${encodeURIComponent(userId)}&limit=1`
+  );
+  return rows?.[0] || null;
+};
+
 const subscriptionMetadata = (subscription) => ({
   cancel_at_period_end: !!subscription.cancel_at_period_end,
   billing_cycle_anchor: subscription.billing_cycle_anchor ? new Date(subscription.billing_cycle_anchor * 1000).toISOString() : null,
@@ -173,6 +182,15 @@ exports.handler = async (event) => {
       const userId = object.client_reference_id || object.metadata?.user_id;
       const planType = object.metadata?.plan_type || (object.mode === 'subscription' ? 'recurring' : 'one_time_30d');
       if (!userId) throw new Error('Missing user_id on checkout session.');
+      const profile = await getProfileById(supabaseUrl, serviceKey, userId);
+      if (profile?.role === 'admin') {
+        await trackEvent(supabaseUrl, serviceKey, {
+          user_id: userId,
+          event_type: 'admin_checkout_ignored',
+          metadata: { checkout_session_id: object.id, plan_type: planType }
+        });
+        return json(200, { received: true, ignored: 'admin' });
+      }
 
       let proUntil = null;
       let subscriptionDetails = null;
@@ -220,10 +238,33 @@ exports.handler = async (event) => {
       const customers = await supabaseFetch(
         supabaseUrl,
         serviceKey,
-        `profiles?select=id&stripe_customer_id=eq.${encodeURIComponent(subscription.customer)}&limit=1`
+        `profiles?select=id,role&stripe_customer_id=eq.${encodeURIComponent(subscription.customer)}&limit=1`
       );
-      const userId = customers?.[0]?.id;
+      const customerProfile = customers?.[0];
+      const userId = customerProfile?.id;
       if (userId) {
+        if (customerProfile.role === 'admin') {
+          await upsertSubscription(supabaseUrl, serviceKey, {
+            user_id: userId,
+            stripe_customer_id: subscription.customer,
+            stripe_subscription_id: subscription.id,
+            plan_type: 'recurring',
+            status: 'admin_blocked',
+            current_period_end: null,
+            metadata: { admin_blocked: true, event_id: stripeEvent.id }
+          });
+          await updateProfilePlan(supabaseUrl, serviceKey, userId, {
+            plan: 'free',
+            pro_until: null,
+            subscription_status: 'admin_no_plan'
+          });
+          await trackEvent(supabaseUrl, serviceKey, {
+            user_id: userId,
+            event_type: 'admin_subscription_ignored',
+            metadata: { subscription_id: subscription.id, stripe_event: type }
+          });
+          return json(200, { received: true, ignored: 'admin' });
+        }
         const isDeleted = type === 'customer.subscription.deleted';
         if (!isDeleted && subscription.id) {
           subscription = await stripeGet(stripeKey, `subscriptions/${subscription.id}?expand[]=items.data.price`);

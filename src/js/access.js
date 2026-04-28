@@ -78,11 +78,11 @@ function currentAccess() {
 
 function accessLabel(access) {
   if (!access || access.isGuest) return 'Visitante';
+  if (access.isAdmin) return 'Admin';
   if (access.proExpired) return 'Pro expirado';
   if (access.isPro && access.planType === 'one_time_30d') return 'Pro 30 Dias';
   if (access.isPro && access.planType === 'recurring') return 'Pro Mensal';
   if (access.isPro) return 'Pro';
-  if (access.isAdmin) return 'Admin';
   return 'Free';
 }
 
@@ -93,6 +93,7 @@ function formatPlanDate(date) {
 
 function planDescription(access) {
   if (!access || access.isGuest) return 'Teste sem cadastro';
+  if (access.isAdmin) return 'Acesso operacional liberado, sem assinatura';
   if (access.proExpired) return 'Historico preservado. Reative o Pro para salvar sem limite';
   if (access.isPro && access.planType === 'recurring') {
     if (access.cancelAtPeriodEnd) {
@@ -332,12 +333,17 @@ function openPlansModal() {
     openAuthModal('signup');
     return;
   }
+  const current = typeof currentAccess === 'function' ? currentAccess() : null;
+  if (current?.isAdmin) {
+    alert('Conta Admin nao assina planos. O acesso operacional ja esta liberado.');
+    return;
+  }
 
   const existing = document.getElementById('plans-modal');
   if (existing) existing.remove();
 
   const modal = document.createElement('div');
-  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  const access = current;
   const isPro = !!access?.isPro;
   const planStatus = planCardHtml(access, 'profile');
   const isMonthly = isPro && access?.planType === 'recurring';

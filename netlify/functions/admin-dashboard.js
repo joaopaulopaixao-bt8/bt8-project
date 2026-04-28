@@ -30,6 +30,20 @@ const supabaseFetch = async (url, key, path, options = {}) => {
 
 const restRows = async (url, key, path) => supabaseFetch(url, key, `rest/v1/${path}`);
 
+const stripeRequest = async (secretKey, path, options = {}) => {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: options.method || 'GET',
+    headers: {
+      authorization: `Bearer ${secretKey}`,
+      'content-type': 'application/x-www-form-urlencoded'
+    },
+    body: options.body ? new URLSearchParams(options.body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
+  return data;
+};
+
 const parseDate = (value) => {
   const date = value ? new Date(value) : null;
   return date && Number.isFinite(date.getTime()) ? date : null;
@@ -57,6 +71,7 @@ exports.handler = async (event) => {
 
   const supabaseUrl = process.env.BT8_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.BT8_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const stripeKey = process.env.BT8_STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
   if (!supabaseUrl || !serviceKey) {
     return json(500, {
       error: 'Admin service is not configured.',
@@ -81,10 +96,44 @@ exports.handler = async (event) => {
     const adminRows = await restRows(
       supabaseUrl,
       serviceKey,
-      `profiles?select=id,email,role&id=eq.${encodeURIComponent(userId)}&limit=1`
+      `profiles?select=id,email,role,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
     );
     const adminProfile = adminRows?.[0];
     if (adminProfile?.role !== 'admin') return json(403, { error: 'Acesso restrito.' });
+
+    if (stripeKey) {
+      const adminSubs = await restRows(
+        supabaseUrl,
+        serviceKey,
+        `subscriptions?select=id,stripe_subscription_id,status&user_id=eq.${encodeURIComponent(userId)}&stripe_subscription_id=not.is.null&limit=20`
+      ).catch(() => []);
+      for (const sub of adminSubs || []) {
+        if (sub.stripe_subscription_id) {
+          await stripeRequest(stripeKey, `subscriptions/${sub.stripe_subscription_id}`, { method: 'DELETE' })
+            .catch(() => {});
+        }
+        await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/subscriptions?id=eq.${sub.id}`, {
+          method: 'PATCH',
+          headers: { prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'admin_blocked',
+            current_period_end: null,
+            metadata: { admin_blocked: true, cleaned_from_admin_dashboard: true },
+            updated_at: new Date().toISOString()
+          })
+        }).catch(() => {});
+      }
+      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({
+          plan: 'free',
+          pro_until: null,
+          subscription_status: 'admin_no_plan',
+          updated_at: new Date().toISOString()
+        })
+      }).catch(() => {});
+    }
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);

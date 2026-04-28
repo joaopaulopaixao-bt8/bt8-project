@@ -90,9 +90,12 @@ exports.handler = async (event) => {
     const profiles = await supabaseFetch(
       supabaseUrl,
       serviceKey,
-      `rest/v1/profiles?select=id,email,plan,pro_until,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
+      `rest/v1/profiles?select=id,email,plan,role,pro_until,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
     );
     const profile = profiles?.[0] || {};
+    if (profile.role === 'admin') {
+      return json(403, { error: 'Conta Admin nao pode assinar planos.' });
+    }
     let customerId = profile.stripe_customer_id;
 
     if (!customerId) {

@@ -8,15 +8,16 @@ function buildUserMenu(user) {
   const name = user.user_metadata?.full_name || user.user_metadata?.name || 'Usuário';
   const access = typeof currentAccess === 'function' ? currentAccess() : null;
   const planCard = typeof planCardHtml === 'function' ? planCardHtml(access, 'menu') : '';
+  const showPlanItem = !access?.isAdmin;
   const planItemLabel = access?.isPro ? '⭐ &nbsp;Meu plano Pro' : '⭐ &nbsp;Planos BT8 Pro';
   menu.innerHTML = `
     <div class="user-menu-name">${name}</div>
     <div class="user-menu-email">${user.email}</div>
     ${planCard}
     <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
-    <div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>
+    ${showPlanItem ? `<div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>` : ''}
     <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">🎾 &nbsp;Meus Torneios</div>
-    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdmin()" style="display:none;">⚙️ &nbsp;Admin</div>
+    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdmin()" style="${access?.isAdmin ? '' : 'display:none;'}">⚙️ &nbsp;Admin</div>
     <div class="user-menu-item danger" onclick="logoutUser()">↩ &nbsp;Sair</div>
   `;
 }

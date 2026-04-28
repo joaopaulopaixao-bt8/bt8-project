@@ -58,10 +58,10 @@ function handleAuthStateChange(user) {
   if (typeof updateGuestConversionUI === 'function') updateGuestConversionUI();
   if (typeof refreshAccess === 'function') {
     refreshAccess(user).then(access => {
-      updateAdminButton(access);
       if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
       if (typeof showProExpiredNotice === 'function') showProExpiredNotice(access);
       if (user) buildUserMenu(user);
+      updateAdminButton(access);
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
   }

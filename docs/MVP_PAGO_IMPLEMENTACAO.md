@@ -229,6 +229,8 @@ Indicadores minimos:
 Implementado no MVP inicial:
 - [x] Criar Function backend `admin-dashboard` com service role.
 - [x] Validar Admin no backend por `profiles.role = admin`.
+- [x] Bloquear checkout para conta Admin.
+- [x] Limpar assinaturas Stripe/Supabase vinculadas ao Admin ao abrir o dashboard.
 - [x] Mostrar cards de usuarios, planos, receita estimada, torneios, bloqueios e modalidades.
 - [x] Mostrar usuarios, assinaturas e eventos recentes.
 
