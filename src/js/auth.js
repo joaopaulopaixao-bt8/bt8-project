@@ -45,13 +45,14 @@ function handleAuthStateChange(user) {
   const currentScreen = APP.history[APP.history.length - 1];
   const activeScreen = document.querySelector('.screen.active')?.id;
   const authModalOpen = document.getElementById('auth-modal')?.classList.contains('open');
+  const adminRoute = typeof isAdminRoute === 'function' && isAdminRoute();
   const updateAdminButton = (access) => {
     const adminBtn = document.getElementById('admin-menu-btn');
     if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
   };
 
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
-  if (user && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
+  if (user && !adminRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
     enterApp();
   }
   if (user) APP.isGuest = false;
@@ -62,8 +63,14 @@ function handleAuthStateChange(user) {
       if (typeof showProExpiredNotice === 'function') showProExpiredNotice(access);
       if (user) buildUserMenu(user);
       updateAdminButton(access);
+      if (adminRoute) {
+        if (access?.isAdmin) openAdmin();
+        else if (user) alert('Acesso restrito.');
+      }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
+  } else if (adminRoute && !user) {
+    openAuthModal('login');
   }
 
   // Mostrar/ocultar botão admin

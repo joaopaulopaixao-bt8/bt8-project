@@ -5,6 +5,11 @@
 [functions]
   directory = "netlify/functions"
 
+[[redirects]]
+  from = "/admin"
+  to = "/index.html"
+  status = 200
+
 [context.branch-deploy.environment]
   BT8_APP_ENV = "staging"
   BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"

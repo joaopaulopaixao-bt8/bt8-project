@@ -17,9 +17,19 @@ function buildUserMenu(user) {
     <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
     ${showPlanItem ? `<div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>` : ''}
     <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">🎾 &nbsp;Meus Torneios</div>
-    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdmin()" style="${access?.isAdmin ? '' : 'display:none;'}">⚙️ &nbsp;Admin</div>
+    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdminRoute()" style="${access?.isAdmin ? '' : 'display:none;'}">⚙️ &nbsp;Admin</div>
     <div class="user-menu-item danger" onclick="logoutUser()">↩ &nbsp;Sair</div>
   `;
+}
+
+function isAdminRoute() {
+  return window.location.pathname.replace(/\/+$/, '') === '/admin';
+}
+
+function openAdminRoute() {
+  closeUserMenu();
+  if (!isAdminRoute()) window.history.pushState({}, '', '/admin');
+  openAdmin();
 }
 
 function buildGuestMenu() {
@@ -416,6 +426,8 @@ async function openAdmin() {
     alert('Acesso restrito.');
     return;
   }
+  const old = document.getElementById('admin-modal');
+  if (old) old.remove();
   const modal = document.createElement('div');
   modal.id = 'admin-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.8);display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;';
