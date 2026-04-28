@@ -57,7 +57,10 @@ function handleAuthStateChange(user) {
   if (user) APP.isGuest = false;
   if (typeof updateGuestConversionUI === 'function') updateGuestConversionUI();
   if (typeof refreshAccess === 'function') {
-    refreshAccess(user).then(updateAdminButton);
+    refreshAccess(user).then(access => {
+      updateAdminButton(access);
+      if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
+    });
   }
 
   // Mostrar/ocultar botão admin

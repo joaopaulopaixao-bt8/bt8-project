@@ -64,6 +64,16 @@ const stripeGet = async (secretKey, path) => {
   return data;
 };
 
+const findPeriodEnd = (subscription) => {
+  const candidates = [
+    subscription?.current_period_end,
+    subscription?.items?.data?.[0]?.current_period_end,
+    subscription?.items?.data?.[0]?.price?.recurring?.interval ? subscription.current_period_end : null
+  ];
+  const value = candidates.find(Boolean);
+  return value ? new Date(value * 1000).toISOString() : null;
+};
+
 const addDays = (date, days) => {
   const copy = new Date(date.getTime());
   copy.setDate(copy.getDate() + days);
@@ -158,10 +168,8 @@ exports.handler = async (event) => {
       if (planType === 'one_time_30d') {
         proUntil = addDays(new Date(), 30).toISOString();
       } else if (object.subscription) {
-        const subscription = await stripeGet(stripeKey, `subscriptions/${object.subscription}`);
-        if (subscription.current_period_end) {
-          proUntil = new Date(subscription.current_period_end * 1000).toISOString();
-        }
+        const subscription = await stripeGet(stripeKey, `subscriptions/${object.subscription}?expand[]=items.data.price`);
+        proUntil = findPeriodEnd(subscription);
       }
 
       await updateProfilePlan(supabaseUrl, serviceKey, userId, {
@@ -191,7 +199,7 @@ exports.handler = async (event) => {
     }
 
     if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
-      const subscription = object;
+      let subscription = object;
       const customers = await supabaseFetch(
         supabaseUrl,
         serviceKey,
@@ -200,9 +208,10 @@ exports.handler = async (event) => {
       const userId = customers?.[0]?.id;
       if (userId) {
         const isDeleted = type === 'customer.subscription.deleted';
-        const proUntil = subscription.current_period_end
-          ? new Date(subscription.current_period_end * 1000).toISOString()
-          : null;
+        if (!isDeleted && subscription.id) {
+          subscription = await stripeGet(stripeKey, `subscriptions/${subscription.id}?expand[]=items.data.price`);
+        }
+        const proUntil = findPeriodEnd(subscription);
         await updateProfilePlan(supabaseUrl, serviceKey, userId, {
           plan: isDeleted ? 'free' : 'pro',
           pro_until: isDeleted ? null : proUntil,
