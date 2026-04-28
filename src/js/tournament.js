@@ -430,14 +430,50 @@ function shuffle(arr) {
   return a;
 }
 
-function gerarTorneio() {
+async function gerarTorneio() {
+  const gerarBtn = document.getElementById('btn-gerar');
+  if (gerarBtn?.dataset.loading === '1') return;
+  const originalBtnText = gerarBtn?.textContent;
+  if (gerarBtn) {
+    gerarBtn.dataset.loading = '1';
+    gerarBtn.disabled = true;
+    gerarBtn.textContent = 'Validando...';
+  }
+  try {
+    if (typeof validateGuestTournamentLimit === 'function') {
+      const guestLimit = await validateGuestTournamentLimit();
+      if (!guestLimit.allowed) {
+        showGuestLimitReached();
+        return;
+      }
+    }
+  } catch(e) {
+    alert(e.message || 'Nao foi possivel validar seu teste gratis agora.');
+    return;
+  } finally {
+    if (gerarBtn) {
+      gerarBtn.dataset.loading = '';
+      gerarBtn.disabled = false;
+      gerarBtn.textContent = originalBtnText;
+    }
+  }
+
   // Etapa 3: rastrear criação de torneio
   try {
+    const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent('tournament_created', {
       format: APP.mode || '',
       category: APP.category || '',
-      players: (APP.players || []).length
+      players: (APP.players || []).length,
+      plan: access?.plan || (APP.isGuest ? 'guest' : 'free')
     });
+    if (APP.isGuest && !SUPA_USER) {
+      trackEvent('guest_tournament_created', {
+        format: APP.mode || '',
+        category: APP.category || '',
+        players: (APP.players || []).length
+      });
+    }
   } catch(e) {}
   const m = APP.mode;
   const ps = APP.players;

@@ -53,6 +53,15 @@ BT8_GUEST_USAGE_HASH_SECRET=uma_frase_secreta_longa
 
 Essas variaveis nunca devem aparecer em `src/`, `public/`, `dist/` ou no GitHub.
 
+Para o limite de visitante funcionar na branch `mvp-pago`, configure pelo menos:
+
+```text
+BT8_SUPABASE_SERVICE_ROLE_KEY=...
+BT8_GUEST_USAGE_HASH_SECRET=...
+```
+
+A Netlify Function `guest-usage` usa essas duas variaveis para gravar em `guest_usage` sem expor segredo no navegador.
+
 ### O que voce precisa me mandar do Netlify
 
 - URL do deploy da branch `mvp-pago`.

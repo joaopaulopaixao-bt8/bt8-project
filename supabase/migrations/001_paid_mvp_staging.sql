@@ -3,6 +3,8 @@
 
 create extension if not exists pgcrypto;
 
+create schema if not exists private;
+
 -- Profiles are keyed by auth.users.id.
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -142,12 +144,12 @@ create trigger profiles_protect_billing_fields
 before update on public.profiles
 for each row execute function public.protect_profile_billing_fields();
 
-create or replace function public.is_admin()
+create or replace function private.is_admin()
 returns boolean
 language sql
 stable
 security definer
-set search_path = public
+set search_path = public, private
 as $$
   select exists (
     select 1
@@ -157,11 +159,14 @@ as $$
   );
 $$;
 
-create or replace function public.handle_new_user()
+grant usage on schema private to authenticated;
+grant execute on function private.is_admin() to authenticated;
+
+create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, private
 as $$
 begin
   insert into public.profiles (id, email, nome, provider)
@@ -183,13 +188,13 @@ $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
-for each row execute function public.handle_new_user();
+for each row execute function private.handle_new_user();
 
 drop policy if exists profiles_select_self_or_admin on public.profiles;
 create policy profiles_select_self_or_admin
 on public.profiles for select
 to authenticated
-using (id = auth.uid() or public.is_admin());
+using (id = auth.uid() or private.is_admin());
 
 drop policy if exists profiles_insert_self on public.profiles;
 create policy profiles_insert_self
@@ -208,7 +213,7 @@ drop policy if exists tournaments_select_self_or_admin on public.tournaments;
 create policy tournaments_select_self_or_admin
 on public.tournaments for select
 to authenticated
-using (user_id = auth.uid() or public.is_admin());
+using (user_id = auth.uid() or private.is_admin());
 
 drop policy if exists tournaments_insert_self on public.tournaments;
 create policy tournaments_insert_self
@@ -233,7 +238,7 @@ drop policy if exists subscriptions_select_self_or_admin on public.subscriptions
 create policy subscriptions_select_self_or_admin
 on public.subscriptions for select
 to authenticated
-using (user_id = auth.uid() or public.is_admin());
+using (user_id = auth.uid() or private.is_admin());
 
 drop policy if exists app_events_insert_anyone on public.app_events;
 create policy app_events_insert_anyone
@@ -245,7 +250,7 @@ drop policy if exists app_events_select_admin on public.app_events;
 create policy app_events_select_admin
 on public.app_events for select
 to authenticated
-using (public.is_admin());
+using (private.is_admin());
 
 -- guest_usage is intentionally backend-only. No anon/auth policies.
 

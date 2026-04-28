@@ -85,7 +85,7 @@ Objetivo: garantir que permissao e plano nao dependam apenas do JavaScript publi
 
 Tarefas:
 - [ ] Auditar tabelas atuais do Supabase.
-- [ ] Confirmar RLS em `profiles`, `tournaments` e `events`.
+- [x] Confirmar RLS em `profiles`, `tournaments` e `app_events` no SQL de staging.
 - [ ] Garantir que usuario so le/escreve seus proprios torneios.
 - [ ] Criar/ajustar campos em `profiles`:
   - `plan`
@@ -95,9 +95,9 @@ Tarefas:
   - `subscription_status`
   - `updated_at`
 - [ ] Criar tabela `subscriptions`.
-- [ ] Criar tabela `app_events` ou padronizar a tabela `events` atual.
+- [x] Criar tabela `app_events` e padronizar o front para gravar nela com fallback legado.
 - [x] Criar SQL versionado da Sprint 1 em `supabase/migrations/001_paid_mvp_staging.sql`.
-- [ ] Criar funcao central no front para calcular acesso: visitante, Free, Pro ativo, Pro expirado e Admin.
+- [x] Criar funcao central no front para calcular acesso: visitante, Free, Pro ativo, Pro expirado e Admin.
 
 Entrega:
 - Estrutura Free/Pro/Admin pronta.
@@ -108,11 +108,11 @@ Entrega:
 Objetivo: transformar o teste sem cadastro em entrada controlada para login.
 
 Tarefas:
-- [ ] Criar tabela `guest_usage`.
-- [ ] Criar funcao backend para validar limite de visitante.
-- [ ] Identificar visitante por `guest_id` local + hash de IP + hash de user agent.
-- [ ] Nao armazenar IP puro.
-- [ ] Antes de gerar torneio sem login, validar se ainda pode usar o teste mensal.
+- [x] Criar tabela `guest_usage`.
+- [x] Criar funcao backend para validar limite de visitante.
+- [x] Identificar visitante por `guest_id` local + hash de IP + hash de user agent.
+- [x] Nao armazenar IP puro.
+- [x] Antes de gerar torneio sem login, validar se ainda pode usar o teste mensal.
 - [ ] Ao bloquear visitante, mostrar mensagem:
   - "Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8."
 - [ ] Aplicar limite Free logado no salvamento/historico.
@@ -144,8 +144,8 @@ Eventos minimos:
 - `tournament_finished`
 
 Tarefas:
-- [ ] Padronizar `trackEvent`.
-- [ ] Registrar eventos de visitante, Free e Pro.
+- [x] Padronizar `trackEvent`.
+- [x] Registrar eventos iniciais de visitante, Free e Pro.
 - [ ] Registrar modalidade e quantidade de participantes quando criar torneio.
 - [ ] Registrar finalizacao de torneio.
 

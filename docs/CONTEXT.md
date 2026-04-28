@@ -49,12 +49,13 @@ created_at      timestamptz
 updated_at      timestamptz
 ```
 
-#### `events` (criada nas etapas recentes)
+#### `app_events` (staging/MVP pago)
 ```sql
 id          uuid DEFAULT gen_random_uuid() PRIMARY KEY
 user_id     uuid
+guest_id    text
 event_type  text   -- ex: 'tournament_created', 'tournament_finished'
-details     jsonb  -- { format, category, players }
+metadata    jsonb  -- { format, category, players, plan }
 created_at  timestamptz
 ```
 
@@ -63,9 +64,9 @@ created_at  timestamptz
 -- profiles
 create policy "self" on profiles for all using (auth.uid() = id);
 
--- events
-create policy "insert" on events for insert with check (true);
-create policy "admin_read" on events for select using (auth.email() = 'joaopaulopaixao@gmail.com');
+-- app_events
+create policy app_events_insert_anyone on app_events for insert with check (user_id is null or user_id = auth.uid());
+create policy app_events_select_admin on app_events for select using (private.is_admin());
 ```
 
 > ⚠️ **Problema pendente**: Login com Google retorna erro `Database error saving new user`. Provavelmente existe um trigger antigo na tabela `profiles` que usa colunas com nomes diferentes. Investigar com:
@@ -152,7 +153,7 @@ const APP = {
 - `closeProfileModal()`
 
 ### Rastreamento (Etapa 3)
-- `trackEvent(type, details)` — insere em `events` de forma silenciosa
+- `trackEvent(type, details)` — insere em `app_events` de forma silenciosa; usa `events` como fallback legado
 - Chamada em `gerarTorneio()` com `{ format, category, players }`
 
 ### Admin (Etapa 4)

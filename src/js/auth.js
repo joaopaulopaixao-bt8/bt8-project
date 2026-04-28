@@ -45,6 +45,10 @@ function handleAuthStateChange(user) {
   const currentScreen = APP.history[APP.history.length - 1];
   const activeScreen = document.querySelector('.screen.active')?.id;
   const authModalOpen = document.getElementById('auth-modal')?.classList.contains('open');
+  const updateAdminButton = (access) => {
+    const adminBtn = document.getElementById('admin-menu-btn');
+    if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
+  };
 
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
   if (user && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
@@ -52,11 +56,13 @@ function handleAuthStateChange(user) {
   }
   if (user) APP.isGuest = false;
   if (typeof updateGuestConversionUI === 'function') updateGuestConversionUI();
+  if (typeof refreshAccess === 'function') {
+    refreshAccess(user).then(updateAdminButton);
+  }
 
   // Mostrar/ocultar botão admin
   setTimeout(() => {
-    const adminBtn = document.getElementById('admin-menu-btn');
-    if (adminBtn) adminBtn.style.display = (user && user.email === ADMIN_EMAIL) ? '' : 'none';
+    updateAdminButton(typeof currentAccess === 'function' ? currentAccess() : null);
   }, 100);
 
   // Atualiza UI do topbar

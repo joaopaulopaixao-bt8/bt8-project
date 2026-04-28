@@ -7,3 +7,4 @@ bt8-*.png
 .claude/settings.local.json
 .DS_Store
 Thumbs.db
+supabase/.temp/

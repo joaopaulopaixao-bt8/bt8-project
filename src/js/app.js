@@ -253,15 +253,26 @@ async function saveProfile() {
 // Salva evento de uso no Supabase (torneio criado, finalizado, etc.)
 async function trackEvent(type, details) {
   if (!SUPA) return; // Silencioso quando não há Supabase
+  const payload = {
+    user_id: SUPA_USER?.id || null,
+    event_type: type,
+    metadata: details || {},
+    created_at: new Date().toISOString()
+  };
   try {
-    await SUPA.from('events').insert({
-      user_id:    SUPA_USER?.id || null,
-      event_type: type,
-      details:    details || {},
-      created_at: new Date().toISOString()
-    });
+    const { error } = await SUPA.from('app_events').insert(payload);
+    if (error) throw error;
   } catch(e) {
-    // Silencioso — não interrompe o fluxo do app
+    try {
+      await SUPA.from('events').insert({
+        user_id: payload.user_id,
+        event_type: payload.event_type,
+        details: payload.metadata,
+        created_at: payload.created_at
+      });
+    } catch(_) {
+      // Silencioso — não interrompe o fluxo do app
+    }
   }
 }
 
@@ -271,7 +282,8 @@ async function trackEvent(type, details) {
 async function openAdmin() {
   closeUserMenu();
   if (!SUPA || !SUPA_USER) return;
-  if (SUPA_USER.email !== ADMIN_EMAIL) {
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  if (!access?.isAdmin && SUPA_USER.email !== ADMIN_EMAIL) {
     alert('Acesso restrito.');
     return;
   }
@@ -292,19 +304,28 @@ async function openAdmin() {
   document.body.appendChild(modal);
   // Buscar dados
   try {
-    const [usersRes, eventsRes, profilesRes] = await Promise.allSettled([
-      SUPA.from('events').select('*', { count:'exact', head:true }),
-      SUPA.from('events').select('event_type').order('created_at', { ascending:false }).limit(20),
+    const [eventCountRes, eventRowsRes, profilesRes] = await Promise.allSettled([
+      SUPA.from('app_events').select('*', { count:'exact', head:true }),
+      SUPA.from('app_events').select('event_type,metadata').order('created_at', { ascending:false }).limit(20),
       SUPA.from('profiles').select('*', { count:'exact', head:true })
     ]);
-    const totalEvents  = eventsRes?.value?.status === 'fulfilled' || eventsRes.status === 'fulfilled' ? (eventsRes.value?.count || '?') : '?';
+    let totalEvents  = eventCountRes.status === 'fulfilled' ? (eventCountRes.value?.count || '?') : '?';
     const totalProfiles= profilesRes.status === 'fulfilled' ? (profilesRes.value?.count || '?') : '?';
-    const recentEvents = eventsRes.status === 'fulfilled' ? (eventsRes.value?.data || []) : [];
+    let recentEvents = eventRowsRes.status === 'fulfilled' ? (eventRowsRes.value?.data || []) : [];
+    if (
+      (eventCountRes.status === 'fulfilled' && eventCountRes.value?.error) ||
+      (eventRowsRes.status === 'fulfilled' && eventRowsRes.value?.error)
+    ) {
+      const legacyCount = await SUPA.from('events').select('*', { count:'exact', head:true });
+      const legacyRows = await SUPA.from('events').select('event_type,details').order('created_at', { ascending:false }).limit(20);
+      totalEvents = legacyCount.count || '?';
+      recentEvents = legacyRows.data || [];
+    }
     const eventRows = recentEvents.map(e =>
       `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);color:#a8c4d4;">
         <span style="color:#ffd84d">${e.event_type}</span>
-        ${e.details?.format ? ' · ' + e.details.format : ''}
-        ${e.details?.players ? ' · ' + e.details.players + ' jogadores' : ''}
+        ${(e.metadata || e.details)?.format ? ' · ' + (e.metadata || e.details).format : ''}
+        ${(e.metadata || e.details)?.players ? ' · ' + (e.metadata || e.details).players + ' jogadores' : ''}
       </div>`).join('');
     document.getElementById('admin-content').innerHTML = `
       <div style="display:flex;gap:14px;margin-bottom:20px;">

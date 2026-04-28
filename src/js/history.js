@@ -7,7 +7,7 @@ async function saveTournament() {
   try {
     const standings = getStandings();
     const title = MODE_INFO[APP.mode].label + ' · ' + new Date().toLocaleDateString('pt-BR');
-    await SUPA.from('tournaments').insert({
+    const { error } = await SUPA.from('tournaments').insert({
       user_id:  SUPA_USER.id,
       mode:     APP.mode,
       category: APP.category,
@@ -18,6 +18,13 @@ async function saveTournament() {
         mode: APP.mode, category: APP.category, fmt: APP.fmt,
         players: APP.players, rounds: APP.rounds||[], matches: APP.matches
       }
+    });
+    if (error) throw error;
+    const access = typeof currentAccess === 'function' ? currentAccess() : null;
+    trackEvent(access?.isPro ? 'pro_tournament_saved' : 'free_tournament_saved', {
+      format: APP.mode || '',
+      category: APP.category || '',
+      players: (APP.players || []).length
     });
     // Atualiza histórico na home silenciosamente
     loadHomeHistory();
