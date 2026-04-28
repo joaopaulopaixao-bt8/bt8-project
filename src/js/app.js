@@ -290,7 +290,22 @@ async function trackEvent(type, details) {
 
 // ══ ETAPA 4: DASHBOARD ADMIN ════════════════════════════════
 // Admin simples: abre painel com totais do Supabase
-// Acesso: usuário precisa ter is_admin=true no perfil
+function safeAdminText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+  }[ch]));
+}
+
+function formatAdminMoney(value) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+}
+
+function formatAdminDate(value) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(new Date(value));
+}
+
+// Acesso: usuário precisa ter role=admin no perfil, validado também no backend.
 async function openAdmin() {
   closeUserMenu();
   if (!SUPA || !SUPA_USER) return;
@@ -299,59 +314,97 @@ async function openAdmin() {
     alert('Acesso restrito.');
     return;
   }
-  // Buscar totais
-  let statsHtml = '<b>Carregando...</b>';
   const modal = document.createElement('div');
   modal.id = 'admin-modal';
-  modal.style.cssText = 'position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.8);display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;';
   modal.innerHTML = `
-    <div style="background:#0d1a27;border:1px solid rgba(26,127,196,.4);border-radius:20px;padding:28px 24px;width:100%;max-width:480px;position:relative;">
+    <div style="background:#0d1a27;border:1px solid rgba(26,127,196,.4);border-radius:18px;padding:24px 18px;width:100%;max-width:720px;position:relative;box-shadow:0 20px 70px rgba(0,0,0,.5);">
       <button onclick="document.getElementById('admin-modal').remove()"
         style="position:absolute;top:14px;right:14px;background:none;border:none;color:#7aa8c4;font-size:20px;cursor:pointer;">✕</button>
-      <div style="font-family:'Bebas Neue';font-size:22px;letter-spacing:2px;color:#3b9fd8;margin-bottom:20px;text-align:center;">
-        ⚙️ DASHBOARD ADMIN
+      <div style="font-family:'Bebas Neue';font-size:24px;letter-spacing:2px;color:#3b9fd8;margin-bottom:4px;text-align:center;">
+        DASHBOARD ADMIN
       </div>
-      <div id="admin-content">Carregando dados...</div>
+      <div style="font-size:12px;color:#7aa8c4;text-align:center;margin-bottom:18px;">Operacao, vendas e uso do MVP pago</div>
+      <div id="admin-content" style="font-size:13px;color:#a8c4d4;">Carregando dados...</div>
     </div>`;
   document.body.appendChild(modal);
-  // Buscar dados
+
   try {
-    const [eventCountRes, eventRowsRes, profilesRes] = await Promise.allSettled([
-      SUPA.from('app_events').select('*', { count:'exact', head:true }),
-      SUPA.from('app_events').select('event_type,metadata').order('created_at', { ascending:false }).limit(20),
-      SUPA.from('profiles').select('*', { count:'exact', head:true })
-    ]);
-    let totalEvents  = eventCountRes.status === 'fulfilled' ? (eventCountRes.value?.count || '?') : '?';
-    const totalProfiles= profilesRes.status === 'fulfilled' ? (profilesRes.value?.count || '?') : '?';
-    let recentEvents = eventRowsRes.status === 'fulfilled' ? (eventRowsRes.value?.data || []) : [];
-    if (
-      (eventCountRes.status === 'fulfilled' && eventCountRes.value?.error) ||
-      (eventRowsRes.status === 'fulfilled' && eventRowsRes.value?.error)
-    ) {
-      const legacyCount = await SUPA.from('events').select('*', { count:'exact', head:true });
-      const legacyRows = await SUPA.from('events').select('event_type,details').order('created_at', { ascending:false }).limit(20);
-      totalEvents = legacyCount.count || '?';
-      recentEvents = legacyRows.data || [];
-    }
-    const eventRows = recentEvents.map(e =>
-      `<div style="font-size:12px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);color:#a8c4d4;">
-        <span style="color:#ffd84d">${e.event_type}</span>
-        ${(e.metadata || e.details)?.format ? ' · ' + (e.metadata || e.details).format : ''}
-        ${(e.metadata || e.details)?.players ? ' · ' + (e.metadata || e.details).players + ' jogadores' : ''}
+    const { data: sessionData } = await SUPA.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) throw new Error('Sessao invalida. Faca login novamente.');
+
+    const response = await fetch('/.netlify/functions/admin-dashboard', {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Erro ao carregar Admin.');
+
+    const stats = data.stats || {};
+    const statCards = [
+      ['Usuarios', stats.users_total],
+      ['Novos no mes', stats.users_new_month],
+      ['Free ativos', stats.free_active],
+      ['Pro mensal', stats.pro_recurring_active],
+      ['Pro 30 dias', stats.pro_30d_active],
+      ['Pro expirados', stats.pro_expired],
+      ['MRR estimado', formatAdminMoney(stats.mrr_estimated_brl)],
+      ['Receita 30d', formatAdminMoney(stats.revenue_30d_estimated_brl)],
+      ['Torneios mes', stats.tournaments_month],
+      ['Sem login mes', stats.guest_tournaments_month],
+      ['Bloq. visitante', stats.guest_limit_blocks_recent],
+      ['Bloq. Free', stats.free_limit_blocks_recent]
+    ].map(([label, value]) => `
+      <div style="background:rgba(26,127,196,.12);border:1px solid rgba(26,127,196,.20);border-radius:10px;padding:12px;min-height:76px;">
+        <div style="font-family:'Bebas Neue';font-size:23px;color:#ffd84d;letter-spacing:1px;">${safeAdminText(value)}</div>
+        <div style="font-size:10px;color:#7aa8c4;text-transform:uppercase;letter-spacing:.8px;margin-top:3px;">${safeAdminText(label)}</div>
       </div>`).join('');
+
+    const modes = (data.top_modes || []).map(item => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+        <span>${safeAdminText(item.label)}</span>
+        <b style="color:#ffd84d">${safeAdminText(item.count)}</b>
+      </div>`).join('');
+
+    const users = (data.recent_users || []).map(user => `
+      <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+        <div style="color:#fff;font-weight:700;">${safeAdminText(user.nome || user.email || user.id)}</div>
+        <div style="font-size:11px;color:#7aa8c4;">${safeAdminText(user.email)} · ${safeAdminText(user.plan)} · ${safeAdminText(user.subscription_status || '-')}</div>
+      </div>`).join('');
+
+    const subs = (data.recent_subscriptions || []).map(sub => `
+      <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);">
+        <div style="color:#fff;font-weight:700;">${safeAdminText(sub.plan_type)} · ${safeAdminText(sub.status)}</div>
+        <div style="font-size:11px;color:#7aa8c4;">fim: ${formatAdminDate(sub.current_period_end)} · criado: ${formatAdminDate(sub.created_at)}</div>
+      </div>`).join('');
+
+    const eventRows = (data.recent_events || []).slice(0, 20).map(e => `
+      <div style="font-size:12px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.07);color:#a8c4d4;">
+        <span style="color:#ffd84d">${safeAdminText(e.event_type)}</span>
+        ${e.metadata?.format ? ' · ' + safeAdminText(e.metadata.format) : ''}
+        ${e.metadata?.players ? ' · ' + safeAdminText(e.metadata.players) + ' jogadores' : ''}
+      </div>`).join('');
+
     document.getElementById('admin-content').innerHTML = `
-      <div style="display:flex;gap:14px;margin-bottom:20px;">
-        <div style="flex:1;background:rgba(26,127,196,.15);border-radius:12px;padding:14px;text-align:center;">
-          <div style="font-size:28px;font-family:'Bebas Neue';color:#3b9fd8;">${totalProfiles}</div>
-          <div style="font-size:11px;color:#7aa8c4;margin-top:4px;">PERFIS</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px;">${statCards}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px;">
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">MODALIDADES DO MES</div>
+          ${modes || '<div style="color:#7aa8c4;font-size:12px;">Sem torneios ainda.</div>'}
         </div>
-        <div style="flex:1;background:rgba(26,127,196,.15);border-radius:12px;padding:14px;text-align:center;">
-          <div style="font-size:28px;font-family:'Bebas Neue';color:#ffd84d;">${totalEvents}</div>
-          <div style="font-size:11px;color:#7aa8c4;margin-top:4px;">EVENTOS</div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">USUARIOS RECENTES</div>
+          ${users || '<div style="color:#7aa8c4;font-size:12px;">Sem usuarios ainda.</div>'}
+        </div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">ASSINATURAS RECENTES</div>
+          ${subs || '<div style="color:#7aa8c4;font-size:12px;">Sem assinaturas ainda.</div>'}
+        </div>
+        <div>
+          <div style="font-family:'Bebas Neue';font-size:15px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">ULTIMOS EVENTOS</div>
+          ${eventRows || '<div style="color:#7aa8c4;font-size:12px;">Nenhum evento ainda.</div>'}
         </div>
       </div>
-      <div style="font-family:'Bebas Neue';font-size:14px;letter-spacing:1px;color:#7aa8c4;margin-bottom:8px;">ÚLTIMOS EVENTOS</div>
-      <div>${eventRows || '<div style="color:#7aa8c4;font-size:12px;">Nenhum evento ainda.</div>'}</div>
     `;
   } catch(e) {
     document.getElementById('admin-content').innerHTML = `<div style="color:#f87171;font-size:13px;">Erro ao carregar: ${e.message}</div>`;

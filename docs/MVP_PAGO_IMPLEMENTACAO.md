@@ -226,6 +226,12 @@ Indicadores minimos:
 - Bloqueios por limite Free.
 - Modalidades mais usadas.
 
+Implementado no MVP inicial:
+- [x] Criar Function backend `admin-dashboard` com service role.
+- [x] Validar Admin no backend por `profiles.role = admin`.
+- [x] Mostrar cards de usuarios, planos, receita estimada, torneios, bloqueios e modalidades.
+- [x] Mostrar usuarios, assinaturas e eventos recentes.
+
 Seguranca:
 - Admin validado por `role = admin`.
 - Regra real no banco/backend, nao apenas `email === ADMIN_EMAIL` no front.
