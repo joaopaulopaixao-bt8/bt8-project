@@ -29,7 +29,113 @@ function isAdminRoute() {
 function openAdminRoute() {
   closeUserMenu();
   if (!isAdminRoute()) window.history.pushState({}, '', '/admin');
-  openAdmin();
+  if (SUPA_USER) openAdmin();
+  else if (typeof showAdminRouteLogin === 'function') showAdminRouteLogin();
+}
+
+function ensureAdminRouteShell() {
+  let shell = document.getElementById('admin-route-shell');
+  if (!shell) {
+    shell = document.createElement('div');
+    shell.id = 'admin-route-shell';
+    shell.style.cssText = 'position:fixed;inset:0;z-index:1450;background:#07111c;display:flex;align-items:center;justify-content:center;padding:20px;overflow:auto;';
+    document.body.appendChild(shell);
+  }
+  shell.style.display = 'flex';
+  return shell;
+}
+
+function adminRouteCard(title, body, actions = '') {
+  return `
+    <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:26px 22px;box-shadow:0 24px 80px rgba(0,0,0,.45);">
+      <div style="font-family:'Bebas Neue';font-size:30px;letter-spacing:2px;color:#3b9fd8;text-align:center;">BT8 ADMIN</div>
+      <div style="font-size:12px;color:#7aa8c4;text-align:center;margin:6px 0 22px;">Acesso exclusivo de administradores</div>
+      <div style="font-family:'Bebas Neue';font-size:20px;letter-spacing:1px;color:#ffd84d;margin-bottom:10px;">${title}</div>
+      <div style="font-size:13px;line-height:1.55;color:#cfe8f5;margin-bottom:18px;">${body}</div>
+      ${actions}
+    </div>
+  `;
+}
+
+function showAdminRouteLoading() {
+  ensureAdminRouteShell().innerHTML = adminRouteCard(
+    'Carregando painel',
+    'Validando sua sessao administrativa...'
+  );
+}
+
+function showAdminRouteLogin() {
+  const shell = ensureAdminRouteShell();
+  const lastEmail = localStorage.getItem('bt8-admin-email') || '';
+  shell.innerHTML = adminRouteCard(
+    'Entrar como Admin',
+    'Use o login da conta marcada como Admin para abrir o painel de controle.',
+    `
+      <label style="display:block;font-size:11px;color:#7aa8c4;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">E-mail</label>
+      <input id="admin-login-email" type="email" autocomplete="email" value="${safeAdminText(lastEmail)}"
+        style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px;margin-bottom:12px;font-size:14px;">
+      <label style="display:block;font-size:11px;color:#7aa8c4;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Senha</label>
+      <input id="admin-login-password" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminRouteLogin()"
+        style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px;margin-bottom:14px;font-size:14px;">
+      <button onclick="adminRouteLogin()"
+        style="width:100%;background:#ffd84d;border:none;border-radius:10px;color:#07111c;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:12px;cursor:pointer;">ENTRAR COMO ADMIN</button>
+      <div id="admin-route-msg" style="min-height:18px;margin-top:12px;font-size:12px;color:#f87171;text-align:center;"></div>
+      <button onclick="window.location.href='/'"
+        style="width:100%;margin-top:8px;background:transparent;border:none;color:#7aa8c4;font-size:12px;cursor:pointer;">Voltar ao app</button>
+    `
+  );
+  const email = document.getElementById('admin-login-email');
+  const password = document.getElementById('admin-login-password');
+  if (lastEmail && password) password.focus();
+  else if (email) email.focus();
+}
+
+async function adminRouteLogin() {
+  const msg = document.getElementById('admin-route-msg');
+  const email = document.getElementById('admin-login-email')?.value.trim();
+  const password = document.getElementById('admin-login-password')?.value;
+  if (msg) msg.textContent = '';
+  if (!email || !password) {
+    if (msg) msg.textContent = 'Informe e-mail e senha.';
+    return;
+  }
+  if (!SUPA) {
+    if (msg) msg.textContent = 'Supabase ainda nao carregou. Tente novamente.';
+    return;
+  }
+  if (msg) {
+    msg.style.color = '#7aa8c4';
+    msg.textContent = 'Validando acesso...';
+  }
+  const { error } = await SUPA.auth.signInWithPassword({ email, password });
+  if (error) {
+    if (msg) {
+      msg.style.color = '#f87171';
+      msg.textContent = error.message || 'Login invalido.';
+    }
+    return;
+  }
+  localStorage.setItem('bt8-admin-email', email);
+  showAdminRouteLoading();
+}
+
+function showAdminRouteDenied() {
+  ensureAdminRouteShell().innerHTML = adminRouteCard(
+    'Acesso restrito',
+    'Esta conta nao esta marcada como Admin. Saia desta conta ou volte para o app normal.',
+    `
+      <button onclick="logoutUser()"
+        style="width:100%;background:#ffd84d;border:none;border-radius:10px;color:#07111c;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:12px;cursor:pointer;">SAIR DA CONTA</button>
+      <button onclick="window.location.href='/'"
+        style="width:100%;margin-top:8px;background:transparent;border:none;color:#7aa8c4;font-size:12px;cursor:pointer;">Voltar ao app</button>
+    `
+  );
+}
+
+function closeAdminModal() {
+  const modal = document.getElementById('admin-modal');
+  if (modal) modal.remove();
+  if (isAdminRoute()) window.location.href = '/';
 }
 
 function buildGuestMenu() {
@@ -433,7 +539,7 @@ async function openAdmin() {
   modal.style.cssText = 'position:fixed;inset:0;z-index:1500;background:rgba(0,0,0,.8);display:flex;align-items:flex-start;justify-content:center;padding:18px;overflow-y:auto;';
   modal.innerHTML = `
     <div style="background:#0d1a27;border:1px solid rgba(26,127,196,.4);border-radius:18px;padding:24px 18px;width:100%;max-width:720px;position:relative;box-shadow:0 20px 70px rgba(0,0,0,.5);">
-      <button onclick="document.getElementById('admin-modal').remove()"
+      <button onclick="closeAdminModal()"
         style="position:absolute;top:14px;right:14px;background:none;border:none;color:#7aa8c4;font-size:20px;cursor:pointer;">✕</button>
       <div style="font-family:'Bebas Neue';font-size:24px;letter-spacing:2px;color:#3b9fd8;margin-bottom:4px;text-align:center;">
         DASHBOARD ADMIN

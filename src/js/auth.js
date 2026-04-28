@@ -27,6 +27,9 @@ function enterApp() {
 // ── SUPABASE INIT ────────────────────────────────────────────
 function initSupabase() {
   try {
+    if (typeof isAdminRoute === 'function' && isAdminRoute() && typeof showAdminRouteLoading === 'function') {
+      showAdminRouteLoading();
+    }
     SUPA = window.supabase.createClient(SUPA_URL, SUPA_KEY);
     SUPA.auth.onAuthStateChange((event, session) => {
       SUPA_USER = session?.user || null;
@@ -51,6 +54,10 @@ function handleAuthStateChange(user) {
     if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
   };
 
+  if (adminRoute && !user) {
+    if (typeof showAdminRouteLogin === 'function') showAdminRouteLogin();
+  }
+
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
   if (user && !adminRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
     enterApp();
@@ -64,13 +71,15 @@ function handleAuthStateChange(user) {
       if (user) buildUserMenu(user);
       updateAdminButton(access);
       if (adminRoute) {
-        if (access?.isAdmin) openAdmin();
-        else if (user) alert('Acesso restrito.');
+        if (access?.isAdmin) {
+          if (typeof showAdminRouteLoading === 'function') showAdminRouteLoading();
+          openAdmin();
+        } else if (user && typeof showAdminRouteDenied === 'function') {
+          showAdminRouteDenied();
+        }
       }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
-  } else if (adminRoute && !user) {
-    openAuthModal('login');
   }
 
   // Mostrar/ocultar botão admin

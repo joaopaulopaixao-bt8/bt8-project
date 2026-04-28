@@ -233,6 +233,7 @@ Implementado no MVP inicial:
 - [x] Limpar assinaturas Stripe/Supabase vinculadas ao Admin ao abrir o dashboard.
 - [x] Mostrar cards de usuarios, planos, receita estimada, torneios, bloqueios e modalidades.
 - [x] Criar abas de controle para visao geral, usuarios, assinaturas, torneios e eventos.
+- [x] Criar rota `/admin` com tela propria de login Admin, sem exibir a landing.
 
 Seguranca:
 - Admin validado por `role = admin`.
