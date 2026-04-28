@@ -122,6 +122,16 @@ const trackEvent = async (supabaseUrl, serviceKey, event) => {
   }).catch(() => {});
 };
 
+const subscriptionMetadata = (subscription) => ({
+  cancel_at_period_end: !!subscription.cancel_at_period_end,
+  billing_cycle_anchor: subscription.billing_cycle_anchor ? new Date(subscription.billing_cycle_anchor * 1000).toISOString() : null,
+  cancel_at: subscription.cancel_at ? new Date(subscription.cancel_at * 1000).toISOString() : null,
+  canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
+  trial_end: subscription.trial_end ? new Date(subscription.trial_end * 1000).toISOString() : null,
+  previous_plan_type: subscription.metadata?.previous_plan_type || null,
+  scheduled_from_30d_until: subscription.metadata?.scheduled_from_30d_until || null
+});
+
 exports.handler = async (event) => {
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
 
@@ -165,18 +175,20 @@ exports.handler = async (event) => {
       if (!userId) throw new Error('Missing user_id on checkout session.');
 
       let proUntil = null;
+      let subscriptionDetails = null;
       if (planType === 'one_time_30d') {
         proUntil = addDays(new Date(), 30).toISOString();
       } else if (object.subscription) {
-        const subscription = await stripeGet(stripeKey, `subscriptions/${object.subscription}?expand[]=items.data.price`);
-        proUntil = findPeriodEnd(subscription);
+        subscriptionDetails = await stripeGet(stripeKey, `subscriptions/${object.subscription}?expand[]=items.data.price`);
+        proUntil = findPeriodEnd(subscriptionDetails);
       }
+      const nextStatus = subscriptionDetails?.status || object.payment_status || 'active';
 
       await updateProfilePlan(supabaseUrl, serviceKey, userId, {
         plan: 'pro',
         pro_until: proUntil,
         stripe_customer_id: object.customer,
-        subscription_status: object.payment_status || 'active'
+        subscription_status: nextStatus
       });
 
       await upsertSubscription(supabaseUrl, serviceKey, {
@@ -185,10 +197,15 @@ exports.handler = async (event) => {
         stripe_subscription_id: object.subscription || null,
         stripe_payment_intent_id: object.payment_intent || null,
         plan_type: planType,
-        status: object.payment_status || 'completed',
-        price_id: object.metadata?.price_id || null,
+        status: nextStatus,
+        price_id: subscriptionDetails?.items?.data?.[0]?.price?.id || object.metadata?.price_id || null,
         current_period_end: proUntil,
-        metadata: { checkout_session_id: object.id, event_id: stripeEvent.id }
+        metadata: {
+          ...(subscriptionDetails ? subscriptionMetadata(subscriptionDetails) : {}),
+          checkout_session_id: object.id,
+          event_id: stripeEvent.id,
+          plan_type: planType
+        }
       });
 
       await trackEvent(supabaseUrl, serviceKey, {
@@ -212,15 +229,31 @@ exports.handler = async (event) => {
           subscription = await stripeGet(stripeKey, `subscriptions/${subscription.id}?expand[]=items.data.price`);
         }
         const proUntil = findPeriodEnd(subscription);
+        const cancelAtPeriodEnd = !!subscription.cancel_at_period_end;
+        const nextStatus = isDeleted
+          ? 'canceled'
+          : cancelAtPeriodEnd
+            ? 'cancel_at_period_end'
+            : subscription.status;
         await updateProfilePlan(supabaseUrl, serviceKey, userId, {
           plan: isDeleted ? 'free' : 'pro',
           pro_until: isDeleted ? null : proUntil,
-          subscription_status: subscription.status
+          subscription_status: nextStatus
+        });
+        await upsertSubscription(supabaseUrl, serviceKey, {
+          user_id: userId,
+          stripe_customer_id: subscription.customer,
+          stripe_subscription_id: subscription.id,
+          plan_type: 'recurring',
+          status: nextStatus,
+          price_id: subscription.items?.data?.[0]?.price?.id || null,
+          current_period_end: isDeleted ? null : proUntil,
+          metadata: { ...subscriptionMetadata(subscription), event_id: stripeEvent.id }
         });
         await trackEvent(supabaseUrl, serviceKey, {
           user_id: userId,
           event_type: isDeleted ? 'subscription_cancelled' : 'subscription_updated',
-          metadata: { status: subscription.status, subscription_id: subscription.id }
+          metadata: { status: nextStatus, subscription_id: subscription.id, cancel_at_period_end: cancelAtPeriodEnd }
         });
       }
     }

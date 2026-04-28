@@ -47,6 +47,7 @@ Nao implementar regras de pagamento direto na `main`. Todo o MVP pago nasce na b
 - R$ 6,90/mes.
 - Recorrencia mensal.
 - Pode cancelar quando quiser.
+- Ao cancelar, para apenas a proxima cobranca e mantem Pro ativo ate o fim do periodo pago.
 - Historico completo.
 - Torneios ilimitados.
 
@@ -54,6 +55,7 @@ Nao implementar regras de pagamento direto na `main`. Todo o MVP pago nasce na b
 - R$ 14,90.
 - Pagamento unico.
 - Libera Pro por 30 dias.
+- Pode assinar o mensal antes do vencimento; a primeira cobranca mensal fica agendada para o fim dos 30 dias.
 - Depois volta automaticamente para Free.
 - Historico criado durante o periodo Pro continua salvo.
 
@@ -166,6 +168,8 @@ Produtos Stripe teste:
 Tarefas:
 - [ ] Criar produtos/precos no Stripe test.
 - [x] Criar funcao backend para iniciar checkout.
+- [x] Agendar mensalidade apos vencimento do Pro 30 dias usando `billing_cycle_anchor` ate `pro_until`.
+- [x] Criar funcao backend para cancelar recorrencia mensal no fim do periodo.
 - [x] Criar webhook Stripe.
 - [x] Validar eventos:
   - `checkout.session.completed`
@@ -239,7 +243,8 @@ Cenarios obrigatorios:
 - [ ] Free bate limite e ve upgrade.
 - [ ] Free assina Pro recorrente em modo teste.
 - [ ] Free compra Pro 30 dias em modo teste.
-- [ ] Pro recorrente cancela.
+- [ ] Pro 30 dias agenda Pro mensal antes do vencimento, com cobranca so no vencimento.
+- [ ] Pro recorrente cancela recorrencia e continua Pro ate o fim do periodo.
 - [ ] Pro 30 dias expira.
 - [ ] Historico Pro continua salvo apos expirar.
 - [ ] Usuario comum nao acessa Admin.

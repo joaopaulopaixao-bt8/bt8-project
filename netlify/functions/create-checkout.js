@@ -10,13 +10,16 @@ const json = (statusCode, body) => ({
 });
 
 const stripeRequest = async (secretKey, path, params) => {
+  const cleanParams = Object.fromEntries(
+    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
+  );
   const res = await fetch(`https://api.stripe.com/v1/${path}`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${secretKey}`,
       'content-type': 'application/x-www-form-urlencoded'
     },
-    body: new URLSearchParams(params)
+    body: new URLSearchParams(cleanParams)
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
@@ -87,7 +90,7 @@ exports.handler = async (event) => {
     const profiles = await supabaseFetch(
       supabaseUrl,
       serviceKey,
-      `rest/v1/profiles?select=id,email,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
+      `rest/v1/profiles?select=id,email,plan,pro_until,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
     );
     const profile = profiles?.[0] || {};
     let customerId = profile.stripe_customer_id;
@@ -106,7 +109,27 @@ exports.handler = async (event) => {
     }
 
     const isMonthly = plan === 'pro_monthly';
-    const session = await stripeRequest(stripeKey, 'checkout/sessions', {
+    const latestRows = await supabaseFetch(
+      supabaseUrl,
+      serviceKey,
+      `rest/v1/subscriptions?select=plan_type,status,current_period_end,stripe_subscription_id,metadata&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=1`
+    ).catch(() => []);
+    const latest = latestRows?.[0] || null;
+    const proUntil = profile.pro_until ? new Date(profile.pro_until) : null;
+    const activeUntil = proUntil && proUntil.getTime() > Date.now() ? proUntil : null;
+    const isActive30d = latest?.plan_type === 'one_time_30d' && activeUntil;
+    const alreadyRecurring = latest?.plan_type === 'recurring'
+      && latest?.stripe_subscription_id
+      && !latest?.metadata?.cancel_at_period_end
+      && ['active', 'trialing', 'past_due', 'unpaid'].includes(latest.status);
+    if (isMonthly && alreadyRecurring) {
+      return json(409, { error: 'Esta conta ja tem uma assinatura mensal ativa.' });
+    }
+
+    const billingAnchor = isMonthly && isActive30d
+      ? Math.floor(activeUntil.getTime() / 1000)
+      : null;
+    const sessionParams = {
       mode: isMonthly ? 'subscription' : 'payment',
       customer: customerId,
       client_reference_id: userId,
@@ -116,7 +139,19 @@ exports.handler = async (event) => {
       cancel_url: `${origin}?checkout=cancelled`,
       'metadata[user_id]': userId,
       'metadata[plan_type]': isMonthly ? 'recurring' : 'one_time_30d'
-    });
+    };
+    if (isMonthly) {
+      sessionParams['subscription_data[metadata][user_id]'] = userId;
+      sessionParams['subscription_data[metadata][plan_type]'] = 'recurring';
+      if (billingAnchor) {
+        sessionParams['subscription_data[billing_cycle_anchor]'] = String(billingAnchor);
+        sessionParams['subscription_data[proration_behavior]'] = 'none';
+        sessionParams['subscription_data[metadata][previous_plan_type]'] = 'one_time_30d';
+        sessionParams['subscription_data[metadata][scheduled_from_30d_until]'] = activeUntil.toISOString();
+      }
+    }
+
+    const session = await stripeRequest(stripeKey, 'checkout/sessions', sessionParams);
 
     await supabaseFetch(supabaseUrl, serviceKey, 'rest/v1/subscriptions', {
       method: 'POST',
@@ -127,7 +162,12 @@ exports.handler = async (event) => {
         plan_type: isMonthly ? 'recurring' : 'one_time_30d',
         status: 'checkout_started',
         price_id: isMonthly ? monthlyPrice : thirtyDayPrice,
-        metadata: { checkout_session_id: session.id }
+        current_period_end: billingAnchor ? activeUntil.toISOString() : null,
+        metadata: {
+          checkout_session_id: session.id,
+          billing_cycle_anchor: billingAnchor,
+          previous_plan_type: billingAnchor ? 'one_time_30d' : null
+        }
       })
     }).catch(() => {});
 
