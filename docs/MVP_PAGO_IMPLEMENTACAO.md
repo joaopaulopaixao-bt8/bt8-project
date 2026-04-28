@@ -64,6 +64,8 @@ Objetivo: preparar a branch e o ambiente de testes sem afetar producao.
 Tarefas:
 - [x] Criar branch `mvp-pago` no GitHub.
 - [x] Fazer checkout local da branch `mvp-pago`.
+- [x] Separar configuracao publica de ambiente em `src/js/env.js`.
+- [x] Fazer o build do Netlify gerar `dist/js/env.js` com variaveis da branch.
 - [ ] Confirmar Deploy Preview da branch no Netlify.
 - [ ] Criar ou escolher projeto Supabase de staging.
 - [ ] Configurar Stripe em modo teste.
@@ -260,9 +262,10 @@ Plano de volta:
 ## Variaveis previstas
 
 Frontend publico:
-- `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `STRIPE_PUBLISHABLE_KEY`, se necessario no front.
+- `BT8_APP_ENV`
+- `BT8_SUPABASE_URL`
+- `BT8_SUPABASE_ANON_KEY`
+- `BT8_STRIPE_PUBLISHABLE_KEY`, se necessario no front.
 
 Backend / Netlify Functions / Edge Functions:
 - `SUPABASE_SERVICE_ROLE_KEY`
