@@ -4,7 +4,16 @@
 
 async function saveTournament() {
   if (!SUPA || !SUPA_USER || !APP.mode) return;
+  if (APP._savedCurrentTournament) return;
   try {
+    if (typeof validateFreeSaveLimit === 'function') {
+      const limitInfo = await validateFreeSaveLimit();
+      if (!limitInfo.allowed) {
+        showFreeLimitReached(limitInfo);
+        return;
+      }
+    }
+
     const standings = getStandings();
     const title = MODE_INFO[APP.mode].label + ' · ' + new Date().toLocaleDateString('pt-BR');
     const { error } = await SUPA.from('tournaments').insert({
@@ -20,6 +29,7 @@ async function saveTournament() {
       }
     });
     if (error) throw error;
+    APP._savedCurrentTournament = true;
     const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent(access?.isPro ? 'pro_tournament_saved' : 'free_tournament_saved', {
       format: APP.mode || '',

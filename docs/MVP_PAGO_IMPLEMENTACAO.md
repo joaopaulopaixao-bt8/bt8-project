@@ -22,7 +22,7 @@ Nao implementar regras de pagamento direto na `main`. Todo o MVP pago nasce na b
 
 - Visitante sem login pode gerar 1 torneio por mes.
 - No segundo torneio sem login, deve ser convidado a entrar no plano Free.
-- Usuario Free logado pode salvar historico limitado.
+- Usuario Free logado pode salvar historico limitado: 3 torneios por mes no staging.
 - Usuario Pro recorrente paga R$ 6,90/mes.
 - Usuario Pro 30 dias paga R$ 14,90 uma unica vez e volta para Free depois de 30 dias.
 - Historico nunca e apagado quando o Pro expira; apenas fica com acesso limitado ate reativar o Pro.
@@ -115,8 +115,8 @@ Tarefas:
 - [x] Antes de gerar torneio sem login, validar se ainda pode usar o teste mensal.
 - [ ] Ao bloquear visitante, mostrar mensagem:
   - "Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8."
-- [ ] Aplicar limite Free logado no salvamento/historico.
-- [ ] Criar mensagens de upgrade para Free.
+- [x] Aplicar limite Free logado no salvamento/historico.
+- [x] Criar mensagens de upgrade para Free.
 
 Entrega:
 - Visitante limitado a 1 torneio por mes.

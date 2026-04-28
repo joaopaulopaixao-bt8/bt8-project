@@ -60,6 +60,7 @@ const APP = {
   history: ['screen-landing'],
   tourneyClosed: false,
   isGuest: false,
+  _savedCurrentTournament: false,
 };
 
 // ── NAVIGATION ──────────────────────────────────────────

@@ -459,6 +459,7 @@ async function gerarTorneio() {
   }
 
   // Etapa 3: rastrear criação de torneio
+  APP._savedCurrentTournament = false;
   try {
     const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent('tournament_created', {

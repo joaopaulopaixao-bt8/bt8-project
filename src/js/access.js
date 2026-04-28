@@ -9,6 +9,7 @@ const BT8_ACCESS = {
   proExpired: false,
   proUntil: null
 };
+const FREE_MONTHLY_TOURNAMENT_LIMIT = 3;
 
 function normalizeAccess(profile, user) {
   const now = Date.now();
@@ -82,4 +83,61 @@ function showGuestLimitReached() {
   trackEvent('guest_limit_reached', { source: 'frontend' });
   alert('Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8.');
   openAuthModal('signup');
+}
+
+function monthStartIso() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+}
+
+async function validateFreeSaveLimit() {
+  const access = await refreshAccess(SUPA_USER);
+  if (!SUPA || !SUPA_USER || access.isPro || access.isAdmin) {
+    return { allowed: true, limit: null, used: 0 };
+  }
+
+  const { count, error } = await SUPA
+    .from('tournaments')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', SUPA_USER.id)
+    .gte('created_at', monthStartIso());
+
+  if (error) throw error;
+
+  const used = count || 0;
+  return {
+    allowed: used < FREE_MONTHLY_TOURNAMENT_LIMIT,
+    used,
+    limit: FREE_MONTHLY_TOURNAMENT_LIMIT
+  };
+}
+
+function showFreeLimitReached(limitInfo) {
+  trackEvent('free_limit_reached', {
+    used: limitInfo?.used || FREE_MONTHLY_TOURNAMENT_LIMIT,
+    limit: limitInfo?.limit || FREE_MONTHLY_TOURNAMENT_LIMIT
+  });
+
+  const existing = document.getElementById('upgrade-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'upgrade-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1600;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
+      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">LIMITE FREE ATINGIDO</div>
+      <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
+        Seu plano Free salva até ${FREE_MONTHLY_TOURNAMENT_LIMIT} torneios por mês. O histórico já criado continua guardado. Para salvar torneios ilimitados, ative o BT8 Pro.
+      </div>
+      <button onclick="trackEvent('upgrade_clicked',{source:'free_limit_modal'});document.getElementById('upgrade-modal').remove();alert('Checkout Pro entra na próxima etapa do MVP.');"
+        style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
+        QUERO O BT8 PRO
+      </button>
+      <button onclick="document.getElementById('upgrade-modal').remove()"
+        style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
+        AGORA NAO
+      </button>
+    </div>`;
+  document.body.appendChild(modal);
 }
