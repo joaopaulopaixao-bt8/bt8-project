@@ -27,6 +27,19 @@ BT8_STRIPE_PUBLISHABLE_KEY=pk_test_...
 
 Essas variaveis viram `dist/js/env.js` durante o build. Elas sao publicas no navegador.
 
+O `netlify.toml` tambem declara essas variaveis para `branch-deploy` e para a branch especifica `mvp-pago`, como redundancia. Depois de qualquer ajuste, confirmar no navegador:
+
+```text
+https://mvp-pago--bt8torneio.netlify.app/js/env.js
+```
+
+O arquivo precisa mostrar:
+
+```text
+APP_ENV: staging
+SUPABASE_URL: https://srrbnjgixizsjxobvsma.supabase.co
+```
+
 ### Variaveis secretas futuras
 
 Ainda nao usadas nesta etapa, mas serao necessarias quando criarmos as Netlify Functions:

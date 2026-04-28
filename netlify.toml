@@ -2,7 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
-[context.mvp-pago.environment]
+[context.branch-deploy.environment]
+  BT8_APP_ENV = "staging"
+  BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"
+  BT8_SUPABASE_ANON_KEY = "sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl"
+
+[context."mvp-pago".environment]
   BT8_APP_ENV = "staging"
   BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"
   BT8_SUPABASE_ANON_KEY = "sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl"

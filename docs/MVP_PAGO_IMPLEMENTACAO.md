@@ -67,6 +67,7 @@ Tarefas:
 - [x] Separar configuracao publica de ambiente em `src/js/env.js`.
 - [x] Fazer o build do Netlify gerar `dist/js/env.js` com variaveis da branch.
 - [x] Criar guia manual de configuracao em `docs/STAGING_SETUP.md`.
+- [x] Forcar contexto `branch-deploy` e branch `mvp-pago` para usar Supabase staging.
 - [ ] Confirmar Deploy Preview da branch no Netlify.
 - [x] Criar ou escolher projeto Supabase de staging.
 - [ ] Configurar Stripe em modo teste.
