@@ -166,14 +166,14 @@ Produtos Stripe teste:
 Tarefas:
 - [ ] Criar produtos/precos no Stripe test.
 - [x] Criar funcao backend para iniciar checkout.
-- [ ] Criar webhook Stripe.
+- [x] Criar webhook Stripe.
 - [ ] Validar eventos:
   - `checkout.session.completed`
   - `customer.subscription.updated`
   - `customer.subscription.deleted`
   - `invoice.payment_succeeded`
   - `invoice.payment_failed`
-- [ ] Atualizar Supabase somente via webhook/backend.
+- [x] Atualizar Supabase somente via webhook/backend.
 - [ ] Nunca ativar Pro diretamente no front.
 
 Entrega:

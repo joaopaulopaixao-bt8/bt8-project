@@ -72,6 +72,27 @@ BT8_STRIPE_PRO_MONTHLY_PRICE_ID=price_...
 BT8_STRIPE_PRO_30D_PRICE_ID=price_...
 ```
 
+Depois de publicar a Function `stripe-webhook`, crie um endpoint webhook no Stripe test:
+
+```text
+https://mvp-pago--bt8torneio.netlify.app/.netlify/functions/stripe-webhook
+```
+
+Eventos iniciais:
+
+```text
+checkout.session.completed
+customer.subscription.updated
+customer.subscription.deleted
+invoice.payment_failed
+```
+
+Copie o signing secret `whsec_...` e configure no Netlify, escopo **Functions**:
+
+```text
+BT8_STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
 ### O que voce precisa me mandar do Netlify
 
 - URL do deploy da branch `mvp-pago`.

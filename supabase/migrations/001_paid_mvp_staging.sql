@@ -78,6 +78,12 @@ create index if not exists profiles_plan_idx on public.profiles(plan);
 create index if not exists profiles_role_idx on public.profiles(role);
 create index if not exists tournaments_user_created_idx on public.tournaments(user_id, created_at desc);
 create index if not exists subscriptions_user_status_idx on public.subscriptions(user_id, status);
+create unique index if not exists subscriptions_stripe_subscription_uidx
+on public.subscriptions(stripe_subscription_id)
+where stripe_subscription_id is not null;
+create unique index if not exists subscriptions_stripe_payment_intent_uidx
+on public.subscriptions(stripe_payment_intent_id)
+where stripe_payment_intent_id is not null;
 create index if not exists guest_usage_month_idx on public.guest_usage(month_key);
 create unique index if not exists guest_usage_identity_idx
 on public.guest_usage (
