@@ -96,6 +96,7 @@ Tarefas:
   - `updated_at`
 - [ ] Criar tabela `subscriptions`.
 - [ ] Criar tabela `app_events` ou padronizar a tabela `events` atual.
+- [x] Criar SQL versionado da Sprint 1 em `supabase/migrations/001_paid_mvp_staging.sql`.
 - [ ] Criar funcao central no front para calcular acesso: visitante, Free, Pro ativo, Pro expirado e Admin.
 
 Entrega:
