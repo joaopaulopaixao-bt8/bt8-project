@@ -10,6 +10,7 @@ function buildUserMenu(user) {
     <div class="user-menu-name">${name}</div>
     <div class="user-menu-email">${user.email}</div>
     <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
+    <div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">⭐ &nbsp;Planos BT8 Pro</div>
     <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">🎾 &nbsp;Meus Torneios</div>
     <div class="user-menu-item" id="admin-menu-btn" onclick="openAdmin()" style="display:none;">⚙️ &nbsp;Admin</div>
     <div class="user-menu-item danger" onclick="logoutUser()">↩ &nbsp;Sair</div>

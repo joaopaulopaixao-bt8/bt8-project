@@ -1,0 +1,138 @@
+const json = (statusCode, body) => ({
+  statusCode,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'POST, OPTIONS',
+    'access-control-allow-headers': 'content-type, authorization'
+  },
+  body: JSON.stringify(body)
+});
+
+const stripeRequest = async (secretKey, path, params) => {
+  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${secretKey}`,
+      'content-type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams(params)
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
+  return data;
+};
+
+const supabaseFetch = async (url, key, path, options = {}) => {
+  const res = await fetch(`${url}/${path}`, {
+    ...options,
+    headers: {
+      apikey: key,
+      authorization: options.authorization || `Bearer ${key}`,
+      'content-type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const message = data?.message || data?.error_description || text || `Supabase ${res.status}`;
+    throw new Error(message);
+  }
+  return data;
+};
+
+exports.handler = async (event) => {
+  if (event.httpMethod === 'OPTIONS') return json(204, {});
+  if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
+
+  const supabaseUrl = process.env.BT8_SUPABASE_URL || process.env.SUPABASE_URL;
+  const serviceKey = process.env.BT8_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const stripeKey = process.env.BT8_STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
+  const monthlyPrice = process.env.BT8_STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_PRO_MONTHLY_PRICE_ID;
+  const thirtyDayPrice = process.env.BT8_STRIPE_PRO_30D_PRICE_ID || process.env.STRIPE_PRO_30D_PRICE_ID;
+
+  const missing = [
+    !supabaseUrl ? 'BT8_SUPABASE_URL' : null,
+    !serviceKey ? 'BT8_SUPABASE_SERVICE_ROLE_KEY' : null,
+    !stripeKey ? 'BT8_STRIPE_SECRET_KEY' : null,
+    !monthlyPrice ? 'BT8_STRIPE_PRO_MONTHLY_PRICE_ID' : null,
+    !thirtyDayPrice ? 'BT8_STRIPE_PRO_30D_PRICE_ID' : null
+  ].filter(Boolean);
+  if (missing.length) return json(500, { error: 'Checkout service is not configured.', missing });
+
+  let body = {};
+  try {
+    body = JSON.parse(event.body || '{}');
+  } catch (e) {
+    return json(400, { error: 'Invalid JSON body.' });
+  }
+
+  const plan = body.plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
+  const origin = String(body.origin || event.headers.origin || '').replace(/\/$/, '');
+  if (!origin) return json(400, { error: 'origin is required.' });
+
+  const token = (event.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  if (!token) return json(401, { error: 'Login required.' });
+
+  try {
+    const authUser = await supabaseFetch(supabaseUrl, serviceKey, 'auth/v1/user', {
+      method: 'GET',
+      authorization: `Bearer ${token}`
+    });
+    const userId = authUser?.id;
+    const email = authUser?.email;
+    if (!userId || !email) return json(401, { error: 'Invalid session.' });
+
+    const profiles = await supabaseFetch(
+      supabaseUrl,
+      serviceKey,
+      `rest/v1/profiles?select=id,email,stripe_customer_id&id=eq.${encodeURIComponent(userId)}&limit=1`
+    );
+    const profile = profiles?.[0] || {};
+    let customerId = profile.stripe_customer_id;
+
+    if (!customerId) {
+      const customer = await stripeRequest(stripeKey, 'customers', {
+        email,
+        'metadata[user_id]': userId
+      });
+      customerId = customer.id;
+      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({ stripe_customer_id: customerId, email })
+      });
+    }
+
+    const isMonthly = plan === 'pro_monthly';
+    const session = await stripeRequest(stripeKey, 'checkout/sessions', {
+      mode: isMonthly ? 'subscription' : 'payment',
+      customer: customerId,
+      client_reference_id: userId,
+      'line_items[0][price]': isMonthly ? monthlyPrice : thirtyDayPrice,
+      'line_items[0][quantity]': '1',
+      success_url: `${origin}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}?checkout=cancelled`,
+      'metadata[user_id]': userId,
+      'metadata[plan_type]': isMonthly ? 'recurring' : 'one_time_30d'
+    });
+
+    await supabaseFetch(supabaseUrl, serviceKey, 'rest/v1/subscriptions', {
+      method: 'POST',
+      headers: { prefer: 'return=minimal' },
+      body: JSON.stringify({
+        user_id: userId,
+        stripe_customer_id: customerId,
+        plan_type: isMonthly ? 'recurring' : 'one_time_30d',
+        status: 'checkout_started',
+        price_id: isMonthly ? monthlyPrice : thirtyDayPrice,
+        metadata: { checkout_session_id: session.id }
+      })
+    }).catch(() => {});
+
+    return json(200, { url: session.url, session_id: session.id });
+  } catch (e) {
+    return json(500, { error: e.message || 'Checkout failed.' });
+  }
+};

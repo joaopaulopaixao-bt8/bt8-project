@@ -165,7 +165,7 @@ Produtos Stripe teste:
 
 Tarefas:
 - [ ] Criar produtos/precos no Stripe test.
-- [ ] Criar funcao backend para iniciar checkout.
+- [x] Criar funcao backend para iniciar checkout.
 - [ ] Criar webhook Stripe.
 - [ ] Validar eventos:
   - `checkout.session.completed`
@@ -185,7 +185,7 @@ Entrega:
 Objetivo: fazer o usuario entender o valor do Pro no momento certo.
 
 Tarefas:
-- [ ] Criar tela/modal de planos.
+- [x] Criar tela/modal de planos.
 - [ ] Adicionar CTA para Pro no limite de visitante.
 - [ ] Adicionar CTA para Pro no limite Free.
 - [ ] Adicionar aviso para Pro expirado.
