@@ -78,6 +78,7 @@ function currentAccess() {
 
 function accessLabel(access) {
   if (!access || access.isGuest) return 'Visitante';
+  if (access.proExpired) return 'Pro expirado';
   if (access.isPro && access.planType === 'one_time_30d') return 'Pro 30 Dias';
   if (access.isPro && access.planType === 'recurring') return 'Pro Mensal';
   if (access.isPro) return 'Pro';
@@ -92,6 +93,7 @@ function formatPlanDate(date) {
 
 function planDescription(access) {
   if (!access || access.isGuest) return 'Teste sem cadastro';
+  if (access.proExpired) return 'Historico preservado. Reative o Pro para salvar sem limite';
   if (access.isPro && access.planType === 'recurring') {
     if (access.cancelAtPeriodEnd) {
       return access.proUntil ? `Cancelado, valido ate ${formatPlanDate(access.proUntil)}` : 'Cancelado para o fim do ciclo';
@@ -214,8 +216,58 @@ async function validateGuestTournamentLimit() {
 
 function showGuestLimitReached() {
   trackEvent('guest_limit_reached', { source: 'frontend' });
-  alert('Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8.');
-  openAuthModal('signup');
+  const existing = document.getElementById('guest-limit-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'guest-limit-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1600;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
+      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">TESTE GRATIS USADO</div>
+      <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
+        Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8.
+      </div>
+      <button onclick="trackEvent('signup_started',{source:'guest_limit_modal'});document.getElementById('guest-limit-modal').remove();openAuthModal('signup');"
+        style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
+        CRIAR CONTA GRATIS
+      </button>
+      <button onclick="document.getElementById('guest-limit-modal').remove();openAuthModal('login');"
+        style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
+        JA TENHO CONTA
+      </button>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+function showProExpiredNotice(access) {
+  if (!access?.proExpired || !SUPA_USER) return;
+  const key = `bt8_pro_expired_notice_${SUPA_USER.id}_${access.proUntil?.toISOString?.() || 'no_date'}`;
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, '1');
+  trackEvent('pro_expired', { pro_until: access.proUntil?.toISOString?.() || null });
+
+  const existing = document.getElementById('pro-expired-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'pro-expired-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1600;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(244,192,38,.38);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
+      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">PRO EXPIRADO</div>
+      <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
+        Seu historico continua guardado. Para voltar a salvar torneios sem limite, reative o BT8 Pro.
+      </div>
+      <button onclick="trackEvent('upgrade_clicked',{source:'pro_expired_modal'});document.getElementById('pro-expired-modal').remove();openPlansModal();"
+        style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
+        REATIVAR PRO
+      </button>
+      <button onclick="document.getElementById('pro-expired-modal').remove()"
+        style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
+        AGORA NAO
+      </button>
+    </div>`;
+  document.body.appendChild(modal);
 }
 
 function monthStartIso() {

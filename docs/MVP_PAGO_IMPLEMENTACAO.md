@@ -115,7 +115,7 @@ Tarefas:
 - [x] Identificar visitante por `guest_id` local + hash de IP + hash de user agent.
 - [x] Nao armazenar IP puro.
 - [x] Antes de gerar torneio sem login, validar se ainda pode usar o teste mensal.
-- [ ] Ao bloquear visitante, mostrar mensagem:
+- [x] Ao bloquear visitante, mostrar mensagem:
   - "Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8."
 - [x] Aplicar limite Free logado no salvamento/historico.
 - [x] Criar mensagens de upgrade para Free.
@@ -150,7 +150,8 @@ Eventos minimos:
 Tarefas:
 - [x] Padronizar `trackEvent`.
 - [x] Registrar eventos iniciais de visitante, Free e Pro.
-- [ ] Registrar modalidade e quantidade de participantes quando criar torneio.
+- [x] Registrar eventos de cadastro e login por e-mail.
+- [x] Registrar modalidade e quantidade de participantes quando criar torneio.
 - [x] Registrar finalizacao de torneio.
 - [x] Registrar download/compartilhamento do ranking.
 
@@ -191,11 +192,11 @@ Objetivo: fazer o usuario entender o valor do Pro no momento certo.
 Tarefas:
 - [x] Criar tela/modal de planos.
 - [x] Exibir plano atual no menu, Meu Perfil e modal de planos.
-- [ ] Adicionar CTA para Pro no limite de visitante.
+- [x] Adicionar CTA para Pro/no cadastro no limite de visitante.
 - [x] Adicionar CTA para Pro no limite Free.
-- [ ] Adicionar aviso para Pro expirado.
+- [x] Adicionar aviso para Pro expirado.
 - [ ] Ajustar landing com secao de precos.
-- [ ] Explicar que o historico nao e perdido quando o Pro expira.
+- [x] Explicar que o historico nao e perdido quando o Pro expira.
 
 Entrega:
 - Fluxo comercial completo dentro do app.

@@ -60,6 +60,7 @@ function handleAuthStateChange(user) {
     refreshAccess(user).then(access => {
       updateAdminButton(access);
       if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
+      if (typeof showProExpiredNotice === 'function') showProExpiredNotice(access);
       if (user) buildUserMenu(user);
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
@@ -197,6 +198,7 @@ async function doLogin() {
     const { error } = await SUPA.auth.signInWithPassword({ email, password: pw });
     // Navegação tratada pelo handleAuthStateChange via onAuthStateChange
     if (error) showAuthMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
+    else if (typeof trackEvent === 'function') trackEvent('login_completed', { provider: 'email' });
   } catch(e) { showAuthMsg('Erro ao conectar', 'error'); }
   if (btn) { btn.disabled = false; btn.textContent = 'ENTRAR'; }
 }
@@ -212,6 +214,7 @@ async function doSignup() {
   const btn = document.querySelector('#form-signup .btn-auth-submit');
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
   try {
+    if (typeof trackEvent === 'function') trackEvent('signup_started', { provider: 'email' });
     const { data, error } = await SUPA.auth.signUp({
       email, password: pw,
       options: { data: { full_name: name } }
@@ -222,6 +225,7 @@ async function doSignup() {
       setTimeout(() => switchAuthTab('login'), 2000);
     } else {
       showAuthMsg('Conta criada! Verifique seu e-mail para confirmar.', 'success');
+      if (typeof trackEvent === 'function') trackEvent('signup_completed', { provider: 'email' });
     }
   } catch(e) { showAuthMsg('Erro ao criar conta', 'error'); }
   if (btn) { btn.disabled = false; btn.textContent = 'CADASTRAR'; }
