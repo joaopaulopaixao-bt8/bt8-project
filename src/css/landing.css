@@ -601,6 +601,90 @@
   line-height: 1.4;
 }
 
+/* ── PRICING ─────────────────────────────── */
+.lprice-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+.lprice-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+}
+.lprice-card.featured {
+  border-color: rgba(244,192,38,0.44);
+  background: linear-gradient(135deg, rgba(244,192,38,0.10), rgba(26,127,196,0.12));
+}
+.lprice-kicker {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--blue-l);
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+}
+.lprice-card.featured .lprice-kicker { color: var(--yellow); }
+.lprice-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 34px;
+  color: var(--white);
+  letter-spacing: 1px;
+  margin-top: 6px;
+}
+.lprice-value span {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
+  color: var(--muted2);
+  letter-spacing: .6px;
+  margin-left: 4px;
+}
+.lprice-desc {
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  color: var(--muted2);
+  line-height: 1.45;
+  margin: 4px 0 12px;
+}
+.lprice-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.lprice-list li {
+  font-family: 'Barlow', sans-serif;
+  font-size: 13px;
+  color: var(--white);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.lprice-list li::before {
+  content: '✓';
+  color: var(--yellow);
+  font-weight: 800;
+}
+.lprice-btn {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--yellow);
+  color: #0a0a0a;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 1.4px;
+  cursor: pointer;
+}
+.lprice-btn.secondary {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border2);
+  color: var(--white);
+}
+
 /* ── CTA FINAL ───────────────────────────── */
 .lctafinal {
   position: relative;
@@ -745,6 +829,7 @@
   .lsec { padding: 40px 48px 64px; max-width: 700px; margin: 0 auto; }
   .lctafinal { padding: 96px 48px 120px; min-height: 500px; }
   .lfeat-grid { gap: 14px; }
+  .lprice-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .lsteps { flex-direction: row; flex-wrap: wrap; }
   .lstep { flex: 1; min-width: 180px; }
   .lsticky {

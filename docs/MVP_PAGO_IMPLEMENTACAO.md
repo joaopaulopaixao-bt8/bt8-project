@@ -70,11 +70,11 @@ Tarefas:
 - [x] Fazer o build do Netlify gerar `dist/js/env.js` com variaveis da branch.
 - [x] Criar guia manual de configuracao em `docs/STAGING_SETUP.md`.
 - [x] Forcar contexto `branch-deploy` e branch `mvp-pago` para usar Supabase staging.
-- [ ] Confirmar Deploy Preview da branch no Netlify.
+- [x] Confirmar Deploy Preview/site de staging da branch no Netlify.
 - [x] Criar ou escolher projeto Supabase de staging.
-- [ ] Configurar Stripe em modo teste.
-- [ ] Levantar variaveis necessarias de ambiente.
-- [ ] Validar build atual da branch antes de qualquer mudanca funcional.
+- [x] Configurar Stripe em modo teste.
+- [x] Levantar variaveis necessarias de ambiente.
+- [x] Validar build atual da branch.
 
 Entrega:
 - Branch de trabalho pronta.
@@ -86,17 +86,17 @@ Entrega:
 Objetivo: garantir que permissao e plano nao dependam apenas do JavaScript publico.
 
 Tarefas:
-- [ ] Auditar tabelas atuais do Supabase.
+- [x] Auditar tabelas atuais do Supabase.
 - [x] Confirmar RLS em `profiles`, `tournaments` e `app_events` no SQL de staging.
-- [ ] Garantir que usuario so le/escreve seus proprios torneios.
-- [ ] Criar/ajustar campos em `profiles`:
+- [x] Garantir que usuario so le/escreve seus proprios torneios.
+- [x] Criar/ajustar campos em `profiles`:
   - `plan`
   - `role`
   - `pro_until`
   - `stripe_customer_id`
   - `subscription_status`
   - `updated_at`
-- [ ] Criar tabela `subscriptions`.
+- [x] Criar tabela `subscriptions`.
 - [x] Criar tabela `app_events` e padronizar o front para gravar nela com fallback legado.
 - [x] Criar SQL versionado da Sprint 1 em `supabase/migrations/001_paid_mvp_staging.sql`.
 - [x] Criar funcao central no front para calcular acesso: visitante, Free, Pro ativo, Pro expirado e Admin.
@@ -167,7 +167,7 @@ Produtos Stripe teste:
 - BT8 Pro 30 Dias: R$ 14,90 pagamento unico.
 
 Tarefas:
-- [ ] Criar produtos/precos no Stripe test.
+- [x] Criar produtos/precos no Stripe test.
 - [x] Criar funcao backend para iniciar checkout.
 - [x] Agendar mensalidade apos vencimento do Pro 30 dias usando `billing_cycle_anchor` ate `pro_until`.
 - [x] Criar funcao backend para cancelar recorrencia mensal no fim do periodo.
@@ -195,7 +195,7 @@ Tarefas:
 - [x] Adicionar CTA para Pro/no cadastro no limite de visitante.
 - [x] Adicionar CTA para Pro no limite Free.
 - [x] Adicionar aviso para Pro expirado.
-- [ ] Ajustar landing com secao de precos.
+- [x] Ajustar landing com secao de precos.
 - [x] Explicar que o historico nao e perdido quando o Pro expira.
 
 Entrega:
