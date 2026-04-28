@@ -20,8 +20,8 @@ Configurar no Netlify com escopo de Build para a branch/ambiente de teste:
 
 ```text
 BT8_APP_ENV=staging
-BT8_SUPABASE_URL=URL_DO_SUPABASE_STAGING
-BT8_SUPABASE_ANON_KEY=CHAVE_PUBLICA_DO_SUPABASE_STAGING
+BT8_SUPABASE_URL=https://srrbnjgixizsjxobvsma.supabase.co
+BT8_SUPABASE_ANON_KEY=sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl
 BT8_STRIPE_PUBLISHABLE_KEY=pk_test_...
 ```
 
@@ -72,9 +72,10 @@ South America, se disponivel, ou a regiao mais proxima usada no projeto atual.
 No projeto staging, procure em Project Settings / API Keys ou Connect:
 
 ```text
-Project URL
-Publishable key ou anon key
-Secret key ou service_role key
+Project URL: `https://srrbnjgixizsjxobvsma.supabase.co`
+Publishable key: `sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl`
+Anon public legacy JWT: disponivel, mas vamos priorizar a publishable key nova.
+Secret key ou service_role key: configurar somente no Netlify quando criarmos backend/funcoes.
 ```
 
 Para o front, precisamos de:
@@ -118,10 +119,10 @@ http://127.0.0.1:8888
 
 ### O que voce precisa me mandar do Supabase
 
-- Project URL do staging.
-- Publishable key ou anon key do staging.
-- Confirmacao se criou projeto separado ou se prefere usar o projeto atual.
-- Se quiser testar Google no staging: confirmar se ja tem OAuth configurado.
+- Project URL do staging. Concluido.
+- Publishable key ou anon key do staging. Concluido.
+- Confirmacao se criou projeto separado ou se prefere usar o projeto atual. Concluido: projeto separado.
+- Se quiser testar Google no staging: confirmar se ja tem OAuth configurado. Pendente: Google desabilitado por enquanto.
 
 ## 3. Stripe em modo teste
 
