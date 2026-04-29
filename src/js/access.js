@@ -15,6 +15,7 @@ const BT8_ACCESS = {
 };
 const FREE_MONTHLY_TOURNAMENT_LIMIT = 3;
 const CHECKOUT_INTENT_KEY = 'bt8_pending_checkout_intent';
+let BT8_CHECKOUT_OPENING = false;
 
 function checkoutPlanLabel(plan) {
   return plan === 'pro_30d' ? 'BT8 Pro 30 Dias' : 'BT8 Pro Mensal';
@@ -70,6 +71,8 @@ function syncCheckoutIntentFromUrl() {
   const next = params.get('next');
   const plan = params.get('plan');
   if (next === 'checkout' && (plan === 'pro_monthly' || plan === 'pro_30d')) {
+    const current = getPendingCheckoutIntent();
+    if (current?.plan === plan && current._opening) return current;
     return savePendingCheckoutIntent(plan, 'email_confirmed');
   }
   return getPendingCheckoutIntent();
@@ -90,9 +93,11 @@ function showCheckoutContinuation(message) {
 }
 
 async function continuePendingCheckout(reason) {
+  if (BT8_CHECKOUT_OPENING) return true;
   const intent = syncCheckoutIntentFromUrl();
   if (!intent?.plan || !SUPA_USER) return false;
   if (intent._opening) return true;
+  BT8_CHECKOUT_OPENING = true;
   intent._opening = true;
   localStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(intent));
   showCheckoutContinuation(
@@ -103,8 +108,9 @@ async function continuePendingCheckout(reason) {
   if (typeof trackEvent === 'function') {
     trackEvent('pending_checkout_continued', { plan: intent.plan, reason: reason || intent.source || '' });
   }
-  await startCheckout(intent.plan, { fromPendingIntent: true });
-  return true;
+  const opened = await startCheckout(intent.plan, { fromPendingIntent: true });
+  if (!opened) BT8_CHECKOUT_OPENING = false;
+  return opened;
 }
 
 function normalizeAccess(profile, user, subscription) {
@@ -611,12 +617,14 @@ async function startCheckout(plan, options = {}) {
     }
     clearPendingCheckoutIntent();
     window.location.href = data.url;
+    return true;
   } catch (e) {
     const intent = getPendingCheckoutIntent();
     if (intent?._opening) {
       delete intent._opening;
       localStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(intent));
     }
+    BT8_CHECKOUT_OPENING = false;
     const continuation = document.getElementById('checkout-continuation-msg');
     if (continuation) continuation.textContent = e.message || 'Erro ao iniciar checkout.';
     if (msg) {
@@ -624,5 +632,6 @@ async function startCheckout(plan, options = {}) {
       msg.textContent = e.message || 'Erro ao iniciar checkout.';
     }
     [btnMonthly, btn30d].forEach(btn => { if (btn) btn.disabled = false; });
+    return false;
   }
 }
