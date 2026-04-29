@@ -246,20 +246,24 @@ Entrega:
 ## Sprint 7 - Testes de ponta a ponta
 
 Cenarios obrigatorios:
-- [ ] Visitante cria primeiro torneio.
-- [ ] Visitante tenta criar segundo torneio no mes e e bloqueado.
-- [ ] Visitante cria conta Free.
-- [ ] Free salva torneio dentro do limite.
-- [ ] Free bate limite e ve upgrade.
-- [ ] Free assina Pro recorrente em modo teste.
-- [ ] Free compra Pro 30 dias em modo teste.
-- [ ] Pro 30 dias agenda Pro mensal antes do vencimento, com cobranca so no vencimento.
-- [ ] Pro recorrente cancela recorrencia e continua Pro ate o fim do periodo.
+- [x] Visitante cria primeiro torneio.
+- [x] Visitante tenta criar segundo torneio no mes e e bloqueado.
+- [x] Visitante cria conta Free.
+- [x] Free salva torneio dentro do limite.
+- [x] Free bate limite e ve upgrade.
+- [x] Free assina Pro recorrente em modo teste.
+- [x] Free compra Pro 30 dias em modo teste.
+- [x] Pro 30 dias agenda Pro mensal antes do vencimento, com cobranca so no vencimento.
+- [x] Pro recorrente cancela recorrencia e continua Pro ate o fim do periodo.
 - [ ] Pro 30 dias expira.
 - [ ] Historico Pro continua salvo apos expirar.
-- [ ] Usuario comum nao acessa Admin.
-- [ ] Admin ve usuarios, assinaturas, torneios e eventos.
+- [x] Usuario comum nao acessa Admin.
+- [x] Admin ve usuarios, assinaturas, torneios e eventos.
 - [ ] Usuario nao acessa torneio de outro usuario.
+
+Pendentes de validacao simulada:
+- Expirar manualmente um Pro 30 dias em staging para conferir a volta para limite Free sem apagar historico.
+- Tentar abrir um torneio salvo por outro usuario usando outra sessao, confirmando bloqueio por RLS.
 
 Entrega:
 - MVP pago validado em staging.
