@@ -440,10 +440,19 @@ async function doLogin() {
   const btn = document.querySelector('#form-login .btn-auth-submit');
   if (btn) { btn.disabled = true; btn.textContent = '...'; }
   try {
-    const { error } = await SUPA.auth.signInWithPassword({ email, password: pw });
-    // Navegação tratada pelo handleAuthStateChange via onAuthStateChange
-    if (error) showAuthMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
-    else if (typeof trackEvent === 'function') trackEvent('login_completed', { provider: 'email' });
+    const { data, error } = await SUPA.auth.signInWithPassword({ email, password: pw });
+    if (error) {
+      showAuthMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
+    } else {
+      SUPA_USER = data?.session?.user || data?.user || null;
+      if (SUPA_USER) handleAuthStateChange(SUPA_USER);
+      else {
+        const sessionResult = await SUPA.auth.getSession().catch(() => ({ data: null }));
+        SUPA_USER = sessionResult?.data?.session?.user || null;
+        if (SUPA_USER) handleAuthStateChange(SUPA_USER);
+      }
+      if (typeof trackEvent === 'function') trackEvent('login_completed', { provider: 'email' });
+    }
   } catch(e) { showAuthMsg('Erro ao conectar', 'error'); }
   if (btn) { btn.disabled = false; }
   updateAuthIntentContext('login');
@@ -562,8 +571,12 @@ async function lpLogin() {
   const email = document.getElementById('lp-email')?.value?.trim();
   const pw = document.getElementById('lp-pw')?.value;
   if (!email || !pw) return lpShowMsg('Preencha e-mail e senha', 'error');
-  const { error } = await SUPA.auth.signInWithPassword({ email, password: pw }).catch(() => ({ error: { message: 'Erro' } }));
+  const { data, error } = await SUPA.auth.signInWithPassword({ email, password: pw }).catch(() => ({ error: { message: 'Erro' } }));
   if (error) lpShowMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
+  else {
+    SUPA_USER = data?.session?.user || data?.user || null;
+    if (SUPA_USER) handleAuthStateChange(SUPA_USER);
+  }
 }
 async function lpSignup() {
   if (!SUPA) return lpShowMsg('Serviço indisponível', 'error');
