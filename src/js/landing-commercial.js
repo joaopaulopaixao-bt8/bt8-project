@@ -243,7 +243,15 @@ function renderCommercialLanding() {
         <div class="lsticky-note">Free, Pro Mensal e Pro 30 Dias</div>
       </div>
     </div>
-    <div class="lfooter">BT8 · Torneios de Beach Tennis · /bt8</div>
+    <div class="lfooter">
+      <div>BT8 · Torneios de Beach Tennis · /bt8</div>
+      <div class="legal-footer-links">
+        <a href="/direitos-do-sistema">Direitos do sistema</a>
+        <a href="/termos-de-uso">Termos de uso</a>
+        <a href="/politica-de-privacidade">Política de privacidade</a>
+      </div>
+      <div class="legal-footer-cnpj">BT8 é uma marca vinculada ao CNPJ 53.243.248/0001-40.</div>
+    </div>
   `;
 
   const appLogo = document.querySelector('#screen-home .topbar-logo');
