@@ -87,7 +87,7 @@ exports.handler = async (event) => {
     );
     const profile = profiles?.[0] || {};
     if (profile.role === 'admin') {
-      return json(403, { error: 'Conta Admin nao pode ser excluida pelo app.' });
+      return json(403, { error: 'Conta Admin não pode ser excluída pelo app.' });
     }
 
     const subscriptions = await supabaseFetch(

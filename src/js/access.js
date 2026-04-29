@@ -195,7 +195,7 @@ function planDescription(access) {
   if (access.proExpired) return 'Historico preservado. Reative o Pro para salvar sem limite';
   if (access.isPro && access.planType === 'recurring') {
     if (access.cancelAtPeriodEnd) {
-      return access.proUntil ? `Cancelado, valido ate ${formatPlanDate(access.proUntil)}` : 'Cancelado para o fim do ciclo';
+      return access.proUntil ? `Cancelado, válido até ${formatPlanDate(access.proUntil)}` : 'Cancelado para o fim do ciclo';
     }
     if (access.monthlyScheduled) {
       return access.proUntil ? `Mensal comeca em ${formatPlanDate(access.proUntil)}` : 'Mensal agendado';
@@ -203,10 +203,10 @@ function planDescription(access) {
     return access.proUntil ? `Renova em ${formatPlanDate(access.proUntil)}` : 'Assinatura mensal ativa';
   }
   if (access.isPro && access.planType === 'one_time_30d') {
-    return access.proUntil ? `Ativo ate ${formatPlanDate(access.proUntil)}` : 'Acesso Pro por 30 dias';
+    return access.proUntil ? `Ativo até ${formatPlanDate(access.proUntil)}` : 'Acesso Pro por 30 dias';
   }
   if (access.isPro) return 'Torneios ilimitados liberados';
-  return `Salva ate ${FREE_MONTHLY_TOURNAMENT_LIMIT} torneios por mes`;
+  return `Salva até ${FREE_MONTHLY_TOURNAMENT_LIMIT} torneios por mês`;
 }
 
 function planCardHtml(access, context) {
@@ -283,7 +283,7 @@ async function handleCheckoutReturn() {
       await new Promise(resolve => setTimeout(resolve, 1800));
     }
     const msg = document.getElementById('checkout-return-msg');
-    if (msg) msg.textContent = 'Pagamento recebido. Se o plano ainda nao apareceu, aguarde alguns segundos e atualize a pagina.';
+    if (msg) msg.textContent = 'Pagamento recebido. Se o plano ainda não apareceu, aguarde alguns segundos e atualize a página.';
   } else if (checkoutStatus === 'cancelled') {
     trackEvent('checkout_cancelled', {});
   }
@@ -317,7 +317,7 @@ async function validateGuestTournamentLimit() {
     body: JSON.stringify({ guest_id: getGuestId() })
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Nao foi possivel validar o teste gratis.');
+  if (!response.ok) throw new Error(data.error || 'Não foi possível validar o teste grátis.');
   return data;
 }
 
@@ -333,7 +333,7 @@ function showGuestLimitReached() {
     <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
       <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">TESTE GRATIS USADO</div>
       <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
-        Seu teste gratis deste mes ja foi usado. Entre gratis para continuar criando torneios no BT8.
+        Seu teste grátis deste mês já foi usado. Entre grátis para continuar criando torneios no BT8.
       </div>
       <button onclick="trackEvent('signup_started',{source:'guest_limit_modal'});document.getElementById('guest-limit-modal').remove();openAuthModal('signup');"
         style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
@@ -363,7 +363,7 @@ function showProExpiredNotice(access) {
     <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(244,192,38,.38);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
       <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">PRO EXPIRADO</div>
       <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
-        Seu historico continua guardado. Para voltar a salvar torneios sem limite, reative o BT8 Pro.
+        Seu histórico continua guardado. Para voltar a salvar torneios sem limite, reative o BT8 Pro.
       </div>
       <button onclick="trackEvent('upgrade_clicked',{source:'pro_expired_modal'});document.getElementById('pro-expired-modal').remove();openPlansModal();"
         style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
@@ -441,7 +441,7 @@ function openPlansModal() {
   }
   const current = typeof currentAccess === 'function' ? currentAccess() : null;
   if (current?.isAdmin) {
-    alert('Conta Admin nao assina planos. O acesso operacional ja esta liberado.');
+    alert('Conta Admin não assina planos. O acesso operacional já está liberado.');
     return;
   }
 
@@ -458,13 +458,13 @@ function openPlansModal() {
     ? `
       ${planStatus}
       <div style="border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:16px;background:rgba(255,255,255,.05);text-align:center;">
-        <div style="font-weight:800;color:#fff;font-size:15px;">${access.cancelAtPeriodEnd ? 'Renovacao cancelada' : access.monthlyScheduled ? 'Mensal agendado' : 'Assinatura mensal ativa'}</div>
+        <div style="font-weight:800;color:#fff;font-size:15px;">${access.cancelAtPeriodEnd ? 'Renovação cancelada' : access.monthlyScheduled ? 'Mensal agendado' : 'Assinatura mensal ativa'}</div>
         <div style="font-size:12px;color:#a8c4d4;line-height:1.5;margin-top:6px;">
           ${access.cancelAtPeriodEnd
-            ? 'Voce continua Pro ate a data ja paga. Depois disso, a conta volta para Free automaticamente.'
+            ? 'Você continua Pro até a data já paga. Depois disso, a conta volta para Free automaticamente.'
             : access.monthlyScheduled
-              ? 'A primeira cobranca mensal ficou agendada para o vencimento do seu Pro 30 dias.'
-              : 'Voce pode cancelar a recorrencia agora e continuar usando o Pro ate a data ja paga.'}
+              ? 'A primeira cobrança mensal ficou agendada para o vencimento do seu Pro 30 dias.'
+              : 'Você pode cancelar a recorrência agora e continuar usando o Pro até a data já paga.'}
         </div>
       </div>
       ${access.cancelAtPeriodEnd ? `
@@ -482,7 +482,7 @@ function openPlansModal() {
       <div style="border:1px solid rgba(244,192,38,.35);border-radius:14px;padding:16px;background:rgba(244,192,38,.07);text-align:center;">
         <div style="font-weight:800;color:#fff;font-size:15px;">Migrar para mensal no vencimento</div>
         <div style="font-size:12px;color:#a8c4d4;line-height:1.5;margin-top:6px;">
-          Voce pode deixar a mensalidade assinada agora. A cobranca mensal comeca somente quando o Pro 30 dias vencer.
+          Você pode deixar a mensalidade assinada agora. A cobrança mensal começa somente quando o Pro 30 dias vencer.
         </div>
       </div>
       <button id="btn-checkout-monthly" onclick="startCheckout('pro_monthly')"
@@ -493,9 +493,9 @@ function openPlansModal() {
       ? `
       ${planStatus}
       <div style="border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:16px;background:rgba(255,255,255,.05);text-align:center;">
-        <div style="font-weight:800;color:#fff;font-size:15px;">Seu acesso Pro esta ativo</div>
+        <div style="font-weight:800;color:#fff;font-size:15px;">Seu acesso Pro está ativo</div>
         <div style="font-size:12px;color:#a8c4d4;line-height:1.5;margin-top:6px;">
-          Esta conta ja esta liberada para torneios ilimitados.
+          Esta conta já está liberada para torneios ilimitados.
         </div>
       </div>`
     : `
@@ -515,7 +515,7 @@ function openPlansModal() {
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
             <div>
               <div style="font-weight:800;color:#fff;font-size:15px;">Pro 30 Dias</div>
-              <div style="font-size:12px;color:#a8c4d4;margin-top:3px;">Pagamento unico para testar sem recorrencia.</div>
+              <div style="font-size:12px;color:#a8c4d4;margin-top:3px;">Pagamento único para testar sem recorrência.</div>
             </div>
             <div style="font-family:'Bebas Neue';font-size:24px;color:#5cc8f2;white-space:nowrap;">R$ 14,90</div>
           </div>
@@ -528,7 +528,7 @@ function openPlansModal() {
     <div style="width:100%;max-width:460px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:22px 18px;box-shadow:0 20px 60px rgba(0,0,0,.45);position:relative;">
       <button onclick="document.getElementById('plans-modal').remove()" style="position:absolute;top:12px;right:12px;border:0;background:transparent;color:#7aa8c4;font-size:20px;cursor:pointer;">x</button>
       <div style="font-family:'Bebas Neue';font-size:28px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:6px;">${isPro ? 'MEU PLANO' : 'BT8 PRO'}</div>
-      <div style="font-size:13px;line-height:1.5;color:#a8c4d4;text-align:center;margin-bottom:18px;">${isPro ? 'Este e o plano ativo nesta conta.' : 'Salve torneios ilimitados, mantenha seu historico completo e use o BT8 sem travas na organizacao.'}</div>
+      <div style="font-size:13px;line-height:1.5;color:#a8c4d4;text-align:center;margin-bottom:18px;">${isPro ? 'Este é o plano ativo nesta conta.' : 'Salve torneios ilimitados, mantenha seu histórico completo e use o BT8 sem travas na organização.'}</div>
       ${planBody}
       <div id="plans-msg" style="min-height:18px;margin-top:12px;text-align:center;font-size:12px;color:#f87171;"></div>
     </div>`;
@@ -542,7 +542,7 @@ async function cancelRecurringSubscription() {
   if (btn) btn.disabled = true;
   if (msg) {
     msg.style.color = '#a8c4d4';
-    msg.textContent = 'Cancelando renovacao no Stripe...';
+    msg.textContent = 'Cancelando renovação no Stripe...';
   }
 
   try {
@@ -559,20 +559,20 @@ async function cancelRecurringSubscription() {
       body: JSON.stringify({ action: 'cancel_recurring' })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Nao foi possivel cancelar a recorrencia.');
+    if (!response.ok) throw new Error(data.error || 'Não foi possível cancelar a recorrência.');
 
     const access = await refreshAccess(SUPA_USER);
     if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
     if (typeof buildUserMenu === 'function') buildUserMenu(SUPA_USER);
     if (msg) {
       msg.style.color = '#86efac';
-      msg.textContent = `Recorrencia cancelada. Seu Pro segue ativo ate ${formatPlanDate(access.proUntil)}.`;
+      msg.textContent = `Recorrência cancelada. Seu Pro segue ativo até ${formatPlanDate(access.proUntil)}.`;
     }
     setTimeout(openPlansModal, 900);
   } catch (e) {
     if (msg) {
       msg.style.color = '#f87171';
-      msg.textContent = e.message || 'Erro ao cancelar recorrencia.';
+      msg.textContent = e.message || 'Erro ao cancelar recorrência.';
     }
     if (btn) btn.disabled = false;
   }
@@ -613,7 +613,7 @@ async function startCheckout(plan, options = {}) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const missing = data.missing?.length ? ` Variáveis faltando: ${data.missing.join(', ')}.` : '';
-      throw new Error((data.error || 'Nao foi possivel abrir o checkout.') + missing);
+      throw new Error((data.error || 'Não foi possível abrir o checkout.') + missing);
     }
     clearPendingCheckoutIntent();
     window.location.href = data.url;

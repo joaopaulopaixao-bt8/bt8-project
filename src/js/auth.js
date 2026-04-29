@@ -224,9 +224,9 @@ function showResetPasswordExpiredModal() {
     <div class="reset-password-card">
       <div class="reset-password-kicker">Link expirado</div>
       <h3>Envie um novo link</h3>
-      <p>Este link de redefinicao nao esta mais valido. Solicite um novo e-mail para criar uma nova senha.</p>
+      <p>Este link de redefinição não está mais válido. Solicite um novo e-mail para criar uma nova senha.</p>
       <button class="reset-password-submit" type="button" onclick="closeResetPasswordModal();openAuthModal('login');showForgot()">Enviar novo link</button>
-      <button class="reset-password-secondary" type="button" onclick="window.location.href='/'">Voltar ao inicio</button>
+      <button class="reset-password-secondary" type="button" onclick="window.location.href='/'">Voltar ao início</button>
     </div>
   `;
   document.body.appendChild(modal);
@@ -241,14 +241,14 @@ function showResetPasswordModal() {
   modal.className = 'reset-password-modal';
   modal.innerHTML = `
     <div class="reset-password-card">
-      <div class="reset-password-kicker">Redefinicao de senha</div>
+      <div class="reset-password-kicker">Redefinição de senha</div>
       <h3>Crie sua nova senha</h3>
       <p>Escolha uma senha segura para voltar a acessar sua conta BT8.</p>
 
       <div class="auth-field">
         <label>Nova senha</label>
         <div class="password-wrap">
-          <input class="auth-input password-input" type="password" id="reset-new-pw" placeholder="Minimo 8 caracteres" oninput="checkResetPw()">
+          <input class="auth-input password-input" type="password" id="reset-new-pw" placeholder="Mínimo 8 caracteres" oninput="checkResetPw()">
           <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-new-pw', this)">👁</button>
         </div>
       </div>
@@ -262,7 +262,7 @@ function showResetPasswordModal() {
       <div class="pw-checks reset-pw-checks">
         <span class="pw-check" id="reset-pwc-len">8 ou mais caracteres</span>
         <span class="pw-check" id="reset-pwc-letter">Pelo menos 1 letra</span>
-        <span class="pw-check" id="reset-pwc-num">Pelo menos 1 numero</span>
+        <span class="pw-check" id="reset-pwc-num">Pelo menos 1 número</span>
         <span class="pw-check" id="reset-pwc-match">As senhas precisam ser iguais</span>
       </div>
       <button class="reset-password-submit" id="btn-reset-password" type="button" onclick="saveNewPassword()" disabled>Salvar nova senha</button>
@@ -315,7 +315,7 @@ async function saveNewPassword() {
   }
   if (msg) {
     msg.className = 'reset-password-msg';
-    msg.textContent = 'Atualizando sua senha com seguranca...';
+    msg.textContent = 'Atualizando sua senha com segurança...';
   }
 
   try {
@@ -336,7 +336,7 @@ async function saveNewPassword() {
   } catch (e) {
     if (msg) {
       msg.className = 'reset-password-msg err';
-      msg.textContent = e.message || 'Nao foi possivel atualizar a senha.';
+      msg.textContent = e.message || 'Não foi possível atualizar a senha.';
     }
     if (btn) {
       btn.disabled = false;
@@ -368,7 +368,7 @@ function updateAuthIntentContext(tab) {
   box.style.display = '';
   box.innerHTML = tab === 'login'
     ? `<strong>${label}</strong>Entre na sua conta para continuar para o checkout seguro.`
-    : `<strong>${label}</strong>Para assinar, crie sua conta primeiro. Depois de confirmar o e-mail, voce sera levado automaticamente ao checkout seguro.`;
+    : `<strong>${label}</strong>Para assinar, crie sua conta primeiro. Depois de confirmar o e-mail, você será levado automaticamente ao checkout seguro.`;
 }
 
 function showAuthMsg(text, type) {

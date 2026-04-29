@@ -107,7 +107,7 @@ exports.handler = async (event) => {
     );
     const profile = profiles?.[0] || {};
     if (profile.role === 'admin') {
-      return json(403, { error: 'Conta Admin nao pode assinar planos.' });
+      return json(403, { error: 'Conta Admin não pode assinar planos.' });
     }
     let customerId = profile.stripe_customer_id;
 
@@ -139,7 +139,7 @@ exports.handler = async (event) => {
       && !latest?.metadata?.cancel_at_period_end
       && ['active', 'trialing', 'past_due', 'unpaid'].includes(latest.status);
     if (isMonthly && alreadyRecurring) {
-      return json(409, { error: 'Esta conta ja tem uma assinatura mensal ativa.' });
+      return json(409, { error: 'Esta conta já tem uma assinatura mensal ativa.' });
     }
 
     const billingAnchor = isMonthly && isActive30d

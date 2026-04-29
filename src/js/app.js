@@ -60,7 +60,7 @@ function adminRouteCard(title, body, actions = '') {
 function showAdminRouteLoading() {
   ensureAdminRouteShell().innerHTML = adminRouteCard(
     'Carregando painel',
-    'Validando sua sessao administrativa...'
+    'Validando sua sessão administrativa...'
   );
 }
 
@@ -103,7 +103,7 @@ async function adminRouteLogin() {
     return;
   }
   if (!SUPA) {
-    if (msg) msg.textContent = 'Supabase ainda nao carregou. Tente novamente.';
+    if (msg) msg.textContent = 'Supabase ainda não carregou. Tente novamente.';
     return;
   }
   if (msg) {
@@ -125,7 +125,7 @@ async function adminRouteLogin() {
 function showAdminRouteDenied() {
   ensureAdminRouteShell().innerHTML = adminRouteCard(
     'Acesso restrito',
-    'Esta conta nao esta marcada como Admin. Saia desta conta ou volte para o app normal.',
+    'Esta conta não está marcada como Admin. Saia desta conta ou volte para o app normal.',
     `
       <button onclick="logoutUser()"
         style="width:100%;background:#ffd84d;border:none;border-radius:10px;color:#07111c;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:12px;cursor:pointer;">SAIR DA CONTA</button>
@@ -385,20 +385,20 @@ function deleteAccountWarningCopy(access) {
   if (access?.isAdmin) {
     return {
       title: 'Conta Admin protegida',
-      body: 'Esta conta tem acesso administrativo e nao pode ser excluida pelo app. Remova o acesso manualmente no painel administrativo se isso for realmente necessario.',
+      body: 'Esta conta tem acesso administrativo e não pode ser excluída pelo app. Remova o acesso manualmente no painel administrativo se isso for realmente necessário.',
       pro: false
     };
   }
   if (access?.isPro || access?.proExpired || access?.subscriptionStatus) {
     return {
       title: 'Excluir conta encerra seu acesso Pro',
-      body: 'Seu direito de uso do BT8 Pro esta ligado diretamente a esta conta. Ao excluir, voce perde o acesso imediatamente, mesmo que ainda exista tempo pago restante. Se criar outra conta depois, o Pro nao sera transferido automaticamente. Se houver mensalidade recorrente, a cobranca futura sera cancelada junto com a exclusao.',
+      body: 'Seu direito de uso do BT8 Pro está ligado diretamente a esta conta. Ao excluir, você perde o acesso imediatamente, mesmo que ainda exista tempo pago restante. Se criar outra conta depois, o Pro não será transferido automaticamente. Se houver mensalidade recorrente, a cobrança futura será cancelada junto com a exclusão.',
       pro: true
     };
   }
   return {
     title: 'Excluir sua conta Free',
-    body: 'Sua conta sera excluida permanentemente, junto com perfil e torneios salvos. Essa acao nao pode ser desfeita.',
+    body: 'Sua conta será excluída permanentemente, junto com perfil e torneios salvos. Essa ação não pode ser desfeita.',
     pro: false
   };
 }
@@ -464,7 +464,7 @@ async function deleteAccount() {
   }
   if (msg) {
     msg.className = 'delete-account-msg';
-    msg.textContent = 'Cancelando cobrancas recorrentes e removendo a conta com seguranca...';
+    msg.textContent = 'Cancelando cobranças recorrentes e removendo a conta com segurança...';
   }
 
   try {
@@ -481,7 +481,7 @@ async function deleteAccount() {
       body: JSON.stringify({ confirmation: confirm })
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || 'Nao foi possivel excluir a conta.');
+    if (!response.ok) throw new Error(data.error || 'Não foi possível excluir a conta.');
 
     if (msg) {
       msg.className = 'delete-account-msg ok';
@@ -586,15 +586,15 @@ function renderAdminTab(tab) {
     const stats = data.stats || {};
     const statCards = [
       ['Usuarios', stats.users_total],
-      ['Novos no mes', stats.users_new_month],
+      ['Novos no mês', stats.users_new_month],
       ['Free ativos', stats.free_active],
       ['Pro mensal', stats.pro_recurring_active],
       ['Pro 30 dias', stats.pro_30d_active],
       ['Pro expirados', stats.pro_expired],
       ['MRR estimado', formatAdminMoney(stats.mrr_estimated_brl)],
       ['Receita 30d', formatAdminMoney(stats.revenue_30d_estimated_brl)],
-      ['Torneios mes', stats.tournaments_month],
-      ['Sem login mes', stats.guest_tournaments_month],
+      ['Torneios no mês', stats.tournaments_month],
+      ['Sem login no mês', stats.guest_tournaments_month],
       ['Bloq. visitante', stats.guest_limit_blocks_recent],
       ['Bloq. Free', stats.free_limit_blocks_recent]
     ].map(([label, value]) => `
@@ -602,7 +602,7 @@ function renderAdminTab(tab) {
         <div style="font-family:'Bebas Neue';font-size:23px;color:#ffd84d;letter-spacing:1px;">${safeAdminText(value)}</div>
         <div style="font-size:10px;color:#7aa8c4;text-transform:uppercase;letter-spacing:.8px;margin-top:3px;">${safeAdminText(label)}</div>
       </div>`).join('');
-    const modes = (data.top_modes || []).map(item => adminListItem(item.label, 'Modalidade no mes', item.count)).join('');
+    const modes = (data.top_modes || []).map(item => adminListItem(item.label, 'Modalidade no mês', item.count)).join('');
     target.innerHTML = `
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px;">${statCards}</div>
       ${adminSection('MODALIDADES DO MES', modes)}`;
@@ -671,7 +671,7 @@ async function openAdmin() {
       <div style="font-family:'Bebas Neue';font-size:24px;letter-spacing:2px;color:#3b9fd8;margin-bottom:4px;text-align:center;">
         DASHBOARD ADMIN
       </div>
-      <div style="font-size:12px;color:#7aa8c4;text-align:center;margin-bottom:18px;">Operacao, vendas e uso do MVP pago</div>
+      <div style="font-size:12px;color:#7aa8c4;text-align:center;margin-bottom:18px;">Operação, vendas e uso do MVP pago</div>
       <div id="admin-content" style="font-size:13px;color:#a8c4d4;">Carregando dados...</div>
     </div>`;
   document.body.appendChild(modal);
@@ -679,7 +679,7 @@ async function openAdmin() {
   try {
     const { data: sessionData } = await SUPA.auth.getSession();
     const token = sessionData?.session?.access_token;
-    if (!token) throw new Error('Sessao invalida. Faca login novamente.');
+    if (!token) throw new Error('Sessão inválida. Faça login novamente.');
 
     const response = await fetch('/.netlify/functions/admin-dashboard', {
       headers: { authorization: `Bearer ${token}` }
@@ -691,7 +691,7 @@ async function openAdmin() {
     document.getElementById('admin-content').innerHTML = `
       <div style="display:flex;gap:7px;overflow-x:auto;padding-bottom:10px;margin-bottom:12px;">
         ${[
-          ['overview','Visao geral'],
+          ['overview','Visão geral'],
           ['users','Usuarios'],
           ['subscriptions','Assinaturas'],
           ['tournaments','Torneios'],

@@ -449,7 +449,7 @@ async function gerarTorneio() {
       }
     }
   } catch(e) {
-    alert(e.message || 'Nao foi possivel validar seu teste gratis agora.');
+    alert(e.message || 'Não foi possível validar seu teste grátis agora.');
     return;
   } finally {
     if (gerarBtn && !generated) {
@@ -574,7 +574,7 @@ async function gerarTorneio() {
   generated = true;
   } catch(e) {
     console.error('Erro ao gerar torneio:', e);
-    alert(e.message || 'Nao foi possivel gerar o torneio. Tente novamente.');
+    alert(e.message || 'Não foi possível gerar o torneio. Tente novamente.');
   } finally {
     if (gerarBtn && !generated) {
       gerarBtn.dataset.loading = '';
