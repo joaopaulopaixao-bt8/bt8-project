@@ -192,13 +192,13 @@ function formatPlanDate(date) {
 function planDescription(access) {
   if (!access || access.isGuest) return 'Teste sem cadastro';
   if (access.isAdmin) return 'Acesso operacional liberado, sem assinatura';
-  if (access.proExpired) return 'Historico preservado. Reative o Pro para salvar sem limite';
+  if (access.proExpired) return 'Histórico preservado. Reative o Pro para salvar sem limite';
   if (access.isPro && access.planType === 'recurring') {
     if (access.cancelAtPeriodEnd) {
       return access.proUntil ? `Cancelado, válido até ${formatPlanDate(access.proUntil)}` : 'Cancelado para o fim do ciclo';
     }
     if (access.monthlyScheduled) {
-      return access.proUntil ? `Mensal comeca em ${formatPlanDate(access.proUntil)}` : 'Mensal agendado';
+      return access.proUntil ? `Mensal começa em ${formatPlanDate(access.proUntil)}` : 'Mensal agendado';
     }
     return access.proUntil ? `Renova em ${formatPlanDate(access.proUntil)}` : 'Assinatura mensal ativa';
   }
@@ -331,17 +331,17 @@ function showGuestLimitReached() {
   modal.style.cssText = 'position:fixed;inset:0;z-index:1600;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
   modal.innerHTML = `
     <div style="width:100%;max-width:420px;background:#0d1a27;border:1px solid rgba(26,127,196,.45);border-radius:18px;padding:24px 20px;box-shadow:0 20px 60px rgba(0,0,0,.45);">
-      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">TESTE GRATIS USADO</div>
+      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;text-align:center;margin-bottom:8px;">TESTE GRÁTIS USADO</div>
       <div style="font-size:13px;line-height:1.55;color:#a8c4d4;text-align:center;margin-bottom:18px;">
         Seu teste grátis deste mês já foi usado. Entre grátis para continuar criando torneios no BT8.
       </div>
       <button onclick="trackEvent('signup_started',{source:'guest_limit_modal'});document.getElementById('guest-limit-modal').remove();openAuthModal('signup');"
         style="width:100%;border:0;border-radius:12px;background:#ffd84d;color:#07111c;font-weight:800;padding:13px 12px;margin-bottom:8px;cursor:pointer;">
-        CRIAR CONTA GRATIS
+        CRIAR CONTA GRÁTIS
       </button>
       <button onclick="document.getElementById('guest-limit-modal').remove();openAuthModal('login');"
         style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
-        JA TENHO CONTA
+        JÁ TENHO CONTA
       </button>
     </div>`;
   document.body.appendChild(modal);
@@ -371,7 +371,7 @@ function showProExpiredNotice(access) {
       </button>
       <button onclick="document.getElementById('pro-expired-modal').remove()"
         style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
-        AGORA NAO
+        AGORA NÃO
       </button>
     </div>`;
   document.body.appendChild(modal);
@@ -428,7 +428,7 @@ function showFreeLimitReached(limitInfo) {
       </button>
       <button onclick="document.getElementById('upgrade-modal').remove()"
         style="width:100%;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(255,255,255,.06);color:#cfe8f5;font-weight:700;padding:12px;cursor:pointer;">
-        AGORA NAO
+        AGORA NÃO
       </button>
     </div>`;
   document.body.appendChild(modal);
@@ -474,7 +474,7 @@ function openPlansModal() {
         </button>` : `
         <button id="btn-cancel-subscription" onclick="cancelRecurringSubscription()"
           style="width:100%;margin-top:12px;border:1px solid rgba(248,113,113,.45);border-radius:11px;background:rgba(248,113,113,.12);color:#fecaca;font-weight:800;padding:12px;cursor:pointer;">
-          CANCELAR COBRANCA RECORRENTE
+          CANCELAR COBRANÇA RECORRENTE
         </button>`}`
     : isOneTime30d
       ? `
@@ -579,7 +579,12 @@ async function cancelRecurringSubscription() {
 }
 
 async function startCheckout(plan, options = {}) {
-  if (!SUPA || !SUPA_USER) return openAuthModal('login');
+  if (!SUPA || !SUPA_USER) {
+    if (typeof savePendingCheckoutIntent === 'function') {
+      savePendingCheckoutIntent(plan, options.source || 'plans_modal');
+    }
+    return openAuthModal('signup', { preserveCheckoutIntent: true });
+  }
   const msg = document.getElementById('plans-msg');
   const btnMonthly = document.getElementById('btn-checkout-monthly');
   const btn30d = document.getElementById('btn-checkout-30d');

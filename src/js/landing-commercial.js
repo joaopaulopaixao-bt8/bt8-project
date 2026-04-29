@@ -2,9 +2,9 @@ function isCommercialLandingRoute() {
   return window.location.pathname.replace(/\/+$/, '') === '/bt8';
 }
 
-function bt8PrimaryCta(source) {
+function bt8PrimaryCta(source, options = {}) {
   if (typeof trackEvent === 'function') trackEvent('signup_started', { source: source || 'bt8_landing' });
-  if (typeof openAuthModal === 'function') openAuthModal('signup');
+  if (typeof openAuthModal === 'function') openAuthModal('signup', options);
 }
 
 function bt8TryNow() {
@@ -26,7 +26,7 @@ function bt8PlanCta(plan) {
   if (typeof savePendingCheckoutIntent === 'function') {
     savePendingCheckoutIntent(plan, 'bt8_landing_paid_plan');
   }
-  bt8PrimaryCta(plan === 'pro_monthly' ? 'bt8_landing_monthly' : 'bt8_landing_30d');
+  bt8PrimaryCta(plan === 'pro_monthly' ? 'bt8_landing_monthly' : 'bt8_landing_30d', { preserveCheckoutIntent: true });
 }
 
 function renderCommercialLanding() {

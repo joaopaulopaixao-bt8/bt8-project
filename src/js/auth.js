@@ -157,7 +157,10 @@ function togglePasswordVisibility(inputId, btn) {
 }
 
 // ── AUTH MODAL ───────────────────────────────────────────────
-function openAuthModal(tab) {
+function openAuthModal(tab, options = {}) {
+  if (!options.preserveCheckoutIntent && typeof clearPendingCheckoutIntent === 'function') {
+    clearPendingCheckoutIntent();
+  }
   closeUserMenu();
   // Rola a landing para o topo para que o modal fique visível
   const landing = document.getElementById('lp-main') || document.getElementById('screen-landing');
@@ -516,6 +519,7 @@ async function logoutUser() {
 
 // ── LANDING — sem login ──────────────────────────────────────
 function startWithoutLogin() {
+  if (typeof clearPendingCheckoutIntent === 'function') clearPendingCheckoutIntent();
   APP.isGuest = true;
   APP.history = ['screen-home'];
   document.querySelectorAll('.screen').forEach(s => {
