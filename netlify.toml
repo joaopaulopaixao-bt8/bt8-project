@@ -10,6 +10,11 @@
   to = "/index.html"
   status = 200
 
+[[redirects]]
+  from = "/bt8"
+  to = "/index.html"
+  status = 200
+
 [context.branch-deploy.environment]
   BT8_APP_ENV = "staging"
   BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"

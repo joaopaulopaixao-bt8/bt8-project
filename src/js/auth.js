@@ -49,6 +49,7 @@ function handleAuthStateChange(user) {
   const activeScreen = document.querySelector('.screen.active')?.id;
   const authModalOpen = document.getElementById('auth-modal')?.classList.contains('open');
   const adminRoute = typeof isAdminRoute === 'function' && isAdminRoute();
+  const commercialRoute = typeof isCommercialLandingRoute === 'function' && isCommercialLandingRoute();
   const updateAdminButton = (access) => {
     const adminBtn = document.getElementById('admin-menu-btn');
     if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
@@ -59,7 +60,7 @@ function handleAuthStateChange(user) {
   }
 
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
-  if (user && !adminRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
+  if (user && !adminRoute && !commercialRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
     enterApp();
   }
   if (user) APP.isGuest = false;
@@ -77,6 +78,10 @@ function handleAuthStateChange(user) {
         } else if (user && typeof showAdminRouteDenied === 'function') {
           showAdminRouteDenied();
         }
+      }
+      if (commercialRoute && sessionStorage.getItem('bt8_open_plans_after_login') === '1') {
+        sessionStorage.removeItem('bt8_open_plans_after_login');
+        setTimeout(() => { if (typeof openPlansModal === 'function') openPlansModal(); }, 600);
       }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
