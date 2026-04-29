@@ -381,6 +381,130 @@ async function saveProfile() {
   btn.disabled = false; btn.textContent = 'SALVAR PERFIL';
 }
 
+function deleteAccountWarningCopy(access) {
+  if (access?.isAdmin) {
+    return {
+      title: 'Conta Admin protegida',
+      body: 'Esta conta tem acesso administrativo e nao pode ser excluida pelo app. Remova o acesso manualmente no painel administrativo se isso for realmente necessario.',
+      pro: false
+    };
+  }
+  if (access?.isPro || access?.proExpired || access?.subscriptionStatus) {
+    return {
+      title: 'Excluir conta encerra seu acesso Pro',
+      body: 'Seu direito de uso do BT8 Pro esta ligado diretamente a esta conta. Ao excluir, voce perde o acesso imediatamente, mesmo que ainda exista tempo pago restante. Se criar outra conta depois, o Pro nao sera transferido automaticamente. Se houver mensalidade recorrente, a cobranca futura sera cancelada junto com a exclusao.',
+      pro: true
+    };
+  }
+  return {
+    title: 'Excluir sua conta Free',
+    body: 'Sua conta sera excluida permanentemente, junto com perfil e torneios salvos. Essa acao nao pode ser desfeita.',
+    pro: false
+  };
+}
+
+function updateDeleteAccountConfirmState() {
+  const input = document.getElementById('delete-account-confirm');
+  const btn = document.getElementById('delete-account-submit');
+  if (btn) btn.disabled = (input?.value || '').trim().toUpperCase() !== 'EXCLUIR';
+}
+
+function closeDeleteAccountModal() {
+  document.getElementById('delete-account-modal')?.remove();
+}
+
+function openDeleteAccountModal() {
+  if (!SUPA || !SUPA_USER) return openAuthModal('login');
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  const copy = deleteAccountWarningCopy(access);
+  const existing = document.getElementById('delete-account-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'delete-account-modal';
+  modal.className = 'delete-account-modal';
+  modal.innerHTML = `
+    <div class="delete-account-card">
+      <button class="delete-account-close" type="button" onclick="closeDeleteAccountModal()">x</button>
+      <div class="delete-account-kicker">${copy.pro ? 'Plano Pro' : access?.isAdmin ? 'Admin' : 'Conta'}</div>
+      <h3>${copy.title}</h3>
+      <p>${copy.body}</p>
+      ${access?.isAdmin ? '' : `
+        <div class="delete-account-confirm-box">
+          <label>Digite EXCLUIR para confirmar</label>
+          <input id="delete-account-confirm" type="text" autocomplete="off" oninput="updateDeleteAccountConfirmState()" placeholder="EXCLUIR">
+        </div>
+        <button id="delete-account-submit" class="delete-account-submit" type="button" onclick="deleteAccount()" disabled>
+          Excluir minha conta permanentemente
+        </button>
+      `}
+      <button class="delete-account-cancel" type="button" onclick="closeDeleteAccountModal()">Manter minha conta</button>
+      <div id="delete-account-msg" class="delete-account-msg"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('delete-account-confirm')?.focus();
+}
+
+async function deleteAccount() {
+  if (!SUPA || !SUPA_USER) return openAuthModal('login');
+  const confirm = (document.getElementById('delete-account-confirm')?.value || '').trim().toUpperCase();
+  const msg = document.getElementById('delete-account-msg');
+  const btn = document.getElementById('delete-account-submit');
+  if (confirm !== 'EXCLUIR') {
+    if (msg) {
+      msg.className = 'delete-account-msg err';
+      msg.textContent = 'Digite EXCLUIR para confirmar.';
+    }
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Excluindo conta...';
+  }
+  if (msg) {
+    msg.className = 'delete-account-msg';
+    msg.textContent = 'Cancelando cobrancas recorrentes e removendo a conta com seguranca...';
+  }
+
+  try {
+    const { data: sessionData } = await SUPA.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) throw new Error('Faça login novamente para continuar.');
+
+    const response = await fetch('/.netlify/functions/delete-account', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ confirmation: confirm })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Nao foi possivel excluir a conta.');
+
+    if (msg) {
+      msg.className = 'delete-account-msg ok';
+      msg.textContent = 'Conta excluida. Redirecionando...';
+    }
+    await SUPA.auth.signOut().catch(() => {});
+    localStorage.removeItem(CHECKOUT_INTENT_KEY);
+    sessionStorage.clear();
+    setTimeout(() => {
+      window.location.href = '/?account=deleted';
+    }, 700);
+  } catch (e) {
+    if (msg) {
+      msg.className = 'delete-account-msg err';
+      msg.textContent = e.message || 'Erro ao excluir conta.';
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Excluir minha conta permanentemente';
+    }
+  }
+}
+
 // ══ ETAPA 3: RASTREAMENTO DE EVENTOS ════════════════════════
 // Salva evento de uso no Supabase (torneio criado, finalizado, etc.)
 async function trackEvent(type, details) {
