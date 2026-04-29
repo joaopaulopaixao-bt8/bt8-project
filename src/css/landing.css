@@ -905,16 +905,6 @@
   line-height:1.72;
   margin:10px 0 0;
 }
-.legal-note {
-  margin-top:24px;
-  padding:16px;
-  border:1px solid rgba(244,192,38,.28);
-  border-radius:10px;
-  color:#d9c98a;
-  background:rgba(244,192,38,.07);
-  font-size:13px;
-  line-height:1.55;
-}
 .legal-page-footer { margin-top:16px; }
 
 /* ── DESKTOP ─────────────────────────────── */

@@ -182,9 +182,6 @@ function renderLegalPage() {
       </section>
       <article class="legal-content lp-s visible-init">
         ${renderLegalSections(page.sections)}
-        <div class="legal-note">
-          Este texto é uma versão inicial informativa para publicação do produto. Recomenda-se revisão jurídica especializada conforme a operação comercial evoluir.
-        </div>
       </article>
     </main>
     ${legalFooter()}
