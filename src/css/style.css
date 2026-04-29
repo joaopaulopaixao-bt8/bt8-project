@@ -189,6 +189,44 @@ body { font-family:'Barlow', sans-serif; color:var(--white); position:relative; 
   display:block; color:var(--yellow); font-family:'Barlow Condensed',sans-serif;
   font-size:12px; letter-spacing:1.2px; text-transform:uppercase; margin-bottom:3px;
 }
+.email-confirm-modal {
+  position:fixed; inset:0; z-index:1800; display:flex; align-items:center; justify-content:center;
+  padding:20px; background:rgba(0,0,0,0.78); backdrop-filter:blur(7px);
+}
+.email-confirm-card {
+  width:100%; max-width:430px; background:#0d1a27; border:1px solid rgba(244,192,38,0.36);
+  border-radius:20px; padding:26px 22px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,0.55);
+}
+.email-confirm-icon {
+  width:56px; height:56px; border-radius:17px; margin:0 auto 14px;
+  display:flex; align-items:center; justify-content:center; background:rgba(244,192,38,0.14);
+  border:1px solid rgba(244,192,38,0.28); color:var(--yellow); font-size:26px;
+}
+.email-confirm-kicker {
+  font-family:'Barlow Condensed',sans-serif; font-size:12px; font-weight:800;
+  color:var(--blue-l); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:6px;
+}
+.email-confirm-card h3 {
+  font-family:'Bebas Neue',sans-serif; font-size:30px; line-height:1; letter-spacing:1px;
+  color:var(--white); margin:0 0 10px;
+}
+.email-confirm-card p {
+  color:var(--muted2); font-size:14px; line-height:1.55; margin:0 0 14px;
+}
+.email-confirm-card p strong { color:var(--white); }
+.email-confirm-note {
+  background:rgba(244,192,38,0.10); border:1px solid rgba(244,192,38,0.22);
+  border-radius:13px; color:#dff7ff; font-size:13px; line-height:1.45;
+  padding:12px; margin-bottom:16px;
+}
+.email-confirm-card button {
+  width:100%; min-height:46px; border:0; border-radius:12px; background:var(--yellow);
+  color:#07111c; font-weight:900; cursor:pointer;
+}
+.email-confirm-card .email-confirm-link {
+  min-height:38px; margin-top:8px; background:transparent; color:var(--blue-l);
+  border:0; font-size:13px;
+}
 .user-menu-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; }
 .guest-save-nudge {
   align-items:center; gap:8px; max-width:238px;

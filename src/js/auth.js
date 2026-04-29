@@ -231,6 +231,32 @@ function showAuthMsg(text, type) {
   m.textContent = text;
 }
 
+function showEmailConfirmationModal(email, intent) {
+  const existing = document.getElementById('email-confirm-modal');
+  if (existing) existing.remove();
+  const hasPlan = intent?.plan === 'pro_monthly' || intent?.plan === 'pro_30d';
+  const planLabel = hasPlan && typeof checkoutPlanLabel === 'function' ? checkoutPlanLabel(intent.plan) : '';
+  const modal = document.createElement('div');
+  modal.id = 'email-confirm-modal';
+  modal.className = 'email-confirm-modal';
+  modal.innerHTML = `
+    <div class="email-confirm-card">
+      <div class="email-confirm-icon">✉</div>
+      <div class="email-confirm-kicker">${hasPlan ? planLabel : 'Cadastro criado'}</div>
+      <h3>Confirme seu e-mail para continuar</h3>
+      <p>Enviamos um link para <strong>${email || 'seu e-mail'}</strong>. Abra sua caixa de entrada e clique no link de confirmação.</p>
+      <div class="email-confirm-note">
+        ${hasPlan
+          ? 'Depois da confirmação, você volta para o BT8 e o checkout seguro abre automaticamente.'
+          : 'Depois da confirmação, volte ao BT8 e entre na sua conta para salvar seus torneios.'}
+      </div>
+      <button onclick="document.getElementById('email-confirm-modal')?.remove()">Entendi, vou confirmar</button>
+      <button class="email-confirm-link" onclick="document.getElementById('email-confirm-modal')?.remove();switchAuthTab('login')">Já confirmei, quero entrar</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
 function checkPw(pw) {
   const okLen = pw.length >= 8;
   const okLetter = /[a-zA-Z]/.test(pw);
@@ -304,9 +330,8 @@ async function doSignup() {
         showAuthMsg('Conta criada. Abrindo checkout seguro...', 'success');
         setTimeout(() => continuePendingCheckout('signup_autoconfirmed'), 500);
       } else {
-        showAuthMsg(intent?.plan
-          ? `Conta criada! Confirme seu e-mail para continuar a assinatura do ${checkoutPlanLabel(intent.plan)}.`
-          : 'Conta criada! Verifique seu e-mail para confirmar.', 'success');
+        showAuthMsg('Conta criada. Confirme seu e-mail para continuar.', 'success');
+        showEmailConfirmationModal(email, intent);
       }
       if (typeof trackEvent === 'function') trackEvent('signup_completed', { provider: 'email' });
     }
