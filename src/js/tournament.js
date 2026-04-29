@@ -1497,20 +1497,6 @@ function getStandings(){
   const m=APP.mode;
   const isDupla=IS_DUPLA_FIXA[m];
   const isSoma=IS_SOMA[m];
-  const access = typeof currentAccess === 'function' ? currentAccess() : null;
-
-  if (!APP._trackedTournamentFinished) {
-    APP._trackedTournamentFinished = true;
-    trackEvent('tournament_finished', {
-      format: m || '',
-      category: APP.category || '',
-      players: (APP.players || []).filter(p => !p.isBye).length,
-      plan: access?.plan || (APP.isGuest ? 'guest' : 'free'),
-      auto_open: !!isAutoOpen,
-      champion: stand[0]?.name || champ || '',
-      top3: stand.slice(0, 3).map(p => p.name)
-    });
-  }
   const isElim=IS_ELIMINATORIO[m];
 
   // Eliminatória: ranking por resultado no bracket
@@ -1570,6 +1556,27 @@ function getStandings(){
   });
 }
 
+function trackTournamentFinishedOnce(stand, champ, isAutoOpen) {
+  if (APP._trackedTournamentFinished) return;
+  const rounds = APP.matches.filter(x =>
+    (x.phase === 'round' || x.phase === 'rr' || x.phase === 'elim' || x.phase === 'final') && !x.isBye
+  );
+  const allDone = rounds.length > 0 && rounds.every(x => x.sA !== null);
+  if (!allDone) return;
+
+  APP._trackedTournamentFinished = true;
+  const access = typeof currentAccess === 'function' ? currentAccess() : null;
+  trackEvent('tournament_finished', {
+    format: APP.mode || '',
+    category: APP.category || '',
+    players: (APP.players || []).filter(p => !p.isBye).length,
+    plan: access?.plan || (APP.isGuest ? 'guest' : 'free'),
+    auto_open: !!isAutoOpen,
+    champion: stand?.[0]?.name || champ || '',
+    top3: (stand || []).slice(0, 3).map(p => p.name)
+  });
+}
+
 // ── FOOTER RANKING ────────────────────────────────────────
 function updateFooterRanking(){
   const stand=getStandings();
@@ -1601,6 +1608,7 @@ function verResultadoFinal(isAutoOpen) {
   const m=APP.mode;
   const isDupla=IS_DUPLA_FIXA[m];
   const isSoma=IS_SOMA[m];
+  trackTournamentFinishedOnce(stand, champ, isAutoOpen);
 
   // Podium
   const top3=stand.slice(0,3);
