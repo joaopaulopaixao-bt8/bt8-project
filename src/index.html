@@ -373,9 +373,44 @@
         </select>
       </div>
     </div>
-    <div class="profile-field">
-      <label>Cidade / Estado</label>
-      <input class="profile-input" type="text" id="pf-city" placeholder="Ex: Cuiabá - MT" maxlength="60">
+    <div class="profile-row">
+      <div class="profile-field profile-city-field">
+        <label>Cidade</label>
+        <input class="profile-input" type="text" id="pf-city" placeholder="Ex: Cuiabá" maxlength="60">
+      </div>
+      <div class="profile-field profile-state-field">
+        <label>Estado</label>
+        <select class="profile-select" id="pf-state">
+          <option value="">UF</option>
+          <option value="AC">AC</option>
+          <option value="AL">AL</option>
+          <option value="AP">AP</option>
+          <option value="AM">AM</option>
+          <option value="BA">BA</option>
+          <option value="CE">CE</option>
+          <option value="DF">DF</option>
+          <option value="ES">ES</option>
+          <option value="GO">GO</option>
+          <option value="MA">MA</option>
+          <option value="MT">MT</option>
+          <option value="MS">MS</option>
+          <option value="MG">MG</option>
+          <option value="PA">PA</option>
+          <option value="PB">PB</option>
+          <option value="PR">PR</option>
+          <option value="PE">PE</option>
+          <option value="PI">PI</option>
+          <option value="RJ">RJ</option>
+          <option value="RN">RN</option>
+          <option value="RS">RS</option>
+          <option value="RO">RO</option>
+          <option value="RR">RR</option>
+          <option value="SC">SC</option>
+          <option value="SP">SP</option>
+          <option value="SE">SE</option>
+          <option value="TO">TO</option>
+        </select>
+      </div>
     </div>
     <button class="btn-profile-save" id="btn-pf-save" onclick="saveProfile()">SALVAR PERFIL</button>
     <div class="profile-danger-zone">

@@ -220,6 +220,27 @@ function goBack() {
 // ══ ETAPA 2: PERFIL DO USUÁRIO ══════════════════════════════
 let PROFILE_AVATAR_URL = '';
 
+const BRAZIL_STATE_CODES = new Set([
+  'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
+  'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
+]);
+
+function splitSavedCityState(city, state) {
+  const savedCity = String(city || '').trim();
+  const savedState = String(state || '').trim().toUpperCase();
+  if (BRAZIL_STATE_CODES.has(savedState)) {
+    return { city: savedCity, state: savedState };
+  }
+  const match = savedCity.match(/^(.*?)\s*[-/]\s*([A-Za-z]{2})$/);
+  if (match) {
+    const parsedState = match[2].toUpperCase();
+    if (BRAZIL_STATE_CODES.has(parsedState)) {
+      return { city: match[1].trim(), state: parsedState };
+    }
+  }
+  return { city: savedCity, state: '' };
+}
+
 async function openProfileModal() {
   closeUserMenu();
   document.getElementById('profile-modal').classList.add('open');
@@ -262,7 +283,9 @@ async function loadProfile() {
       document.getElementById('pf-phone').value = data.telefone || '';
       document.getElementById('pf-birth').value = data.data_nascimento || '';
       document.getElementById('pf-gender').value= data.sexo   || '';
-      document.getElementById('pf-city').value  = (data.cidade ? data.cidade + (data.estado ? ' - ' + data.estado : '') : '');
+      const location = splitSavedCityState(data.cidade, data.estado);
+      document.getElementById('pf-city').value = location.city;
+      document.getElementById('pf-state').value = location.state;
     } else {
       document.getElementById('pf-name').value = profileName;
     }
@@ -335,7 +358,7 @@ async function saveProfile() {
   btn.disabled = true; btn.textContent = 'SALVANDO...';
   msg.textContent = ''; msg.className = 'profile-msg';
   const cityRaw = document.getElementById('pf-city').value.trim();
-  const cityParts = cityRaw.split('-').map(s => s.trim());
+  const stateRaw = document.getElementById('pf-state')?.value || '';
   const payload = {
     id: SUPA_USER.id,
     email: SUPA_USER.email,
@@ -343,8 +366,8 @@ async function saveProfile() {
     telefone:         document.getElementById('pf-phone').value.trim(),
     data_nascimento:  document.getElementById('pf-birth').value || null,
     sexo:             document.getElementById('pf-gender').value || null,
-    cidade:           cityParts[0] || null,
-    estado:           cityParts[1] || null,
+    cidade:           cityRaw || null,
+    estado:           stateRaw || null,
     avatar_url:       PROFILE_AVATAR_URL || null,
     updated_at: new Date().toISOString()
   };

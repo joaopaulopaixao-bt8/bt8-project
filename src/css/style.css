@@ -911,6 +911,8 @@ select.input-field option { background:#0d1a27; }
 .profile-select option { background:#0d1a27; color:var(--white); }
 .profile-row { display:flex; gap:10px; }
 .profile-row .profile-field { flex:1; }
+.profile-city-field { flex:1 1 auto; }
+.profile-state-field { flex:0 0 92px; }
 .btn-profile-save {
   width:100%; background:var(--blue); border:none; border-radius:10px;
   padding:12px; color:var(--white); font-family:'Bebas Neue'; font-size:16px;
@@ -1013,5 +1015,7 @@ select.input-field option { background:#0d1a27; }
 @media (max-width:420px) {
   .profile-danger-zone { align-items:stretch; flex-direction:column; }
   .profile-delete-btn { width:100%; }
+  .profile-row { flex-direction:column; gap:0; }
+  .profile-state-field { flex:1; }
 }
 
