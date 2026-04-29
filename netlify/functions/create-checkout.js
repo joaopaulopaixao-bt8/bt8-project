@@ -45,6 +45,17 @@ const supabaseFetch = async (url, key, path, options = {}) => {
   return data;
 };
 
+const safePath = (value, fallback) => {
+  const path = String(value || fallback || '/');
+  if (!path.startsWith('/') || path.startsWith('//') || path.includes('://')) return fallback;
+  return path;
+};
+
+const appendCheckoutParams = (path, status) => {
+  const separator = path.includes('?') ? '&' : '?';
+  return `${path}${separator}checkout=${status}${status === 'success' ? '&session_id={CHECKOUT_SESSION_ID}' : ''}`;
+};
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -74,6 +85,8 @@ exports.handler = async (event) => {
   const plan = body.plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
   const origin = String(body.origin || event.headers.origin || '').replace(/\/$/, '');
   if (!origin) return json(400, { error: 'origin is required.' });
+  const successPath = safePath(body.success_path, '/');
+  const cancelPath = safePath(body.cancel_path, '/bt8');
 
   const token = (event.headers.authorization || '').replace(/^Bearer\s+/i, '');
   if (!token) return json(401, { error: 'Login required.' });
@@ -138,8 +151,8 @@ exports.handler = async (event) => {
       client_reference_id: userId,
       'line_items[0][price]': isMonthly ? monthlyPrice : thirtyDayPrice,
       'line_items[0][quantity]': '1',
-      success_url: `${origin}?checkout=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}?checkout=cancelled`,
+      success_url: `${origin}${appendCheckoutParams(successPath, 'success')}`,
+      cancel_url: `${origin}${appendCheckoutParams(cancelPath, 'cancelled')}`,
       'metadata[user_id]': userId,
       'metadata[plan_type]': isMonthly ? 'recurring' : 'one_time_30d'
     };

@@ -23,7 +23,9 @@ function bt8PlanCta(plan) {
     startCheckout(plan);
     return;
   }
-  sessionStorage.setItem('bt8_open_plans_after_login', '1');
+  if (typeof savePendingCheckoutIntent === 'function') {
+    savePendingCheckoutIntent(plan, 'bt8_landing_paid_plan');
+  }
   bt8PrimaryCta(plan === 'pro_monthly' ? 'bt8_landing_monthly' : 'bt8_landing_30d');
 }
 

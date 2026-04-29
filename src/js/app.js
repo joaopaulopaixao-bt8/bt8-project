@@ -75,8 +75,11 @@ function showAdminRouteLogin() {
       <input id="admin-login-email" type="email" autocomplete="email" value="${safeAdminText(lastEmail)}"
         style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px;margin-bottom:12px;font-size:14px;">
       <label style="display:block;font-size:11px;color:#7aa8c4;margin-bottom:6px;text-transform:uppercase;letter-spacing:.8px;">Senha</label>
-      <input id="admin-login-password" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminRouteLogin()"
-        style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px;margin-bottom:14px;font-size:14px;">
+      <div class="password-wrap" style="margin-bottom:14px;">
+        <input id="admin-login-password" class="password-input" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminRouteLogin()"
+          style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px 48px 12px 12px;font-size:14px;outline:none;">
+        <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('admin-login-password', this)">👁</button>
+      </div>
       <button onclick="adminRouteLogin()"
         style="width:100%;background:#ffd84d;border:none;border-radius:10px;color:#07111c;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:12px;cursor:pointer;">ENTRAR COMO ADMIN</button>
       <div id="admin-route-msg" style="min-height:18px;margin-top:12px;font-size:12px;color:#f87171;text-align:center;"></div>

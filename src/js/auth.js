@@ -83,6 +83,14 @@ function handleAuthStateChange(user) {
         sessionStorage.removeItem('bt8_open_plans_after_login');
         setTimeout(() => { if (typeof openPlansModal === 'function') openPlansModal(); }, 600);
       }
+      const params = new URLSearchParams(window.location.search);
+      const shouldContinueCheckout = commercialRoute && (
+        params.get('next') === 'checkout' ||
+        (typeof getPendingCheckoutIntent === 'function' && getPendingCheckoutIntent()?.plan)
+      );
+      if (user && shouldContinueCheckout && typeof continuePendingCheckout === 'function') {
+        setTimeout(() => continuePendingCheckout(params.get('auth') === 'confirmed' ? 'email_confirmed' : 'login_completed'), 700);
+      }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
     });
   }
@@ -119,6 +127,19 @@ function renderUserAvatar(user) {
   }
 }
 
+function togglePasswordVisibility(inputId, btn) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  if (btn) {
+    btn.classList.toggle('is-visible', show);
+    btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
+    btn.textContent = show ? '🙈' : '👁';
+  }
+  input.focus();
+}
+
 // ── AUTH MODAL ───────────────────────────────────────────────
 function openAuthModal(tab) {
   closeUserMenu();
@@ -128,6 +149,7 @@ function openAuthModal(tab) {
   const modal = document.getElementById('auth-modal');
   if (modal) modal.classList.add('open');
   switchAuthTab(tab || 'login');
+  updateAuthIntentContext(tab || 'login');
   clearAuthMsg();
 }
 
@@ -161,6 +183,7 @@ function switchAuthTab(tab) {
     if (fSignup) fSignup.style.display = '';
     if (fForgot) fForgot.style.display = 'none';
   }
+  updateAuthIntentContext(tab);
 }
 
 function showForgot() {
@@ -178,6 +201,27 @@ function showForgot() {
 function clearAuthMsg() {
   const m = document.getElementById('auth-msg');
   if (m) { m.className = 'auth-msg'; m.textContent = ''; }
+}
+
+function updateAuthIntentContext(tab) {
+  const box = document.getElementById('auth-context-msg');
+  const signupBtn = document.querySelector('#form-signup .btn-auth-submit');
+  const loginBtn = document.querySelector('#form-login .btn-auth-submit');
+  const intent = typeof getPendingCheckoutIntent === 'function' ? getPendingCheckoutIntent() : null;
+  const hasPaidIntent = intent?.plan === 'pro_monthly' || intent?.plan === 'pro_30d';
+  if (signupBtn && !signupBtn.disabled) signupBtn.textContent = hasPaidIntent ? 'CRIAR CONTA E CONTINUAR' : 'CADASTRAR';
+  if (loginBtn && !loginBtn.disabled) loginBtn.textContent = hasPaidIntent ? 'ENTRAR E CONTINUAR' : 'ENTRAR';
+  if (!box) return;
+  if (!hasPaidIntent || tab === 'forgot') {
+    box.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const label = typeof checkoutPlanLabel === 'function' ? checkoutPlanLabel(intent.plan) : 'BT8 Pro';
+  box.style.display = '';
+  box.innerHTML = tab === 'login'
+    ? `<strong>${label}</strong>Entre na sua conta para continuar para o checkout seguro.`
+    : `<strong>${label}</strong>Para assinar, crie sua conta primeiro. Depois de confirmar o e-mail, voce sera levado automaticamente ao checkout seguro.`;
 }
 
 function showAuthMsg(text, type) {
@@ -200,9 +244,13 @@ function checkPw(pw) {
 async function loginWithGoogle() {
   if (!SUPA) return showAuthMsg('Serviço indisponível', 'error');
   try {
+    const intent = typeof getPendingCheckoutIntent === 'function' ? getPendingCheckoutIntent() : null;
+    const redirectTo = intent?.plan && typeof checkoutEmailRedirectTo === 'function'
+      ? checkoutEmailRedirectTo(intent.plan)
+      : window.location.origin;
     const { error } = await SUPA.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: window.location.origin }
+      options: { redirectTo }
     });
     if (error) showAuthMsg(error.message, 'error');
   } catch(e) { showAuthMsg('Erro ao conectar com Google', 'error'); }
@@ -221,7 +269,8 @@ async function doLogin() {
     if (error) showAuthMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
     else if (typeof trackEvent === 'function') trackEvent('login_completed', { provider: 'email' });
   } catch(e) { showAuthMsg('Erro ao conectar', 'error'); }
-  if (btn) { btn.disabled = false; btn.textContent = 'ENTRAR'; }
+  if (btn) { btn.disabled = false; }
+  updateAuthIntentContext('login');
 }
 
 async function doSignup() {
@@ -238,18 +287,32 @@ async function doSignup() {
     if (typeof trackEvent === 'function') trackEvent('signup_started', { provider: 'email' });
     const { data, error } = await SUPA.auth.signUp({
       email, password: pw,
-      options: { data: { full_name: name } }
+      options: {
+        data: { full_name: name },
+        ...(typeof getPendingCheckoutIntent === 'function' && getPendingCheckoutIntent()?.plan && typeof checkoutEmailRedirectTo === 'function'
+          ? { emailRedirectTo: checkoutEmailRedirectTo(getPendingCheckoutIntent().plan) }
+          : {})
+      }
     });
     if (error) { showAuthMsg(error.message, 'error'); }
     else if (data?.user?.identities?.length === 0) {
       showAuthMsg('E-mail já cadastrado. Faça login.', 'error');
       setTimeout(() => switchAuthTab('login'), 2000);
     } else {
-      showAuthMsg('Conta criada! Verifique seu e-mail para confirmar.', 'success');
+      const intent = typeof getPendingCheckoutIntent === 'function' ? getPendingCheckoutIntent() : null;
+      if (data?.session && intent?.plan && typeof continuePendingCheckout === 'function') {
+        showAuthMsg('Conta criada. Abrindo checkout seguro...', 'success');
+        setTimeout(() => continuePendingCheckout('signup_autoconfirmed'), 500);
+      } else {
+        showAuthMsg(intent?.plan
+          ? `Conta criada! Confirme seu e-mail para continuar a assinatura do ${checkoutPlanLabel(intent.plan)}.`
+          : 'Conta criada! Verifique seu e-mail para confirmar.', 'success');
+      }
       if (typeof trackEvent === 'function') trackEvent('signup_completed', { provider: 'email' });
     }
   } catch(e) { showAuthMsg('Erro ao criar conta', 'error'); }
-  if (btn) { btn.disabled = false; btn.textContent = 'CADASTRAR'; }
+  if (btn) { btn.disabled = false; }
+  updateAuthIntentContext('signup');
 }
 
 async function doForgot() {

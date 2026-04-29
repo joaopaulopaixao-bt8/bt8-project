@@ -14,6 +14,98 @@ const BT8_ACCESS = {
   monthlyScheduled: false
 };
 const FREE_MONTHLY_TOURNAMENT_LIMIT = 3;
+const CHECKOUT_INTENT_KEY = 'bt8_pending_checkout_intent';
+
+function checkoutPlanLabel(plan) {
+  return plan === 'pro_30d' ? 'BT8 Pro 30 Dias' : 'BT8 Pro Mensal';
+}
+
+function savePendingCheckoutIntent(plan, source) {
+  const normalizedPlan = plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
+  const intent = {
+    plan: normalizedPlan,
+    source: source || 'unknown',
+    created_at: new Date().toISOString()
+  };
+  localStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(intent));
+  return intent;
+}
+
+function getPendingCheckoutIntent() {
+  try {
+    const intent = JSON.parse(localStorage.getItem(CHECKOUT_INTENT_KEY) || 'null');
+    if (!intent?.plan) return null;
+    const createdAt = intent.created_at ? new Date(intent.created_at).getTime() : 0;
+    if (createdAt && Date.now() - createdAt > 1000 * 60 * 60 * 24) {
+      localStorage.removeItem(CHECKOUT_INTENT_KEY);
+      return null;
+    }
+    return intent;
+  } catch (e) {
+    localStorage.removeItem(CHECKOUT_INTENT_KEY);
+    return null;
+  }
+}
+
+function clearPendingCheckoutIntent() {
+  localStorage.removeItem(CHECKOUT_INTENT_KEY);
+  sessionStorage.removeItem('bt8_open_plans_after_login');
+}
+
+function checkoutEmailRedirectTo(plan) {
+  const normalizedPlan = plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
+  return `${window.location.origin}/bt8?auth=confirmed&next=checkout&plan=${encodeURIComponent(normalizedPlan)}`;
+}
+
+function checkoutReturnPaths(plan) {
+  const normalizedPlan = plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
+  return {
+    successPath: '/',
+    cancelPath: `/bt8?plan=${encodeURIComponent(normalizedPlan)}`
+  };
+}
+
+function syncCheckoutIntentFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const next = params.get('next');
+  const plan = params.get('plan');
+  if (next === 'checkout' && (plan === 'pro_monthly' || plan === 'pro_30d')) {
+    return savePendingCheckoutIntent(plan, 'email_confirmed');
+  }
+  return getPendingCheckoutIntent();
+}
+
+function showCheckoutContinuation(message) {
+  const existing = document.getElementById('checkout-continuation-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'checkout-continuation-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:1750;background:rgba(0,0,0,.78);display:flex;align-items:center;justify-content:center;padding:20px;';
+  modal.innerHTML = `
+    <div style="width:100%;max-width:410px;background:#0d1a27;border:1px solid rgba(244,192,38,.36);border-radius:18px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.45);">
+      <div style="font-family:'Bebas Neue';font-size:26px;letter-spacing:1.5px;color:#ffd84d;margin-bottom:8px;">CONTINUANDO ASSINATURA</div>
+      <div id="checkout-continuation-msg" style="font-size:13px;line-height:1.55;color:#a8c4d4;">${message || 'Abrindo checkout seguro...'}</div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function continuePendingCheckout(reason) {
+  const intent = syncCheckoutIntentFromUrl();
+  if (!intent?.plan || !SUPA_USER) return false;
+  if (intent._opening) return true;
+  intent._opening = true;
+  localStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(intent));
+  showCheckoutContinuation(
+    reason === 'email_confirmed'
+      ? `Conta confirmada. Abrindo checkout seguro do ${checkoutPlanLabel(intent.plan)}...`
+      : `Abrindo checkout seguro do ${checkoutPlanLabel(intent.plan)}...`
+  );
+  if (typeof trackEvent === 'function') {
+    trackEvent('pending_checkout_continued', { plan: intent.plan, reason: reason || intent.source || '' });
+  }
+  await startCheckout(intent.plan, { fromPendingIntent: true });
+  return true;
+}
 
 function normalizeAccess(profile, user, subscription) {
   const now = Date.now();
@@ -480,7 +572,7 @@ async function cancelRecurringSubscription() {
   }
 }
 
-async function startCheckout(plan) {
+async function startCheckout(plan, options = {}) {
   if (!SUPA || !SUPA_USER) return openAuthModal('login');
   const msg = document.getElementById('plans-msg');
   const btnMonthly = document.getElementById('btn-checkout-monthly');
@@ -497,21 +589,36 @@ async function startCheckout(plan) {
     if (!token) throw new Error('Faça login novamente para continuar.');
 
     trackEvent('checkout_started', { plan });
+    const paths = checkoutReturnPaths(plan);
     const response = await fetch('/.netlify/functions/create-checkout', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         authorization: `Bearer ${token}`
       },
-      body: JSON.stringify({ plan, origin: window.location.origin })
+      body: JSON.stringify({
+        plan,
+        origin: window.location.origin,
+        success_path: paths.successPath,
+        cancel_path: paths.cancelPath,
+        source: options.fromPendingIntent ? 'pending_checkout_intent' : 'plans_modal'
+      })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       const missing = data.missing?.length ? ` Variáveis faltando: ${data.missing.join(', ')}.` : '';
       throw new Error((data.error || 'Nao foi possivel abrir o checkout.') + missing);
     }
+    clearPendingCheckoutIntent();
     window.location.href = data.url;
   } catch (e) {
+    const intent = getPendingCheckoutIntent();
+    if (intent?._opening) {
+      delete intent._opening;
+      localStorage.setItem(CHECKOUT_INTENT_KEY, JSON.stringify(intent));
+    }
+    const continuation = document.getElementById('checkout-continuation-msg');
+    if (continuation) continuation.textContent = e.message || 'Erro ao iniciar checkout.';
     if (msg) {
       msg.style.color = '#f87171';
       msg.textContent = e.message || 'Erro ao iniciar checkout.';
