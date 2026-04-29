@@ -6,6 +6,7 @@ const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://znifpitysqfbepjymtmg.supabase.
 const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpuaWZwaXR5c3FmYmVwanltdG1nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNDM0MTMsImV4cCI6MjA5MjYxOTQxM30.zeX_H63t9mKFLb3nNDjw7efPZmzE87BzDqFPa0U_c_c';
 let SUPA = null;
 let SUPA_USER = null;
+let PASSWORD_RECOVERY_ACTIVE = false;
 
 // Entra no sistema após login — mesmo padrão do _doNewTourney que funciona
 function enterApp() {
@@ -33,11 +34,21 @@ function initSupabase() {
     SUPA = window.supabase.createClient(SUPA_URL, SUPA_KEY);
     SUPA.auth.onAuthStateChange((event, session) => {
       SUPA_USER = session?.user || null;
+      if (event === 'PASSWORD_RECOVERY') {
+        PASSWORD_RECOVERY_ACTIVE = true;
+        showResetPasswordModal();
+      }
       handleAuthStateChange(SUPA_USER);
     });
     SUPA.auth.getSession().then(({ data }) => {
       SUPA_USER = data?.session?.user || null;
       handleAuthStateChange(SUPA_USER);
+      if (isResetPasswordRoute() && SUPA_USER && !PASSWORD_RECOVERY_ACTIVE) {
+        PASSWORD_RECOVERY_ACTIVE = true;
+        showResetPasswordModal();
+      } else if (isResetPasswordRoute() && !SUPA_USER) {
+        showResetPasswordExpiredModal();
+      }
     });
   } catch(e) { console.warn('Supabase init error:', e); }
 }
@@ -50,6 +61,7 @@ function handleAuthStateChange(user) {
   const authModalOpen = document.getElementById('auth-modal')?.classList.contains('open');
   const adminRoute = typeof isAdminRoute === 'function' && isAdminRoute();
   const commercialRoute = typeof isCommercialLandingRoute === 'function' && isCommercialLandingRoute();
+  const resetPasswordRoute = isResetPasswordRoute();
   const updateAdminButton = (access) => {
     const adminBtn = document.getElementById('admin-menu-btn');
     if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
@@ -60,7 +72,7 @@ function handleAuthStateChange(user) {
   }
 
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
-  if (user && !adminRoute && !commercialRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
+  if (user && !adminRoute && !commercialRoute && !resetPasswordRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
     enterApp();
   }
   if (user) APP.isGuest = false;
@@ -111,6 +123,10 @@ function handleAuthStateChange(user) {
     if (btn) { btn.innerHTML = '👤'; btn.style.background = ''; btn.style.padding = ''; }
     buildGuestMenu();
   }
+}
+
+function isResetPasswordRoute() {
+  return window.location.pathname.replace(/\/+$/, '') === '/reset-password';
 }
 
 function renderUserAvatar(user) {
@@ -196,6 +212,137 @@ function showForgot() {
   if (tabLogin) tabLogin.classList.remove('active');
   if (tabSignup) tabSignup.classList.remove('active');
   clearAuthMsg();
+}
+
+function showResetPasswordExpiredModal() {
+  const existing = document.getElementById('reset-password-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'reset-password-modal';
+  modal.className = 'reset-password-modal';
+  modal.innerHTML = `
+    <div class="reset-password-card">
+      <div class="reset-password-kicker">Link expirado</div>
+      <h3>Envie um novo link</h3>
+      <p>Este link de redefinicao nao esta mais valido. Solicite um novo e-mail para criar uma nova senha.</p>
+      <button class="reset-password-submit" type="button" onclick="closeResetPasswordModal();openAuthModal('login');showForgot()">Enviar novo link</button>
+      <button class="reset-password-secondary" type="button" onclick="window.location.href='/'">Voltar ao inicio</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function showResetPasswordModal() {
+  closeAuthModal();
+  const existing = document.getElementById('reset-password-modal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'reset-password-modal';
+  modal.className = 'reset-password-modal';
+  modal.innerHTML = `
+    <div class="reset-password-card">
+      <div class="reset-password-kicker">Redefinicao de senha</div>
+      <h3>Crie sua nova senha</h3>
+      <p>Escolha uma senha segura para voltar a acessar sua conta BT8.</p>
+
+      <div class="auth-field">
+        <label>Nova senha</label>
+        <div class="password-wrap">
+          <input class="auth-input password-input" type="password" id="reset-new-pw" placeholder="Minimo 8 caracteres" oninput="checkResetPw()">
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-new-pw', this)">👁</button>
+        </div>
+      </div>
+      <div class="auth-field">
+        <label>Confirmar nova senha</label>
+        <div class="password-wrap">
+          <input class="auth-input password-input" type="password" id="reset-confirm-pw" placeholder="Repita a senha" oninput="checkResetPw()">
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-confirm-pw', this)">👁</button>
+        </div>
+      </div>
+      <div class="pw-checks reset-pw-checks">
+        <span class="pw-check" id="reset-pwc-len">8 ou mais caracteres</span>
+        <span class="pw-check" id="reset-pwc-letter">Pelo menos 1 letra</span>
+        <span class="pw-check" id="reset-pwc-num">Pelo menos 1 numero</span>
+        <span class="pw-check" id="reset-pwc-match">As senhas precisam ser iguais</span>
+      </div>
+      <button class="reset-password-submit" id="btn-reset-password" type="button" onclick="saveNewPassword()" disabled>Salvar nova senha</button>
+      <div id="reset-password-msg" class="reset-password-msg"></div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  setTimeout(() => document.getElementById('reset-new-pw')?.focus(), 50);
+}
+
+function closeResetPasswordModal() {
+  document.getElementById('reset-password-modal')?.remove();
+}
+
+function checkResetPw() {
+  const pw = document.getElementById('reset-new-pw')?.value || '';
+  const confirm = document.getElementById('reset-confirm-pw')?.value || '';
+  const okLen = pw.length >= 8;
+  const okLetter = /[a-zA-Z]/.test(pw);
+  const okNum = /[0-9]/.test(pw);
+  const okMatch = !!pw && pw === confirm;
+  const set = (id, ok) => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'pw-check' + (ok ? ' ok' : '');
+  };
+  set('reset-pwc-len', okLen);
+  set('reset-pwc-letter', okLetter);
+  set('reset-pwc-num', okNum);
+  set('reset-pwc-match', okMatch);
+  const btn = document.getElementById('btn-reset-password');
+  if (btn) btn.disabled = !(okLen && okLetter && okNum && okMatch);
+  return okLen && okLetter && okNum && okMatch;
+}
+
+async function saveNewPassword() {
+  if (!SUPA) return;
+  const msg = document.getElementById('reset-password-msg');
+  const btn = document.getElementById('btn-reset-password');
+  const pw = document.getElementById('reset-new-pw')?.value || '';
+  if (!checkResetPw()) {
+    if (msg) {
+      msg.className = 'reset-password-msg err';
+      msg.textContent = 'Confira os requisitos da senha.';
+    }
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'Salvando...';
+  }
+  if (msg) {
+    msg.className = 'reset-password-msg';
+    msg.textContent = 'Atualizando sua senha com seguranca...';
+  }
+
+  try {
+    const { error } = await SUPA.auth.updateUser({ password: pw });
+    if (error) throw error;
+    PASSWORD_RECOVERY_ACTIVE = false;
+    if (msg) {
+      msg.className = 'reset-password-msg ok';
+      msg.textContent = 'Senha atualizada. Redirecionando para o login...';
+    }
+    await SUPA.auth.signOut().catch(() => {});
+    setTimeout(() => {
+      window.history.replaceState({}, document.title, '/');
+      closeResetPasswordModal();
+      openAuthModal('login');
+      showAuthMsg('Senha atualizada. Entre com sua nova senha.', 'success');
+    }, 900);
+  } catch (e) {
+    if (msg) {
+      msg.className = 'reset-password-msg err';
+      msg.textContent = e.message || 'Nao foi possivel atualizar a senha.';
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = 'Salvar nova senha';
+    }
+  }
 }
 
 function clearAuthMsg() {
@@ -345,7 +492,7 @@ async function doForgot() {
   const email = document.getElementById('forgot-email')?.value?.trim();
   if (!email) return showAuthMsg('Informe seu e-mail', 'error');
   try {
-    const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     if (error) showAuthMsg(error.message, 'error');
     else showAuthMsg('Link enviado! Verifique sua caixa de entrada.', 'success');
   } catch(e) { showAuthMsg('Erro ao enviar link', 'error'); }
@@ -431,7 +578,7 @@ async function lpForgot() {
   if (!SUPA) return lpShowMsg('Serviço indisponível', 'error');
   const email = document.getElementById('lp-email')?.value?.trim();
   if (!email) return lpShowMsg('Informe seu e-mail acima', 'error');
-  const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin }).catch(() => ({ error: { message: 'Erro' } }));
+  const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` }).catch(() => ({ error: { message: 'Erro' } }));
   if (error) lpShowMsg(error.message, 'error');
   else lpShowMsg('Link enviado! Verifique sua caixa de entrada.', 'success');
 }

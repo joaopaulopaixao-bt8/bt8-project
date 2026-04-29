@@ -227,6 +227,52 @@ body { font-family:'Barlow', sans-serif; color:var(--white); position:relative; 
   min-height:38px; margin-top:8px; background:transparent; color:var(--blue-l);
   border:0; font-size:13px;
 }
+.reset-password-modal {
+  position:fixed; inset:0; z-index:1850;
+  display:flex; align-items:center; justify-content:center;
+  padding:20px; background:rgba(0,0,0,0.78); backdrop-filter:blur(7px);
+}
+.reset-password-card {
+  width:100%; max-width:430px; background:#0d1a27;
+  border:1px solid rgba(244,192,38,0.36);
+  border-radius:20px; padding:26px 22px;
+  box-shadow:0 24px 70px rgba(0,0,0,0.55);
+}
+.reset-password-kicker {
+  font-family:'Barlow Condensed',sans-serif; font-size:12px; font-weight:800;
+  color:var(--yellow); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:6px;
+}
+.reset-password-card h3 {
+  font-family:'Bebas Neue',sans-serif; font-size:30px; line-height:1;
+  letter-spacing:1px; color:var(--white); margin:0 0 10px;
+}
+.reset-password-card p {
+  color:var(--muted2); font-size:14px; line-height:1.55; margin:0 0 16px;
+}
+.reset-pw-checks {
+  margin:4px 0 14px;
+}
+.reset-password-submit,
+.reset-password-secondary {
+  width:100%; min-height:46px; border-radius:12px; font-weight:900;
+  cursor:pointer;
+}
+.reset-password-submit {
+  border:0; background:var(--yellow); color:#07111c;
+}
+.reset-password-submit:disabled {
+  opacity:0.45; cursor:not-allowed;
+}
+.reset-password-secondary {
+  margin-top:9px; border:1px solid rgba(255,255,255,0.13);
+  background:rgba(255,255,255,0.06); color:#cfe8f5;
+}
+.reset-password-msg {
+  min-height:18px; margin-top:12px; text-align:center;
+  color:var(--muted2); font-size:12px; line-height:1.4;
+}
+.reset-password-msg.ok { color:#86efac; }
+.reset-password-msg.err { color:#f87171; }
 .user-menu-wrap { position:relative; margin-left:auto; display:flex; align-items:center; gap:8px; }
 .guest-save-nudge {
   align-items:center; gap:8px; max-width:238px;
