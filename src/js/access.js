@@ -203,6 +203,14 @@ function getGuestId() {
 }
 
 async function validateGuestTournamentLimit() {
+  if (SUPA && !SUPA_USER) {
+    try {
+      const { data } = await SUPA.auth.getSession();
+      SUPA_USER = data?.session?.user || null;
+      if (SUPA_USER) APP.isGuest = false;
+    } catch (e) {}
+  }
+
   if (!APP.isGuest || SUPA_USER) return { allowed: true };
 
   const response = await fetch('/.netlify/functions/guest-usage', {

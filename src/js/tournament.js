@@ -434,6 +434,7 @@ async function gerarTorneio() {
   const gerarBtn = document.getElementById('btn-gerar');
   if (gerarBtn?.dataset.loading === '1') return;
   const originalBtnText = gerarBtn?.textContent;
+  let generated = false;
   if (gerarBtn) {
     gerarBtn.dataset.loading = '1';
     gerarBtn.disabled = true;
@@ -451,17 +452,20 @@ async function gerarTorneio() {
     alert(e.message || 'Nao foi possivel validar seu teste gratis agora.');
     return;
   } finally {
-    if (gerarBtn) {
+    if (gerarBtn && !generated) {
       gerarBtn.dataset.loading = '';
       gerarBtn.disabled = false;
       gerarBtn.textContent = originalBtnText;
     }
   }
 
-  // Etapa 3: rastrear criação de torneio
-  APP._savedCurrentTournament = false;
-  APP._trackedTournamentFinished = false;
   try {
+    if (gerarBtn) gerarBtn.textContent = 'Gerando...';
+
+    // Etapa 3: rastrear criação de torneio
+    APP._savedCurrentTournament = false;
+    APP._trackedTournamentFinished = false;
+    try {
     const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent('tournament_created', {
       format: APP.mode || '',
@@ -476,7 +480,7 @@ async function gerarTorneio() {
         players: (APP.players || []).length
       });
     }
-  } catch(e) {}
+    } catch(e) {}
   const m = APP.mode;
   const ps = APP.players;
   const isAleatorio = IS_ALEATORIO[m];
@@ -499,6 +503,7 @@ async function gerarTorneio() {
     document.getElementById('torneio-title').textContent = MODE_INFO[m].label;
     renderTorneioScreen();
     goTo('screen-torneio');
+    generated = true;
     return;
   }
 
@@ -526,6 +531,7 @@ async function gerarTorneio() {
     document.getElementById('torneio-title').textContent = MODE_INFO[m].label;
     renderTorneioScreen();
     goTo('screen-torneio');
+    generated = true;
     return;
   }
 
@@ -550,6 +556,7 @@ async function gerarTorneio() {
     document.getElementById('torneio-title').textContent = MODE_INFO[m].label;
     renderTorneioScreen();
     goTo('screen-torneio');
+    generated = true;
     return;
   }
 
@@ -564,6 +571,17 @@ async function gerarTorneio() {
   document.getElementById('torneio-title').textContent = MODE_INFO[APP.mode].label;
   renderTorneioScreen();
   goTo('screen-torneio');
+  generated = true;
+  } catch(e) {
+    console.error('Erro ao gerar torneio:', e);
+    alert(e.message || 'Nao foi possivel gerar o torneio. Tente novamente.');
+  } finally {
+    if (gerarBtn && !generated) {
+      gerarBtn.dataset.loading = '';
+      gerarBtn.disabled = false;
+      gerarBtn.textContent = originalBtnText;
+    }
+  }
 }
 
 // ── Gera chaves eliminatórias com byes automáticos ─────────────────────────
