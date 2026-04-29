@@ -65,6 +65,7 @@ exports.handler = async (event) => {
 
   const guestId = String(body.guest_id || '').slice(0, 80);
   if (!guestId) return json(400, { error: 'guest_id is required.' });
+  const consume = body.consume !== false;
 
   const ip = event.headers['x-nf-client-connection-ip'] ||
     event.headers['client-ip'] ||
@@ -91,6 +92,15 @@ exports.handler = async (event) => {
         })
       }).catch(() => {});
       return json(200, { allowed: false, used: current.tournaments_created, limit, month_key: key });
+    }
+
+    if (!consume) {
+      return json(200, {
+        allowed: true,
+        used: current?.tournaments_created || 0,
+        limit,
+        month_key: key
+      });
     }
 
     if (current) {

@@ -300,7 +300,7 @@ function getGuestId() {
   return guestId;
 }
 
-async function validateGuestTournamentLimit() {
+async function validateGuestTournamentLimit(options = {}) {
   if (SUPA && !SUPA_USER) {
     try {
       const { data } = await SUPA.auth.getSession();
@@ -314,7 +314,10 @@ async function validateGuestTournamentLimit() {
   const response = await fetch('/.netlify/functions/guest-usage', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ guest_id: getGuestId() })
+    body: JSON.stringify({
+      guest_id: getGuestId(),
+      consume: options.consume !== false
+    })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data.error || 'Não foi possível validar o teste grátis.');

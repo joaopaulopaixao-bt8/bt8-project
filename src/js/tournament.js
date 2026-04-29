@@ -1,5 +1,18 @@
 // ── SCREEN 1 → 2: CATEGORY ─────────────────────────────
-function selectCategory(cat) {
+async function selectCategory(cat) {
+  if (APP.isGuest && !SUPA_USER && typeof validateGuestTournamentLimit === 'function') {
+    try {
+      const guestLimit = await validateGuestTournamentLimit({ consume: false });
+      if (!guestLimit.allowed) {
+        showGuestLimitReached();
+        return;
+      }
+    } catch (e) {
+      alert(e.message || 'Não foi possível validar seu teste grátis agora.');
+      return;
+    }
+  }
+
   APP.category = cat;
   const title = document.getElementById('tipo-title');
   const list = document.getElementById('type-list');
