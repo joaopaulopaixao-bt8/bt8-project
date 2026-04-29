@@ -1068,15 +1068,15 @@ function matchCard(mx) {
   const multi = mx.totalCourts>1;
   return `<div class="match-card" id="mc-${mx.id}">
     ${multi?`<span class="court-tag">Q${mx.courtNum}</span>`:''}
-    <div class="match-teams">
-      <div class="team-col">
-        <span class="t-name${aW?' won':''}">${mx.pA0}</span>
-        <span class="t-name${aW?' won':''}" style="color:var(--muted2)">${mx.pA1}</span>
+    <div class="match-teams super-match-teams">
+      <div class="super-team${aW?' won':''}">
+        <span class="super-team-label">Dupla A</span>
+        <span class="super-team-names">${mx.pA0} <span>+</span> ${mx.pA1}</span>
       </div>
       <span class="vs-badge">VS</span>
-      <div class="team-col">
-        <span class="t-name${bW?' won':''}">${mx.pB0}</span>
-        <span class="t-name${bW?' won':''}" style="color:var(--muted2)">${mx.pB1}</span>
+      <div class="super-team${bW?' won':''}">
+        <span class="super-team-label">Dupla B</span>
+        <span class="super-team-names">${mx.pB0} <span>+</span> ${mx.pB1}</span>
       </div>
     </div>
     <div class="score-row">

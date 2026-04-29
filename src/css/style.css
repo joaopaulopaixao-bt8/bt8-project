@@ -509,6 +509,27 @@ select.input-field option { background:#0d1a27; }
 .team-col { display:flex; flex-direction:column; gap:1px; }
 .t-name { font-size:12px; font-weight:500; line-height:1.4; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:120px; }
 .t-name.won { color:var(--yellow-l); font-weight:700; }
+.super-match-teams { min-width:220px; gap:7px; }
+.super-team {
+  min-width:0; flex:1; display:flex; flex-direction:column; gap:2px;
+  padding:6px 8px; border-radius:8px; background:rgba(255,255,255,0.035);
+  border:1px solid rgba(255,255,255,0.06);
+}
+.super-team-label {
+  font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.8px;
+  color:var(--blue-l);
+}
+.super-team-names {
+  font-size:12px; font-weight:700; line-height:1.25; color:var(--white);
+  overflow:hidden; text-overflow:ellipsis;
+}
+.super-team-names span { color:var(--muted2); font-weight:800; padding:0 2px; }
+.super-team.won {
+  border-color:rgba(244,192,38,0.36);
+  background:rgba(244,192,38,0.09);
+}
+.super-team.won .super-team-label,
+.super-team.won .super-team-names { color:var(--yellow-l); }
 .vs-badge { font-family:'Bebas Neue', sans-serif; font-size:14px; color:var(--muted); flex-shrink:0; }
 .score-row { display:flex; align-items:center; gap:4px; flex-shrink:0; }
 .score-input {
