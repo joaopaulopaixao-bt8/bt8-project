@@ -62,6 +62,7 @@ function handleAuthStateChange(user) {
   const adminRoute = typeof isAdminRoute === 'function' && isAdminRoute();
   const commercialRoute = typeof isCommercialLandingRoute === 'function' && isCommercialLandingRoute();
   const resetPasswordRoute = isResetPasswordRoute();
+  const oauthShouldEnterApp = sessionStorage.getItem('bt8_oauth_enter_app') === '1';
   const updateAdminButton = (access) => {
     const adminBtn = document.getElementById('admin-menu-btn');
     if (adminBtn) adminBtn.style.display = (access?.isAdmin || user?.email === ADMIN_EMAIL) ? '' : 'none';
@@ -72,7 +73,11 @@ function handleAuthStateChange(user) {
   }
 
   // Logou pela landing ou pelo modal → entra no app mesmo se o histórico interno estiver defasado.
-  if (user && !adminRoute && !commercialRoute && !resetPasswordRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) {
+  if (user && !adminRoute && !resetPasswordRoute && (
+    (!commercialRoute && (currentScreen === 'screen-landing' || activeScreen === 'screen-landing' || authModalOpen)) ||
+    (commercialRoute && oauthShouldEnterApp)
+  )) {
+    sessionStorage.removeItem('bt8_oauth_enter_app');
     enterApp();
   }
   if (user) APP.isGuest = false;
@@ -423,7 +428,8 @@ async function loginWithGoogle() {
     const intent = typeof getPendingCheckoutIntent === 'function' ? getPendingCheckoutIntent() : null;
     const redirectTo = intent?.plan && typeof checkoutEmailRedirectTo === 'function'
       ? checkoutEmailRedirectTo(intent.plan)
-      : window.location.origin;
+      : window.location.href.split('#')[0];
+    if (!intent?.plan) sessionStorage.setItem('bt8_oauth_enter_app', '1');
     const { error } = await SUPA.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo }
