@@ -148,7 +148,10 @@ exports.handler = async (event) => {
     const latest30d = latest30dRows?.[0] || null;
     const proUntil = profile.pro_until ? new Date(profile.pro_until) : null;
     const activeUntil = proUntil && proUntil.getTime() > Date.now() ? proUntil : null;
-    const isActive30d = activeUntil && (latest?.plan_type === 'one_time_30d' || latest30d?.plan_type === 'one_time_30d');
+    const hasActiveProProfile = profile.plan === 'pro' && !!activeUntil;
+    const latest30dIsActive = latest30d?.plan_type === 'one_time_30d'
+      && ['active', 'paid', 'complete', 'succeeded', 'checkout_started'].includes(String(latest30d.status || '').toLowerCase());
+    const isActive30d = hasActiveProProfile && latest30dIsActive;
     const alreadyRecurring = latest?.plan_type === 'recurring'
       && latest?.stripe_subscription_id
       && !latest?.metadata?.cancel_at_period_end
