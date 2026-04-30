@@ -79,9 +79,13 @@ function initSupabase() {
     });
     consumeOAuthHashSession()
       .catch(e => console.warn('OAuth hash session error:', e))
-      .then(() => SUPA.auth.getSession())
+      .then(consumedOAuth => SUPA.auth.getSession().then(result => ({ ...result, consumedOAuth })))
       .then(({ data }) => {
       SUPA_USER = data?.session?.user || null;
+      if (SUPA_USER && sessionStorage.getItem('bt8_oauth_enter_app') === '1') {
+        sessionStorage.removeItem('bt8_oauth_enter_app');
+        enterApp();
+      }
       handleAuthStateChange(SUPA_USER);
       if (isResetPasswordRoute() && SUPA_USER && !PASSWORD_RECOVERY_ACTIVE) {
         PASSWORD_RECOVERY_ACTIVE = true;
