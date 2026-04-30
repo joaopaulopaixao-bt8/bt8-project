@@ -9,6 +9,11 @@ let SUPA_USER = null;
 let PASSWORD_RECOVERY_ACTIVE = false;
 const BT8_INITIAL_AUTH_HASH = window.location.hash || '';
 
+if (BT8_INITIAL_AUTH_HASH.includes('access_token=') || BT8_INITIAL_AUTH_HASH.includes('refresh_token=')) {
+  const cleanPath = window.location.pathname === '/' ? '/bt8' : window.location.pathname;
+  window.history.replaceState({}, document.title, `${cleanPath}${window.location.search || ''}`);
+}
+
 // Entra no sistema após login — mesmo padrão do _doNewTourney que funciona
 function enterApp() {
   closeAuthModal();
