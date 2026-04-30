@@ -26,6 +26,27 @@ function enterApp() {
 }
 
 // ── SUPABASE INIT ────────────────────────────────────────────
+async function consumeOAuthHashSession() {
+  const hash = window.location.hash || '';
+  if (!hash.includes('access_token=')) return false;
+  const params = new URLSearchParams(hash.replace(/^#/, ''));
+  const accessToken = params.get('access_token');
+  const refreshToken = params.get('refresh_token');
+  const type = params.get('type');
+  if (!accessToken || !refreshToken || type === 'recovery') return false;
+
+  sessionStorage.setItem('bt8_oauth_enter_app', '1');
+  const { data, error } = await SUPA.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken
+  });
+  if (error) throw error;
+  const cleanPath = window.location.pathname === '/' ? '/bt8' : window.location.pathname;
+  window.history.replaceState({}, document.title, `${cleanPath}${window.location.search || ''}`);
+  SUPA_USER = data?.session?.user || null;
+  return !!SUPA_USER;
+}
+
 function initSupabase() {
   try {
     if (typeof isAdminRoute === 'function' && isAdminRoute() && typeof showAdminRouteLoading === 'function') {
@@ -40,7 +61,10 @@ function initSupabase() {
       }
       handleAuthStateChange(SUPA_USER);
     });
-    SUPA.auth.getSession().then(({ data }) => {
+    consumeOAuthHashSession()
+      .catch(e => console.warn('OAuth hash session error:', e))
+      .then(() => SUPA.auth.getSession())
+      .then(({ data }) => {
       SUPA_USER = data?.session?.user || null;
       handleAuthStateChange(SUPA_USER);
       if (isResetPasswordRoute() && SUPA_USER && !PASSWORD_RECOVERY_ACTIVE) {
