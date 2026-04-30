@@ -7,6 +7,7 @@ const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXV
 let SUPA = null;
 let SUPA_USER = null;
 let PASSWORD_RECOVERY_ACTIVE = false;
+const BT8_INITIAL_AUTH_HASH = window.location.hash || '';
 
 // Entra no sistema após login — mesmo padrão do _doNewTourney que funciona
 function enterApp() {
@@ -26,8 +27,15 @@ function enterApp() {
 }
 
 // ── SUPABASE INIT ────────────────────────────────────────────
-async function consumeOAuthHashSession() {
+function cleanSensitiveAuthHash() {
   const hash = window.location.hash || '';
+  if (!hash.includes('access_token=') && !hash.includes('refresh_token=')) return;
+  const cleanPath = window.location.pathname === '/' ? '/bt8' : window.location.pathname;
+  window.history.replaceState({}, document.title, `${cleanPath}${window.location.search || ''}`);
+}
+
+async function consumeOAuthHashSession() {
+  const hash = BT8_INITIAL_AUTH_HASH || window.location.hash || '';
   if (!hash.includes('access_token=')) return false;
   const params = new URLSearchParams(hash.replace(/^#/, ''));
   const accessToken = params.get('access_token');
@@ -36,15 +44,17 @@ async function consumeOAuthHashSession() {
   if (!accessToken || !refreshToken || type === 'recovery') return false;
 
   sessionStorage.setItem('bt8_oauth_enter_app', '1');
-  const { data, error } = await SUPA.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken
-  });
-  if (error) throw error;
-  const cleanPath = window.location.pathname === '/' ? '/bt8' : window.location.pathname;
-  window.history.replaceState({}, document.title, `${cleanPath}${window.location.search || ''}`);
-  SUPA_USER = data?.session?.user || null;
-  return !!SUPA_USER;
+  try {
+    const { data, error } = await SUPA.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken
+    });
+    if (error) throw error;
+    SUPA_USER = data?.session?.user || null;
+    return !!SUPA_USER;
+  } finally {
+    cleanSensitiveAuthHash();
+  }
 }
 
 function initSupabase() {
@@ -54,6 +64,7 @@ function initSupabase() {
     }
     SUPA = window.supabase.createClient(SUPA_URL, SUPA_KEY);
     SUPA.auth.onAuthStateChange((event, session) => {
+      cleanSensitiveAuthHash();
       SUPA_USER = session?.user || null;
       if (event === 'PASSWORD_RECOVERY') {
         PASSWORD_RECOVERY_ACTIVE = true;
