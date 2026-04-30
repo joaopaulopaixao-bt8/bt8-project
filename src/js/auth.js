@@ -55,7 +55,7 @@ async function consumeOAuthHashSession() {
       refresh_token: refreshToken
     });
     if (error) throw error;
-    SUPA_USER = data?.session?.user || null;
+    SUPA_USER = data?.session?.user || data?.user || null;
     return !!SUPA_USER;
   } finally {
     cleanSensitiveAuthHash();
@@ -80,9 +80,9 @@ function initSupabase() {
     consumeOAuthHashSession()
       .catch(e => console.warn('OAuth hash session error:', e))
       .then(consumedOAuth => SUPA.auth.getSession().then(result => ({ ...result, consumedOAuth })))
-      .then(({ data }) => {
-      SUPA_USER = data?.session?.user || null;
-      if (SUPA_USER && sessionStorage.getItem('bt8_oauth_enter_app') === '1') {
+      .then(({ data, consumedOAuth }) => {
+      SUPA_USER = data?.session?.user || SUPA_USER || null;
+      if (SUPA_USER && (consumedOAuth || sessionStorage.getItem('bt8_oauth_enter_app') === '1')) {
         sessionStorage.removeItem('bt8_oauth_enter_app');
         enterApp();
       }
