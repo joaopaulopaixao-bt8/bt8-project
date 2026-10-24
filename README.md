@@ -26,6 +26,7 @@ Copy-Item public\* dist
 ## Documentação
 
 - `docs/CONTEXT.md` — arquitetura completa, banco de dados, modos de torneio
+- `docs/STAGING_LOCAL.md` — ambiente de teste local (Supabase no Docker + `npm run dev:local`)
 - `CLAUDE.md` — instruções para o Claude Code
 - `.claude/skills/` — skills de frontend, Supabase e deploy
 

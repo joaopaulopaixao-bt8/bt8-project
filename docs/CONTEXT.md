@@ -55,7 +55,9 @@ A configuração pública vem de `window.BT8_ENV`, gerado no build a partir das 
 
 Fallback no código (`src/js/env.js`, `src/js/auth.js`, `scripts/build-netlify.js`): projeto **`srrbnjgixizsjxobvsma`** (`https://srrbnjgixizsjxobvsma.supabase.co`). O commit `9c3fa43` passou a usá-lo como fallback de produção.
 
-> ⚠️ **A confirmar**: a documentação antiga citava `znifpitysqfbepjymtmg` como produção e `srrbnjgixizsjxobvsma` como staging (`bt8-staging`). O código atual trata `srrbnjgixizsjxobvsma` como produção. Confirmar no Netlify qual valor de `BT8_SUPABASE_URL` está configurado para o contexto de produção, e se o projeto antigo ainda está em uso.
+> ✅ **Produção confirmada (2026-10-24)**: o bt8.com.br usa o projeto **`srrbnjgixizsjxobvsma`**. Ele nasceu como `bt8-staging` durante o MVP pago e foi promovido a produção. O projeto antigo `znifpitysqfbepjymtmg` não é mais usado pelo código.
+>
+> Consequência: hoje os Branch Deploys também apontam para esse mesmo projeto (ver `netlify.toml`), ou seja, **não há banco de staging separado** — testes em branch gravam no banco de produção.
 
 `netlify.toml` força o projeto `srrbnjgixizsjxobvsma` nos contextos `branch-deploy` e `mvp-pago`.
 
@@ -264,7 +266,7 @@ npm run build   # gera dist/ (src/ + public/ + dist/js/env.js)
 
 ## Problemas conhecidos / pendentes
 
-1. **Projeto Supabase de produção** — confirmar qual projeto o bt8.com.br usa (ver seção Ambientes).
+1. **Sem banco de staging na nuvem** — branch deploys usam o mesmo Supabase de produção (`srrbnjgixizsjxobvsma`). Testar mudanças de schema e fluxos no **staging local** (`npm run db:start` + `npm run dev:local`, ver `docs/STAGING_LOCAL.md`).
 2. **Login com Google** — o erro antigo `Database error saving new user` vinha de um trigger com colunas erradas. A migração atual recria `handle_new_user()` com as colunas corretas, e os commits de 30/04 corrigiram o retorno do OAuth no front. Falta confirmar em produção que o cadastro novo via Google funciona.
 3. **Testes pendentes da Sprint 7** — expiração do Pro 30 dias, histórico após expirar, e bloqueio por RLS a torneio de outro usuário (ver `docs/MVP_PAGO_IMPLEMENTACAO.md`).
 4. **Email admin no front** — `ADMIN_EMAIL` em `src/js/config.js` ainda é usado como fallback de UI. A permissão real é `role = 'admin'` no banco/backend.
