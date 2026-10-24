@@ -10,7 +10,7 @@ const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://srrbnjgixizsjxobvsma.supabase.
 const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'sb_publishable_...'; // ver src/js/auth.js
 ```
 
-> ⚠️ Confirmar qual projeto é produção (`srrbnjgixizsjxobvsma` no código; `znifpitysqfbepjymtmg` na documentação antiga). Ver `docs/CONTEXT.md`.
+> Produção = `srrbnjgixizsjxobvsma` (confirmado em 2026-10-24). O antigo `znifpitysqfbepjymtmg` não é mais usado. Branch Deploys apontam para o mesmo projeto — não há staging separado.
 
 Service role **só** nas Netlify Functions (`BT8_SUPABASE_SERVICE_ROLE_KEY`), nunca no front nem no repositório (que é público).
 

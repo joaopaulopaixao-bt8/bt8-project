@@ -13,7 +13,7 @@ Leia **docs/CONTEXT.md** antes de qualquer coisa. Ele contém toda a arquitetura
 
 ## Pendências prioritárias
 
-1. **Confirmar o projeto Supabase de produção** — o código usa `srrbnjgixizsjxobvsma` como fallback; os docs antigos citavam `znifpitysqfbepjymtmg`. Conferir `BT8_SUPABASE_URL` no Netlify (contexto production).
+1. **Supabase de produção = `srrbnjgixizsjxobvsma`** (confirmado em 2026-10-24; o antigo `znifpitysqfbepjymtmg` não é mais usado). Atenção: os Branch Deploys apontam para o mesmo projeto — não há banco de staging separado, então não testar migrações ou pagamentos em branch sem criar um staging novo.
 2. **Validar login com Google em produção** — o trigger `private.handle_new_user()` da migração já usa as colunas certas e o retorno OAuth foi corrigido no front (commits de 30/04/2026). Falta confirmar com um cadastro novo. Se o erro `Database error saving new user` voltar, investigar:
 
 ```sql
