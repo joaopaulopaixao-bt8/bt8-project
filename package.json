@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "node scripts/build-netlify.js"
+    "build": "node scripts/build-netlify.js",
+    "db:start": "npx -y supabase@2.120.0 start -x vector,logflare,imgproxy,realtime,storage-api,edge-runtime,supavisor",
+    "db:stop": "npx -y supabase@2.120.0 stop",
+    "db:reset": "npx -y supabase@2.120.0 db reset",
+    "db:status": "npx -y supabase@2.120.0 status",
+    "dev:local": "node scripts/dev-local.js"
   }
 }

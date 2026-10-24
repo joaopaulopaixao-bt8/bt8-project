@@ -266,7 +266,7 @@ npm run build   # gera dist/ (src/ + public/ + dist/js/env.js)
 
 ## Problemas conhecidos / pendentes
 
-1. **Sem banco de staging** — branch deploys usam o mesmo Supabase de produção (`srrbnjgixizsjxobvsma`). Criar um novo projeto de staging antes de testar mudanças de schema ou pagamentos.
+1. **Sem banco de staging na nuvem** — branch deploys usam o mesmo Supabase de produção (`srrbnjgixizsjxobvsma`). Testar mudanças de schema e fluxos no **staging local** (`npm run db:start` + `npm run dev:local`, ver `docs/STAGING_LOCAL.md`).
 2. **Login com Google** — o erro antigo `Database error saving new user` vinha de um trigger com colunas erradas. A migração atual recria `handle_new_user()` com as colunas corretas, e os commits de 30/04 corrigiram o retorno do OAuth no front. Falta confirmar em produção que o cadastro novo via Google funciona.
 3. **Testes pendentes da Sprint 7** — expiração do Pro 30 dias, histórico após expirar, e bloqueio por RLS a torneio de outro usuário (ver `docs/MVP_PAGO_IMPLEMENTACAO.md`).
 4. **Email admin no front** — `ADMIN_EMAIL` em `src/js/config.js` ainda é usado como fallback de UI. A permissão real é `role = 'admin'` no banco/backend.

@@ -8,3 +8,7 @@ bt8-*.png
 .DS_Store
 Thumbs.db
 supabase/.temp/
+
+# Local Netlify folder
+.netlify
+deno.lock
