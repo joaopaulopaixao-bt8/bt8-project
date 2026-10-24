@@ -1,11 +1,13 @@
 # BT8 — Beach Tennis Tournament Manager
 ## Contexto completo para Claude Code
 
+> Última revisão: 2026-10-24 — reflete o código da `main` em `9c3fa43` (30/04/2026), após o merge do MVP pago.
+
 ---
 
 ## O que é o BT8
 
-PWA (Progressive Web App) de gerenciamento de torneios de beach tennis. Roda 100% no navegador, sem backend próprio. Hospedado em **https://bt8.com.br** via **Netlify**. Banco de dados e autenticação via **Supabase**.
+PWA (Progressive Web App) de gerenciamento de torneios de beach tennis, com planos Free/Pro pagos via Stripe. O frontend roda no navegador (HTML/CSS/JS vanilla); a lógica sensível (limites de visitante, checkout, webhook, admin, exclusão de conta) roda em **Netlify Functions**. Hospedado em **https://bt8.com.br** via **Netlify**. Banco e autenticação via **Supabase**.
 
 ---
 
@@ -13,68 +15,134 @@ PWA (Progressive Web App) de gerenciamento de torneios de beach tennis. Roda 100
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Frontend | HTML (`src/index.html`) + CSS/JS modular em `src/css` e `src/js` |
+| Frontend | `src/index.html` + `src/css/*` + `src/js/*` + `src/img/*` |
 | PWA | `public/manifest.json` + `public/sw.js` (Service Worker) |
-| Hosting | Netlify (deploy por zip ou drag-and-drop) |
-| Auth | Supabase Auth (Google OAuth + Email/Senha) |
-| Banco | Supabase (PostgreSQL) |
+| Build | `npm run build` → `scripts/build-netlify.js` (gera `dist/` e `dist/js/env.js`) |
+| Hosting | Netlify conectado ao GitHub (`netlify.toml`, publish `dist`) |
+| Backend | Netlify Functions em `netlify/functions/` |
+| Auth | Supabase Auth (Google OAuth + Email/Senha + Recuperação de senha) |
+| Banco | Supabase (PostgreSQL) — schema em `supabase/migrations/001_paid_mvp_staging.sql` |
+| Pagamentos | Stripe (Checkout + Webhook) |
 | Share card | Canvas API → PNG 1080×1920px |
 
-> ⚠️ A documentação antiga citava arquivo único, mas o app atual está modularizado: `src/index.html`, `src/css/*`, `src/js/*` e imagens em `src/img/*`.
+### Arquivos JS (`src/js/`)
+
+| Arquivo | Responsabilidade |
+|---------|-----------------|
+| `env.js` | Config pública (`window.BT8_ENV`) — sobrescrito no build |
+| `config.js` | Constantes globais (inclui `ADMIN_EMAIL`) |
+| `auth.js` | Cliente Supabase, login Google/email, retorno OAuth, landing de login |
+| `access.js` | Planos (visitante/Free/Pro/Admin), limites, checkout, modal de planos |
+| `app.js` | Navegação, menu, perfil, exclusão de conta, `trackEvent`, Admin |
+| `tournament.js` | Geração e execução dos torneios, ranking |
+| `history.js` | Salvar/listar/abrir torneios do usuário |
+| `share.js` | Card PNG de compartilhamento |
+| `landing-commercial.js` | Landing comercial (`/bt8`) |
+| `legal-pages.js` | Termos, privacidade, direitos do sistema |
 
 ---
 
-## Supabase
+## Ambientes e Supabase
 
-- **URL**: `https://znifpitysqfbepjymtmg.supabase.co`
-- **Anon Key**: salva diretamente no index.html (variáveis `SUPA_URL` e `SUPA_KEY`)
-- **Auth configurado**: Google OAuth + Email/Senha + Recuperação de senha
-- **Redirect URL**: `https://bt8.com.br`
+A configuração pública vem de `window.BT8_ENV`, gerado no build a partir das variáveis do Netlify:
 
-### Tabelas existentes no banco
+| Variável | Uso |
+|----------|-----|
+| `BT8_APP_ENV` | `production` / `staging` |
+| `BT8_SUPABASE_URL` | URL do projeto Supabase |
+| `BT8_SUPABASE_ANON_KEY` | Publishable/anon key (pública) |
+| `BT8_STRIPE_PUBLISHABLE_KEY` | Opcional no front |
 
-#### `profiles` (já existia, estrutura em português)
+Fallback no código (`src/js/env.js`, `src/js/auth.js`, `scripts/build-netlify.js`): projeto **`srrbnjgixizsjxobvsma`** (`https://srrbnjgixizsjxobvsma.supabase.co`). O commit `9c3fa43` passou a usá-lo como fallback de produção.
+
+> ⚠️ **A confirmar**: a documentação antiga citava `znifpitysqfbepjymtmg` como produção e `srrbnjgixizsjxobvsma` como staging (`bt8-staging`). O código atual trata `srrbnjgixizsjxobvsma` como produção. Confirmar no Netlify qual valor de `BT8_SUPABASE_URL` está configurado para o contexto de produção, e se o projeto antigo ainda está em uso.
+
+`netlify.toml` força o projeto `srrbnjgixizsjxobvsma` nos contextos `branch-deploy` e `mvp-pago`.
+
+### Tabelas (ver `supabase/migrations/001_paid_mvp_staging.sql`)
+
+#### `profiles` (colunas em português)
 ```sql
-id              uuid PRIMARY KEY  -- = auth.uid()
-nome            text
-email           text
-telefone        text
-data_nascimento date
-sexo            text              -- 'M' | 'F' | 'O'
-cidade          text
-estado          text
-avatar_url      text
-provider        text
-created_at      timestamptz
-updated_at      timestamptz
+id                  uuid PK references auth.users(id)  -- = auth.uid()
+email, nome, telefone, data_nascimento date, sexo ('M'|'F'|'O'),
+cidade, estado, avatar_url, provider
+plan                text  'free' | 'pro'      (default 'free')
+role                text  'user' | 'admin'    (default 'user')
+pro_until           timestamptz
+stripe_customer_id  text
+subscription_status text
+created_at, updated_at
 ```
 
-#### `app_events` (staging/MVP pago)
-```sql
-id          uuid DEFAULT gen_random_uuid() PRIMARY KEY
-user_id     uuid
-guest_id    text
-event_type  text   -- ex: 'tournament_created', 'tournament_finished'
-metadata    jsonb  -- { format, category, players, plan }
-created_at  timestamptz
-```
+#### `tournaments`
+`id, user_id, mode, category, title, players jsonb, standings jsonb, state jsonb, created_at, updated_at`
 
-### RLS (Row Level Security)
-```sql
--- profiles
-create policy "self" on profiles for all using (auth.uid() = id);
+#### `subscriptions`
+`id, user_id, stripe_customer_id, stripe_subscription_id, stripe_payment_intent_id, plan_type ('recurring'|'one_time_30d'), status, price_id, current_period_end, metadata jsonb, created_at, updated_at`
 
--- app_events
-create policy app_events_insert_anyone on app_events for insert with check (user_id is null or user_id = auth.uid());
-create policy app_events_select_admin on app_events for select using (private.is_admin());
-```
+#### `guest_usage` (somente backend, sem policies)
+`id, guest_id, ip_hash, user_agent_hash, month_key, tournaments_created, first_seen_at, last_seen_at`
 
-> ⚠️ **Problema pendente**: Login com Google retorna erro `Database error saving new user`. Provavelmente existe um trigger antigo na tabela `profiles` que usa colunas com nomes diferentes. Investigar com:
-> ```sql
-> select trigger_name, event_manipulation, action_statement
-> from information_schema.triggers
-> where event_object_table = 'users' or event_object_table = 'profiles';
-> ```
+#### `app_events`
+`id, user_id, guest_id, event_type, metadata jsonb, created_at`
+
+### Triggers e funções
+- `private.handle_new_user()` + trigger `on_auth_user_created` em `auth.users`: insere em `profiles (id, email, nome, provider)` usando as colunas corretas em português.
+- `profiles_protect_billing_fields`: impede o usuário de alterar `plan`, `role`, `pro_until` etc. pelo front.
+- `touch_updated_at` em `profiles`, `tournaments`, `subscriptions`.
+- `private.is_admin()`: `profiles.role = 'admin'` para `auth.uid()`.
+
+### RLS
+- `profiles`: usuário lê/edita o próprio registro (campos limitados); admin lê todos.
+- `tournaments`: CRUD apenas do próprio usuário; admin lê.
+- `subscriptions`: usuário lê as próprias; admin lê todas. Escrita só via backend.
+- `app_events`: qualquer um insere (`user_id` nulo ou = `auth.uid()`); só admin lê.
+- `guest_usage`: sem policies — acesso apenas com service role.
+
+---
+
+## Netlify Functions (`netlify/functions/`)
+
+| Função | O que faz |
+|--------|-----------|
+| `guest-usage` | Valida/registra o limite mensal do visitante (hash de IP/UA, sem IP puro) |
+| `create-checkout` | Cria sessão Stripe (Pro Mensal ou Pro 30 Dias; agenda mensal após `pro_until`) |
+| `stripe-webhook` | Recebe eventos do Stripe e atualiza `profiles`/`subscriptions` |
+| `manage-subscription` | Cancela a recorrência no fim do período |
+| `admin-dashboard` | Dados do painel Admin (valida `role = admin` com service role) |
+| `delete-account` | Exclui a conta do usuário (e dados/assinatura vinculados) |
+
+Variáveis secretas (escopo Functions, nunca no front/GitHub): `BT8_SUPABASE_SERVICE_ROLE_KEY`, `BT8_STRIPE_SECRET_KEY`, `BT8_STRIPE_WEBHOOK_SECRET`, `BT8_GUEST_USAGE_HASH_SECRET`, `BT8_STRIPE_PRO_MONTHLY_PRICE_ID`, `BT8_STRIPE_PRO_30D_PRICE_ID` (opcional `BT8_STRIPE_API_VERSION`). As funções também aceitam os nomes sem o prefixo `BT8_`.
+
+---
+
+## Planos e acesso (`src/js/access.js`)
+
+| Perfil | Regra |
+|--------|-------|
+| Visitante | 1 torneio/mês sem login (validado por `guest-usage`), não salva histórico |
+| Free | Logado, salva até `FREE_MONTHLY_TOURNAMENT_LIMIT = 3` torneios/mês |
+| Pro Mensal | R$ 6,90/mês recorrente, ilimitado; cancelamento mantém Pro até o fim do período |
+| Pro 30 Dias | R$ 14,90 pagamento único; volta para Free depois; histórico permanece |
+| Admin | `profiles.role = 'admin'` (fallback no front: `ADMIN_EMAIL`); checkout bloqueado |
+
+O plano só é ativado pelo webhook/backend — nunca diretamente no front.
+
+---
+
+## Rotas
+
+Definidas em `netlify.toml` (todas servem `index.html`) e detectadas via JS:
+
+| Rota | Tela |
+|------|------|
+| `/` | Landing/app |
+| `/bt8` | Landing comercial com planos |
+| `/admin` | Login e painel Admin dedicados |
+| `/reset-password` | Redefinição de senha |
+| `/termos-de-uso`, `/politica-de-privacidade`, `/direitos-do-sistema` | Páginas legais |
+
+`public/_redirects` tem o fallback SPA `/* /index.html 200`.
 
 ---
 
@@ -82,17 +150,18 @@ create policy app_events_select_admin on app_events for select using (private.is
 
 | ID | Nome | Descrição |
 |----|------|-----------|
-| `screen-home` | Home | Topbar com logo, botão de usuário, botão novo torneio |
+| `screen-home` | Home | Topbar com logo, botão de usuário, botão novo torneio, histórico |
 | `screen-tipo` | Tipo | Seleção de categoria (Individual / Duplas) |
 | `screen-config` | Configurar | Cadastro de jogadores/duplas, seleção de formato |
 | `screen-torneio` | Torneio | Rodadas, placar, ranking ao vivo |
 | `screen-resultado` | Resultado Final | Pódio, ranking completo |
 
 ### Modais
-- **Modal Auth** (`#auth-modal`): Login Google + Email/Senha + Recuperação de senha
-- **Modal Perfil** (`#profile-modal`): Edição de perfil do usuário logado
-- **Modal Share** (`#share-modal`): Geração e compartilhamento do card PNG
-- **Modal Admin** (criado dinamicamente): Dashboard com totais do Supabase
+- **Auth** (`#auth-modal`): Login Google + Email/Senha + Recuperação de senha
+- **Perfil** (`#profile-modal`): edição de perfil, avatar, estado/cidade, exclusão de conta
+- **Planos**: comparação e checkout (`openPlansModal()`)
+- **Share** (`#share-modal`): geração e compartilhamento do card PNG
+- **Admin** (criado dinamicamente): abas visão geral, usuários, assinaturas, torneios, eventos
 
 ---
 
@@ -131,6 +200,7 @@ const APP = {
   players: [],      // array de { name, gender }
   rounds: [],       // rodadas geradas
   matches: [],      // partidas da rodada atual
+  isGuest: false,   // visitante sem login
   // ... outros campos dependendo do modo
 }
 ```
@@ -139,70 +209,70 @@ const APP = {
 
 ## Funções principais (JS)
 
-### Autenticação
-- `initSupabase()` — inicializa cliente Supabase
-- `handleAuthStateChange(user)` — callback de login/logout
-- `loginWithGoogle()` — OAuth popup
-- `doLogin()` / `doSignup()` / `doForgot()` — email/senha
-- `logoutUser()` — limpa sessão
+### Autenticação (`auth.js`)
+- `initSupabase()` / `handleAuthStateChange(user)`
+- `loginWithGoogle()` — OAuth; no retorno, `consumeOAuthHashSession()` e `cleanSensitiveAuthHash()` restauram a sessão e limpam o token da URL, depois `enterApp()`
+- `doLogin()` / `doSignup()` / `doForgot()` / `saveNewPassword()` — email/senha
+- `startWithoutLogin()` — modo visitante
+- `logoutUser()`
 
-### Perfil (Etapa 2)
-- `openProfileModal()` — abre modal e chama `loadProfile()`
-- `loadProfile()` — busca perfil no Supabase (tabela `profiles`, campo `id`)
-- `saveProfile()` — upsert no Supabase com colunas: `id, nome, telefone, data_nascimento, sexo, cidade, estado`
-- `closeProfileModal()`
+### Acesso e planos (`access.js`)
+- `refreshAccess()` / `currentAccess()` / `normalizeAccess()` — calcula visitante, Free, Pro ativo, Pro expirado, Admin
+- `validateGuestTournamentLimit()` / `validateFreeSaveLimit()`
+- `openPlansModal()` / `startCheckout()` / `cancelRecurringSubscription()` / `handleCheckoutReturn()`
 
-### Rastreamento (Etapa 3)
-- `trackEvent(type, details)` — insere em `app_events` de forma silenciosa; usa `events` como fallback legado
-- Chamada em `gerarTorneio()` com `{ format, category, players }`
+### Perfil (`app.js`)
+- `openProfileModal()` / `loadProfile()` / `saveProfile()` — upsert em `profiles` com `id, nome, telefone, data_nascimento, sexo, cidade, estado, avatar_url`
+- `deleteAccount()` — chama a Function `delete-account`
 
-### Admin (Etapa 4)
-- `openAdmin()` — só para `joaopaulopaixao@gmail.com`
-- Mostra painel com total de perfis, total de eventos, últimos 20 eventos
+### Eventos (`app.js`)
+- `trackEvent(type, details)` — insere em `app_events` (`metadata`); se falhar, usa a tabela legada `events` como fallback
 
-### Torneio
+### Admin (`app.js`)
+- `openAdmin()` / `openAdminRoute()` — exige `access.isAdmin`; dados vêm da Function `admin-dashboard`
+
+### Histórico (`history.js`)
+- `saveTournament()` / `loadHomeHistory()` / `openHistorico()` / `openTournament()` / `replayShare()`
+
+### Torneio (`tournament.js`)
 - `gerarTorneio()` — ponto de entrada principal
 - `buildMatches()` / `buildMatchesRRComBye()` / `buildMistaRotativa()` / `buildEliminatoria()`
 - `renderTorneioScreen()` / `renderRotativoRounds()` / `renderDuplaFixaRounds()` / `renderEliminatoriaRounds()`
 - `confirmScore(id)` / `confirmDupla(id)` / `confirmFinal(id)`
-- `applyRoundLock()` / `applyRoundLockElim()` — desbloqueio sequencial de rodadas
+- `applyRoundLock()` / `applyRoundLockElim()`
 - `calcIndivStandings()` / `calcSomaStandings()` / `calcDuplaStandings()` / `getStandings()`
-- `verResultadoFinal()` — abre tela de resultado
+- `verResultadoFinal()` / `trackTournamentFinishedOnce()`
 
-### Share Card
-- `generateShareCanvas()` — gera PNG 1080×1920px via Canvas API
-- `downloadPNG()` / `nativeShare()` / `openShare()`
+### Share Card (`share.js`)
+- `generateShareCanvas()` / `downloadPNG()` / `nativeShare()` / `openShare()`
 
 ---
 
 ## Deploy (Netlify)
 
-1. Copiar todo o conteúdo de `src/` para uma pasta `dist/`
-2. Copiar todo o conteúdo de `public/` para a mesma `dist/`
-3. Arrastar a pasta `dist/` no painel do Netlify em **bt8.com.br**
-3. Não há build process — arquivos estáticos puros
+O site está conectado ao repositório GitHub. Push na `main` dispara o build de produção:
 
-### `_headers`
-Contém headers de cache e segurança para o Netlify.
+```bash
+npm run build   # gera dist/ (src/ + public/ + dist/js/env.js)
+```
 
-### `_redirects`
-Redirecionamentos (SPA fallback).
+- Branches diferentes da `main` geram Branch Deploy (ex.: `https://mvp-pago--bt8torneio.netlify.app`).
+- Deploy manual (emergência): rodar `npm run build` localmente e arrastar `dist/` no Netlify. **Nunca** enviar só o `index.html` — o app precisa de `css/`, `js/` e `img/`.
+- Netlify Functions só funcionam no deploy via Git/CLI (não no drag-and-drop).
 
 ---
 
 ## Problemas conhecidos / pendentes
 
-1. **Login Google falhando** — erro `Database error saving new user`. Investigar triggers da tabela `profiles` no Supabase. Provavelmente há um trigger `on insert` em `auth.users` que tenta inserir em `profiles` usando colunas com nomes diferentes (`user_id` em vez de `id`, `name` em vez de `nome`, etc.).
-
-2. **Deploy antigo pode quebrar a tela principal** — o comando antigo empacotava só `index.html` e arquivos de `public/`, mas o app atual precisa também de `css/`, `js/` e `img/`.
-
-3. **Email admin hardcoded** — `joaopaulopaixao@gmail.com` está fixo no JS. Considerar mover para variável de ambiente ou tabela do Supabase.
+1. **Projeto Supabase de produção** — confirmar qual projeto o bt8.com.br usa (ver seção Ambientes).
+2. **Login com Google** — o erro antigo `Database error saving new user` vinha de um trigger com colunas erradas. A migração atual recria `handle_new_user()` com as colunas corretas, e os commits de 30/04 corrigiram o retorno do OAuth no front. Falta confirmar em produção que o cadastro novo via Google funciona.
+3. **Testes pendentes da Sprint 7** — expiração do Pro 30 dias, histórico após expirar, e bloqueio por RLS a torneio de outro usuário (ver `docs/MVP_PAGO_IMPLEMENTACAO.md`).
+4. **Email admin no front** — `ADMIN_EMAIL` em `src/js/config.js` ainda é usado como fallback de UI. A permissão real é `role = 'admin'` no banco/backend.
+5. **Tabela legada `events`** — ainda usada como fallback em `trackEvent`. Remover quando `app_events` estiver confirmada em produção.
 
 ---
 
 ## Roadmap futuro (rebuild planejado)
-
-Quando sair do arquivo único para stack completa:
 
 | Camada | Tecnologia |
 |--------|-----------|

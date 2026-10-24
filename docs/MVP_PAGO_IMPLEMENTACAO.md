@@ -2,6 +2,14 @@
 
 Plano pratico de implementacao para transformar o BT8 atual em um app monetizavel sem interromper a versao em producao.
 
+## Status atual (revisado em 2026-10-24)
+
+- Sprints 0 a 6 concluidas.
+- Sprint 7: 11 de 14 cenarios validados em staging; faltam 3 (ver abaixo).
+- Sprint 8: `mvp-pago` ja foi integrada na `main` — as duas branches estao no mesmo commit (`9c3fa43`, 30/04/2026). Os demais itens da virada (backup, Stripe real, webhook real, migracoes em producao, teste real de pagamento) nao estao registrados como feitos e precisam ser confirmados.
+- Ultimos ajustes antes da pausa (30/04/2026): correcao do retorno do login Google (OAuth) e fallback do Supabase apontando para `srrbnjgixizsjxobvsma`.
+- Ponto em aberto: confirmar qual projeto Supabase e o de producao (o antigo `znifpitysqfbepjymtmg` ou o `srrbnjgixizsjxobvsma`, criado como staging).
+
 ## Estrategia de ambiente
 
 ### Producao
@@ -271,13 +279,13 @@ Entrega:
 ## Sprint 8 - Virada para producao
 
 Tarefas:
-- [ ] Backup do Supabase producao.
-- [ ] Configurar variaveis reais no Netlify.
-- [ ] Configurar produtos reais no Stripe.
-- [ ] Configurar webhook real no Stripe.
-- [ ] Aplicar migracoes no Supabase producao.
-- [ ] Merge `mvp-pago` -> `main`.
-- [ ] Deploy.
+- [ ] Backup do Supabase producao. (a confirmar)
+- [ ] Configurar variaveis reais no Netlify. (a confirmar)
+- [ ] Configurar produtos reais no Stripe. (a confirmar)
+- [ ] Configurar webhook real no Stripe. (a confirmar)
+- [ ] Aplicar migracoes no Supabase producao. (a confirmar qual projeto e producao)
+- [x] Merge `mvp-pago` -> `main`. (`main` e `mvp-pago` em `9c3fa43`, 30/04/2026)
+- [ ] Deploy. (o Netlify builda a `main` automaticamente; confirmar no painel que o deploy de producao do `9c3fa43` passou)
 - [ ] Teste real de pagamento.
 - [ ] Conferir Admin depois do pagamento.
 
