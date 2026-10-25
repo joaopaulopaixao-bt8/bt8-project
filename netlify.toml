@@ -37,10 +37,10 @@
 
 [context.branch-deploy.environment]
   BT8_APP_ENV = "staging"
-  BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"
-  BT8_SUPABASE_ANON_KEY = "sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl"
+  BT8_SUPABASE_URL = "https://api.bt8.com.br"
+  BT8_SUPABASE_ANON_KEY = "sb_publishable_-wPekaIkdFqP2w-NngaTvR_3zjuTl4r"
 
 [context."mvp-pago".environment]
   BT8_APP_ENV = "staging"
-  BT8_SUPABASE_URL = "https://srrbnjgixizsjxobvsma.supabase.co"
-  BT8_SUPABASE_ANON_KEY = "sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl"
+  BT8_SUPABASE_URL = "https://api.bt8.com.br"
+  BT8_SUPABASE_ANON_KEY = "sb_publishable_-wPekaIkdFqP2w-NngaTvR_3zjuTl4r"

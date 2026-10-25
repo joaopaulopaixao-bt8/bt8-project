@@ -8,7 +8,7 @@ Plano pratico de implementacao para transformar o BT8 atual em um app monetizave
 - Sprint 7: 11 de 14 cenarios validados em staging; faltam 3 (ver abaixo).
 - Sprint 8: `mvp-pago` ja foi integrada na `main` — as duas branches estao no mesmo commit (`9c3fa43`, 30/04/2026). Os demais itens da virada (backup, Stripe real, webhook real, migracoes em producao, teste real de pagamento) nao estao registrados como feitos e precisam ser confirmados.
 - Ultimos ajustes antes da pausa (30/04/2026): correcao do retorno do login Google (OAuth) e fallback do Supabase apontando para `srrbnjgixizsjxobvsma`.
-- Supabase de producao confirmado (2026-10-24): `srrbnjgixizsjxobvsma`, o projeto criado como staging, foi promovido a producao. O antigo `znifpitysqfbepjymtmg` nao e mais usado. Hoje nao existe banco de staging separado.
+- Supabase de producao (2026-10-25): self-hosted no VPS em `https://api.bt8.com.br` (ver `docs/SUPABASE_VPS.md`). O Cloud `srrbnjgixizsjxobvsma` foi pausado e abandonado; banco recriado do zero (sem clientes pagantes, Stripe em teste).
 
 ## Estrategia de ambiente
 
@@ -283,7 +283,7 @@ Tarefas:
 - [ ] Configurar variaveis reais no Netlify. (a confirmar)
 - [ ] Configurar produtos reais no Stripe. (a confirmar)
 - [ ] Configurar webhook real no Stripe. (a confirmar)
-- [x] Aplicar migracoes no Supabase producao. (a migracao 001 foi aplicada em `srrbnjgixizsjxobvsma`, que virou producao)
+- [x] Aplicar migracoes no Supabase producao. (migracao 001 aplicada no Supabase do VPS em 2026-10-25)
 - [x] Merge `mvp-pago` -> `main`. (`main` e `mvp-pago` em `9c3fa43`, 30/04/2026)
 - [ ] Deploy. (o Netlify builda a `main` automaticamente; confirmar no painel que o deploy de producao do `9c3fa43` passou)
 - [ ] Teste real de pagamento.

@@ -1,5 +1,7 @@
 # BT8 - Configuracao manual do ambiente de teste
 
+> **Histórico.** Este guia descreve o staging de abril/2026 no Supabase Cloud (`srrbnjgixizsjxobvsma`), que foi pausado e abandonado. Hoje a produção roda no VPS (`docs/SUPABASE_VPS.md`) e os testes usam o staging local (`docs/STAGING_LOCAL.md`).
+
 Este guia lista o que precisa ser configurado manualmente para desenvolver o MVP pago sem afetar o sistema atual em producao.
 
 ## 1. Netlify - Branch `mvp-pago`

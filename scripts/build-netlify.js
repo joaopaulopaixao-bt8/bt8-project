@@ -23,8 +23,8 @@ copyDir(path.join(root, 'public'), dist);
 
 const publicEnv = {
   APP_ENV: process.env.BT8_APP_ENV || process.env.CONTEXT || 'production',
-  SUPABASE_URL: process.env.BT8_SUPABASE_URL || 'https://srrbnjgixizsjxobvsma.supabase.co',
-  SUPABASE_ANON_KEY: process.env.BT8_SUPABASE_ANON_KEY || 'sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl',
+  SUPABASE_URL: process.env.BT8_SUPABASE_URL || 'https://api.bt8.com.br',
+  SUPABASE_ANON_KEY: process.env.BT8_SUPABASE_ANON_KEY || 'sb_publishable_-wPekaIkdFqP2w-NngaTvR_3zjuTl4r',
   STRIPE_PUBLISHABLE_KEY: process.env.BT8_STRIPE_PUBLISHABLE_KEY || ''
 };
 

@@ -53,13 +53,13 @@ A configuração pública vem de `window.BT8_ENV`, gerado no build a partir das 
 | `BT8_SUPABASE_ANON_KEY` | Publishable/anon key (pública) |
 | `BT8_STRIPE_PUBLISHABLE_KEY` | Opcional no front |
 
-Fallback no código (`src/js/env.js`, `src/js/auth.js`, `scripts/build-netlify.js`): projeto **`srrbnjgixizsjxobvsma`** (`https://srrbnjgixizsjxobvsma.supabase.co`). O commit `9c3fa43` passou a usá-lo como fallback de produção.
+Fallback no código (`src/js/env.js`, `src/js/auth.js`, `scripts/build-netlify.js`, `netlify.toml`): **`https://api.bt8.com.br`**, o Supabase self-hosted no VPS.
 
-> ✅ **Produção confirmada (2026-10-24)**: o bt8.com.br usa o projeto **`srrbnjgixizsjxobvsma`**. Ele nasceu como `bt8-staging` durante o MVP pago e foi promovido a produção. O projeto antigo `znifpitysqfbepjymtmg` não é mais usado pelo código.
+> **Produção (desde 2026-10-25)**: Supabase **auto-hospedado no VPS** em `https://api.bt8.com.br` (pasta `/opt/bt8`). O projeto Cloud `srrbnjgixizsjxobvsma` foi pausado por inatividade e não pôde ser restaurado no plano grátis; como não havia clientes pagantes, o banco foi recriado do zero pela migração. Detalhes em `docs/SUPABASE_VPS.md`.
 >
 > Consequência: hoje os Branch Deploys também apontam para esse mesmo projeto (ver `netlify.toml`), ou seja, **não há banco de staging separado** — testes em branch gravam no banco de produção.
 
-`netlify.toml` força o projeto `srrbnjgixizsjxobvsma` nos contextos `branch-deploy` e `mvp-pago`.
+`netlify.toml` aponta os contextos `branch-deploy` e `mvp-pago` para o mesmo banco de produção.
 
 ### Tabelas (ver `supabase/migrations/001_paid_mvp_staging.sql`)
 
@@ -266,7 +266,7 @@ npm run build   # gera dist/ (src/ + public/ + dist/js/env.js)
 
 ## Problemas conhecidos / pendentes
 
-1. **Sem banco de staging na nuvem** — branch deploys usam o mesmo Supabase de produção (`srrbnjgixizsjxobvsma`). Testar mudanças de schema e fluxos no **staging local** (`npm run db:start` + `npm run dev:local`, ver `docs/STAGING_LOCAL.md`).
+1. **Sem banco de staging na nuvem** — branch deploys usam o mesmo Supabase de produção (`api.bt8.com.br`). Testar mudanças de schema e fluxos no **staging local** (`npm run db:start` + `npm run dev:local`, ver `docs/STAGING_LOCAL.md`).
 2. **Login com Google** — o erro antigo `Database error saving new user` vinha de um trigger com colunas erradas. A migração atual recria `handle_new_user()` com as colunas corretas, e os commits de 30/04 corrigiram o retorno do OAuth no front. Falta confirmar em produção que o cadastro novo via Google funciona.
 3. **Testes pendentes da Sprint 7** — expiração do Pro 30 dias, histórico após expirar, e bloqueio por RLS a torneio de outro usuário (ver `docs/MVP_PAGO_IMPLEMENTACAO.md`).
 4. **Email admin no front** — `ADMIN_EMAIL` em `src/js/config.js` ainda é usado como fallback de UI. A permissão real é `role = 'admin'` no banco/backend.
