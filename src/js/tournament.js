@@ -320,7 +320,7 @@ function renderPlayerList() {
   list.innerHTML = APP.players.map((p,i) => `
     <div class="player-item">
       <div class="p-num">${i+1}</div>
-      <div class="p-name">${p.name}</div>
+      <div class="p-name">${escapeHtml(p.name)}</div>
       ${p.gender?`<span class="p-badge ${p.gender}">${p.gender==='M'?'♂':'♀'}</span>`:''}
       ${isMistaDupla?`<span class="p-badge" style="background:rgba(244,192,38,0.15);color:var(--yellow);font-size:9px">MISTA</span>`:''}
       <button class="p-remove" onclick="removePlayer(${i})">✕</button>
@@ -478,6 +478,8 @@ async function gerarTorneio() {
     // Etapa 3: rastrear criação de torneio
     APP._savedCurrentTournament = false;
     APP._trackedTournamentFinished = false;
+    // Rascunhos de placar do torneio anterior não podem aparecer no novo (ids de jogo se repetem).
+    Object.keys(TMPSCORES).forEach(k => delete TMPSCORES[k]);
     try {
     const access = typeof currentAccess === 'function' ? currentAccess() : null;
     trackEvent('tournament_created', {
@@ -769,19 +771,23 @@ function buildMistaRotativa() {
     }));
 
     // Se n ímpar: a dupla de índice (r % n) descansa (bye rotativo)
-    let byeDupla = null;
-    let jogando = duplas;
-    if(n % 2 === 1) {
-      byeDupla = duplas[r % n];
-      jogando = duplas.filter((_, i) => i !== (r % n));
-    }
+    const byeDupla = n % 2 === 1 ? duplas[r % n] : null;
 
-    // Parear as duplas: metade inferior vs metade superior
-    const mid = jogando.length / 2;
-    const totalCourts = mid;
-    for(let i = 0; i < mid; i++) {
-      const dA = jogando[i];
-      const dB = jogando[i + mid];
+    // Parear as duplas pelos homens com rotação em círculo, para variar os adversários:
+    // n ímpar → o homem r descansa e cada par de homens se enfrenta 1x;
+    // n par → homem n-1 fixo e os demais giram (só repete o fator da 1ª rodada na última).
+    const confrontos = [];
+    if(n % 2 === 1) {
+      for(let d = 1; d <= (n - 1) / 2; d++) confrontos.push([(r - d + n) % n, (r + d) % n]);
+    } else {
+      const m = n - 1, k = r % m;
+      confrontos.push([n - 1, k]);
+      for(let d = 1; d < n / 2; d++) confrontos.push([(k - d + m) % m, (k + d) % m]);
+    }
+    const totalCourts = confrontos.length;
+    for(let i = 0; i < confrontos.length; i++) {
+      const dA = duplas[confrontos[i][0]];
+      const dB = duplas[confrontos[i][1]];
       APP.matches.push({
         id: `mr${r}c${i}`,
         phase: 'round',
@@ -853,6 +859,7 @@ function buildMatches() {
 
 // ── RENDER TORNEIO SCREEN ───────────────────────────────
 function renderTorneioScreen() {
+  saveActiveTournament();
   const m = APP.mode;
   const isDupla = IS_DUPLA_FIXA[m];
   const rounds = APP.matches.filter(x=>(x.phase==='round'||x.phase==='rr')&&!x.isBye);
@@ -889,7 +896,7 @@ function renderRotativoRounds() {
     html+=`<div class="round-block">
       <div class="round-header">
         <span class="round-tag">Rodada ${ri+1}</span>
-        ${restText?`<span class="rest-tag">💤 ${restText}</span>`:''}
+        ${restText?`<span class="rest-tag">💤 ${escapeHtml(restText)}</span>`:''}
         ${allDone?`<span class="round-done-tag">✓ Concluída</span>`:''}
       </div>`;
     rMatches.forEach(mx=>{ html+=matchCard(mx); });
@@ -962,7 +969,7 @@ function renderDuplaFixaRounds() {
       html += `<div class="round-block">
         <div class="round-header">
           <span class="round-tag">Rodada ${rNum}${isVolta?' (V)':''}</span>
-          ${byeMatch?`<span class="rest-tag">💤 ${byeMatch.byeWinner} descansa</span>`:''}
+          ${byeMatch?`<span class="rest-tag">💤 ${escapeHtml(byeMatch.byeWinner)} descansa</span>`:''}
           ${allDone&&realMatches.length?`<span class="round-done-tag">✓ Concluída</span>`:''}
         </div>`;
       realMatches.forEach(mx=>{ html+=simpleDuplaCard(mx); });
@@ -1022,25 +1029,25 @@ function renderEliminatoriaRounds() {
         html += `<div class="match-card" id="mc-${mx.id}" style="opacity:0.4">
           <span class="court-tag">${mx.label||'Aguardando'}</span>
           <div class="match-teams">
-            <span class="t-name">${mx.a||'Aguardando...'}</span>
+            <span class="t-name">${escapeHtml(mx.a||'Aguardando...')}</span>
             <span class="vs-badge">VS</span>
-            <span class="t-name">${mx.b||'Aguardando...'}</span>
+            <span class="t-name">${escapeHtml(mx.b||'Aguardando...')}</span>
           </div>
         </div>`;
       } else {
         html += `<div class="match-card" id="mc-${mx.id}">
           <span class="court-tag">${mx.label||'Jogo'}</span>
           <div class="match-teams">
-            <span class="t-name${aW?' won':''}">${mx.a}</span>
+            <span class="t-name${aW?' won':''}">${escapeHtml(mx.a)}</span>
             <span class="vs-badge">VS</span>
-            <span class="t-name${bW?' won':''}">${mx.b}</span>
+            <span class="t-name${bW?' won':''}">${escapeHtml(mx.b)}</span>
           </div>
-          ${done?`<span class="win-tag">🏅 ${aW?mx.a:mx.b}</span>`:`
+          ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.a:mx.b)}</span>`:`
           <div class="score-row">
-            <input class="score-input" type="number" min="0" max="99" value="${mx.sA??''}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
+            <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,0)}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
             <span class="score-sep">×</span>
-            <input class="score-input" type="number" min="0" max="99" value="${mx.sB??''}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
-            <button class="confirm-btn" id="cbtn-${mx.id}" ${(mx.sA!==null&&mx.sB!==null)?'':'disabled'} ${isFinalRound?'style="background:var(--yellow);color:#080f18"':''} onclick="confirmScore('${mx.id}')">✓</button>
+            <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,1)}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
+            <button class="confirm-btn" id="cbtn-${mx.id}" ${hasBothScores(mx)?'':'disabled'} ${isFinalRound?'style="background:var(--yellow);color:#080f18"':''} onclick="confirmScore('${mx.id}')">✓</button>
           </div>`}
         </div>`;
       }
@@ -1084,21 +1091,21 @@ function matchCard(mx) {
     <div class="match-teams super-match-teams">
       <div class="super-team${aW?' won':''}">
         <span class="super-team-label">Dupla A</span>
-        <span class="super-team-names">${mx.pA0} <span>+</span> ${mx.pA1}</span>
+        <span class="super-team-names">${escapeHtml(mx.pA0)} <span>+</span> ${escapeHtml(mx.pA1)}</span>
       </div>
       <span class="vs-badge">VS</span>
       <div class="super-team${bW?' won':''}">
         <span class="super-team-label">Dupla B</span>
-        <span class="super-team-names">${mx.pB0} <span>+</span> ${mx.pB1}</span>
+        <span class="super-team-names">${escapeHtml(mx.pB0)} <span>+</span> ${escapeHtml(mx.pB1)}</span>
       </div>
     </div>
     <div class="score-row">
-      <input class="score-input" type="number" min="0" max="99" value="${mx.sA??''}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,0)}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
       <span class="score-sep">×</span>
-      <input class="score-input" type="number" min="0" max="99" value="${mx.sB??''}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
-      <button class="confirm-btn" id="cbtn-${mx.id}" ${(mx.sA!==null&&mx.sB!==null)?'':'disabled'} onclick="confirmScore('${mx.id}')">✓</button>
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,1)}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
+      <button class="confirm-btn" id="cbtn-${mx.id}" ${hasBothScores(mx)?'':'disabled'} onclick="confirmScore('${mx.id}')">✓</button>
     </div>
-    ${done?`<span class="win-tag">🏅 ${aW?mx.teamA:mx.teamB}</span>`:''}
+    ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.teamA:mx.teamB)}</span>`:''}
   </div>`;
 }
 
@@ -1121,17 +1128,17 @@ function simpleDuplaCard(mx) {
   return `<div class="match-card" id="mc-${mx.id}">
     <span class="court-tag">${label}</span>
     <div class="match-teams">
-      <span class="t-name${aW?' won':''}">${mx.a||'—'}</span>
+      <span class="t-name${aW?' won':''}">${escapeHtml(mx.a||'—')}</span>
       <span class="vs-badge">VS</span>
-      <span class="t-name${bW?' won':''}">${mx.b||'—'}</span>
+      <span class="t-name${bW?' won':''}">${escapeHtml(mx.b||'—')}</span>
     </div>
     ${hasP?`<div class="score-row">
-      <input class="score-input" type="number" min="0" max="99" value="${mx.sA??''}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,0)}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
       <span class="score-sep">×</span>
-      <input class="score-input" type="number" min="0" max="99" value="${mx.sB??''}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
-      <button class="confirm-btn" id="cbtn-${mx.id}" ${(mx.sA!==null&&mx.sB!==null)?'':'disabled'} onclick="confirmDupla('${mx.id}')">✓</button>
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,1)}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
+      <button class="confirm-btn" id="cbtn-${mx.id}" ${hasBothScores(mx)?'':'disabled'} onclick="confirmDupla('${mx.id}')">✓</button>
     </div>`:''}
-    ${done?`<span class="win-tag">🏅 ${aW?mx.a:mx.b}</span>`:''}
+    ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.a:mx.b)}</span>`:''}
   </div>`;
 }
 
@@ -1141,25 +1148,36 @@ function finalCard(fx) {
   const aW=done&&fx.sA>fx.sB, bW=done&&fx.sB>fx.sA;
   return `<div class="match-card" id="mc-${fx.id}">
     <div class="match-teams">
-      <span class="t-name${aW?' won':''}">${fx.teamA}</span>
+      <span class="t-name${aW?' won':''}">${escapeHtml(fx.teamA)}</span>
       <span class="vs-badge">VS</span>
-      <span class="t-name${bW?' won':''}">${fx.teamB}</span>
+      <span class="t-name${bW?' won':''}">${escapeHtml(fx.teamB)}</span>
     </div>
     <div class="score-row">
-      <input class="score-input" type="number" min="0" max="99" value="${fx.sA??''}" placeholder="—" oninput="tmpScore('${fx.id}',0,this.value);checkConfirmBtn('${fx.id}')">
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(fx,0)}" placeholder="—" oninput="tmpScore('${fx.id}',0,this.value);checkConfirmBtn('${fx.id}')">
       <span class="score-sep">×</span>
-      <input class="score-input" type="number" min="0" max="99" value="${fx.sB??''}" placeholder="—" oninput="tmpScore('${fx.id}',1,this.value);checkConfirmBtn('${fx.id}')">
-      <button class="confirm-btn" id="cbtn-${fx.id}" ${(fx.sA!==null&&fx.sB!==null)?'':'disabled'} style="background:${(fx.sA!==null&&fx.sB!==null)?'var(--yellow)':'rgba(255,255,255,0.08)'};color:${(fx.sA!==null&&fx.sB!==null)?'#080f18':'rgba(255,255,255,0.2)'}" onclick="confirmFinal('${fx.id}')">✓</button>
+      <input class="score-input" type="number" min="0" max="99" value="${scoreValue(fx,1)}" placeholder="—" oninput="tmpScore('${fx.id}',1,this.value);checkConfirmBtn('${fx.id}')">
+      <button class="confirm-btn" id="cbtn-${fx.id}" ${hasBothScores(fx)?'':'disabled'} style="background:${(fx.sA!==null&&fx.sB!==null)?'var(--yellow)':'rgba(255,255,255,0.08)'};color:${(fx.sA!==null&&fx.sB!==null)?'#080f18':'rgba(255,255,255,0.2)'}" onclick="confirmFinal('${fx.id}')">✓</button>
     </div>
-    ${done?`<span class="win-tag">🏆 ${aW?fx.teamA:fx.teamB}</span>`:''}
+    ${done?`<span class="win-tag">🏆 ${escapeHtml(aW?fx.teamA:fx.teamB)}</span>`:''}
   </div>`;
 }
 
 // ── SCORE ────────────────────────────────────────────────
 const TMPSCORES = {};
+// Placar exibido: o confirmado ou, se ainda não confirmado, o que foi digitado (sobrevive a redesenhar e recarregar)
+function scoreValue(mx, i) {
+  const v = i === 0 ? mx.sA : mx.sB;
+  return v ?? TMPSCORES[mx.id]?.[i] ?? '';
+}
+
+function hasBothScores(mx) {
+  return scoreValue(mx, 0) !== '' && scoreValue(mx, 1) !== '';
+}
+
 function tmpScore(id,idx,val){
   if(!TMPSCORES[id]) TMPSCORES[id]=[null,null];
   TMPSCORES[id][idx]=val===''?null:parseInt(val);
+  saveActiveTournament();
 }
 
 // Habilita o ✓ só quando os dois campos têm valor E não é empate
@@ -1603,7 +1621,7 @@ function updateFooterRanking(){
     const tieSpan = (hasTie && p.tieLabel) ? `<span class="rank-tie">(${p.tieLabel})</span>` : '';
     return `<div class="rank-mini-item">
       <span class="rank-pos ${posClass[i]||''}">${medals[i]||i+1+'º'}</span>
-      <span class="rank-name">${p.name}</span>
+      <span class="rank-name">${escapeHtml(p.name)}</span>
       ${tieSpan}
       <span class="rank-pts ${p.isSoma?'soma':''}">${p.scoreLabel}</span>
     </div>`;
@@ -1633,7 +1651,7 @@ function verResultadoFinal(isAutoOpen) {
     podiumHTML+=`<div class="podium-item">
       <div class="podium-place">${medals[idx]||idx+1+'º'}</div>
       <div class="podium-bar p${idx+1}"><span class="podium-medal">${medals[idx]||'🏅'}</span></div>
-      <div class="podium-name">${p.name}</div>
+      <div class="podium-name">${escapeHtml(p.name)}</div>
       <div class="podium-pts">${p.scoreLabel}</div>
     </div>`;
   });
@@ -1644,7 +1662,7 @@ function verResultadoFinal(isAutoOpen) {
   const rows=stand.map((p,i)=>`
     <tr class="${i<3?'r'+(i+1):''}">
       <td class="rn">${medals[i]||i+1+'º'}</td>
-      <td style="font-weight:500">${p.name}</td>
+      <td style="font-weight:500">${escapeHtml(p.name)}</td>
       <td>${p.j}</td>
       <td>${p.v||0}</td>
       <td><span class="pts-chip ${p.isSoma?'soma':''}">${isDupla?(p.gp??0):p.scoreLabel.split(' ')[0]}</span></td>
@@ -1713,7 +1731,89 @@ function voltarParaCorrecao() {
   }, 400);
 }
 
+// ── TORNEIO EM ANDAMENTO: salvo no aparelho ─────────────────
+// Sobrevive a recarregar a página, fechar o app ou ir para o login com Google.
+const ACTIVE_TOURNEY_KEY = 'bt8_active_tournament';
+const ACTIVE_TOURNEY_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+
+function saveActiveTournament() {
+  if (!APP.mode || !APP.matches?.length) return;
+  try {
+    const { history, isGuest, ...state } = APP;
+    localStorage.setItem(ACTIVE_TOURNEY_KEY, JSON.stringify({ v: 1, savedAt: Date.now(), state, tmp: TMPSCORES }));
+  } catch (e) {}
+}
+
+function clearActiveTournament() {
+  try { localStorage.removeItem(ACTIVE_TOURNEY_KEY); } catch (e) {}
+}
+
+function readActiveTournament() {
+  try {
+    const data = JSON.parse(localStorage.getItem(ACTIVE_TOURNEY_KEY) || 'null');
+    if (data?.v !== 1 || !data.state?.mode || !data.state.matches?.length) return null;
+    if (Date.now() - data.savedAt > ACTIVE_TOURNEY_MAX_AGE) { clearActiveTournament(); return null; }
+    return data;
+  } catch (e) { return null; }
+}
+
+function countPlayedMatches(matches) {
+  const real = (matches || []).filter(m => !m.isBye && m.phase !== 'bye');
+  return { done: real.filter(m => m.sA !== null && m.sB !== null).length, total: real.length };
+}
+
+function hasUnfinishedTournament() {
+  if (!APP.mode || !APP.matches?.length || APP.tourneyClosed) return false;
+  const { done, total } = countPlayedMatches(APP.matches);
+  return done < total;
+}
+
+function showTournamentScreen() {
+  document.getElementById('torneio-title').textContent = MODE_INFO[APP.mode]?.label || 'Torneio';
+  renderTorneioScreen();
+  APP.history = ['screen-home', 'screen-torneio'];
+  document.querySelectorAll('.screen').forEach(s => {
+    s.classList.remove('active', 'leaving', 'back-entering');
+    s.style.transform = '';
+    s.style.transition = '';
+  });
+  document.getElementById('screen-torneio').classList.add('active');
+}
+
+function resumeActiveTournament() {
+  const data = readActiveTournament();
+  if (!data) return false;
+  if (SUPA_USER) enterApp(); else startWithoutLogin();
+  Object.assign(APP, data.state);
+  Object.keys(TMPSCORES).forEach(k => delete TMPSCORES[k]);
+  Object.assign(TMPSCORES, data.tmp || {});
+  showTournamentScreen();
+  return true;
+}
+
+function offerResumeTournament() {
+  const data = readActiveTournament();
+  if (!data || document.getElementById('resume-tourney-modal')) return;
+  const { done, total } = countPlayedMatches(data.state.matches);
+  if (done >= total) return;
+  const label = MODE_INFO[data.state.mode]?.label || 'Torneio';
+  const modal = document.createElement('div');
+  modal.id = 'resume-tourney-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
+  modal.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="resume-tourney-title" style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+      <div style="font-size:28px;text-align:center;margin-bottom:8px">🎾</div>
+      <div id="resume-tourney-title" style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio em andamento</div>
+      <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px"><b style="color:var(--white)">${escapeHtml(label)}</b> com ${done} de ${total} jogos lançados. Quer continuar de onde parou?</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button onclick="document.getElementById('resume-tourney-modal').remove();resumeActiveTournament()" style="background:var(--yellow);color:#0a0a0a;border:none;border-radius:var(--radius-sm);padding:12px;font-family:'Bebas Neue';font-size:16px;letter-spacing:1px;cursor:pointer">RETOMAR TORNEIO</button>
+        <button onclick="document.getElementById('resume-tourney-modal').remove();clearActiveTournament()" style="background:transparent;color:var(--muted2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-family:inherit;font-size:13px;cursor:pointer">Descartar e começar do zero</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
 function _doNewTourney(){
+  clearActiveTournament();
   APP.category=null; APP.mode=null; APP.players=[]; APP.matches=[];
   APP.fmt='rr'; APP.tourneyClosed=false;
   APP._savedCurrentTournament=false; APP._trackedTournamentFinished=false;
@@ -1732,7 +1832,17 @@ function confirmNewTourney(){
   modal.id = 'new-tourney-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
 
-  if (isLogado) {
+  if (isLogado && !APP._savedCurrentTournament) {
+    modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
+      <div style="font-size:28px;text-align:center;margin-bottom:8px">⚠️</div>
+      <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Sair deste torneio?</div>
+      <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">Este torneio ainda não terminou e não está no seu histórico. Ao começar outro, ele será descartado.</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button onclick="document.getElementById('new-tourney-modal').remove()" style="background:var(--blue);color:var(--white);border:none;border-radius:var(--radius-sm);padding:12px;font-family:'Bebas Neue';font-size:16px;letter-spacing:1px;cursor:pointer">CONTINUAR TORNEIO</button>
+        <button onclick="document.getElementById('new-tourney-modal').remove();_doNewTourney()" style="background:transparent;color:var(--muted2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-family:inherit;font-size:13px;cursor:pointer">Descartar e começar outro</button>
+      </div>
+    </div>`;
+  } else if (isLogado) {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
       <div style="font-size:28px;text-align:center;margin-bottom:8px">✅</div>
       <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio salvo!</div>

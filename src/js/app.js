@@ -11,8 +11,8 @@ function buildUserMenu(user) {
   const showPlanItem = !access?.isAdmin;
   const planItemLabel = access?.isPro ? '⭐ &nbsp;Meu plano Pro' : '⭐ &nbsp;Planos BT8 Pro';
   menu.innerHTML = `
-    <div class="user-menu-name">${name}</div>
-    <div class="user-menu-email">${user.email}</div>
+    <div class="user-menu-name">${escapeHtml(name)}</div>
+    <div class="user-menu-email">${escapeHtml(user.email)}</div>
     ${planCard}
     <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
     ${showPlanItem ? `<div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>` : ''}
@@ -299,9 +299,9 @@ function renderProfileAvatar(avatar, name) {
   const avatarWrap = document.getElementById('profile-avatar-wrap');
   if (!avatarWrap) return;
   if (avatar) {
-    avatarWrap.innerHTML = `<img src="${avatar}" class="profile-avatar" alt="avatar">`;
+    avatarWrap.innerHTML = `<img src="${escapeHtml(avatar)}" class="profile-avatar" alt="avatar">`;
   } else {
-    avatarWrap.innerHTML = `<div class="profile-avatar-placeholder">${(name || 'B').charAt(0).toUpperCase()}</div>`;
+    avatarWrap.innerHTML = `<div class="profile-avatar-placeholder">${escapeHtml((name || 'B').charAt(0).toUpperCase())}</div>`;
   }
 }
 

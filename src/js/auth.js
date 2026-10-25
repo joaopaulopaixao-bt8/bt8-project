@@ -29,6 +29,8 @@ function enterApp() {
   if (typeof loadHomeHistory === 'function') {
     setTimeout(loadHomeHistory, 300);
   }
+  // Logou no meio de um torneio → volta para ele em vez da home.
+  if (typeof hasUnfinishedTournament === 'function' && hasUnfinishedTournament()) showTournamentScreen();
 }
 
 // ── SUPABASE INIT ────────────────────────────────────────────
@@ -184,10 +186,10 @@ function renderUserAvatar(user) {
   const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
   const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email;
   if (avatarUrl) {
-    btn.innerHTML = `<img src="${avatarUrl}" alt="avatar">`;
+    btn.innerHTML = `<img src="${escapeHtml(avatarUrl)}" alt="avatar">`;
   } else {
     const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) : '?';
-    btn.innerHTML = `<span style="font-size:13px;font-weight:700;font-family:'Barlow Condensed';letter-spacing:1px">${initials}</span>`;
+    btn.innerHTML = `<span style="font-size:13px;font-weight:700;font-family:'Barlow Condensed';letter-spacing:1px">${escapeHtml(initials)}</span>`;
     btn.style.background = 'var(--blue)';
   }
 }
@@ -687,6 +689,9 @@ document.addEventListener('DOMContentLoaded', () => {
   initSupabase();
   initLandingObserver();
   initStickyCtaObserver();
+  const specialRoute = (typeof isAdminRoute === 'function' && isAdminRoute()) ||
+    (typeof legalRouteKey === 'function' && legalRouteKey()) || isResetPasswordRoute();
+  if (!specialRoute && typeof offerResumeTournament === 'function') setTimeout(offerResumeTournament, 600);
   // Copia logo do screen-home para a landing (evita duplicar base64)
   const appLogo = document.querySelector('#screen-home .topbar-logo');
   if (appLogo) {

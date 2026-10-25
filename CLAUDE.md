@@ -6,10 +6,11 @@ Leia **docs/CONTEXT.md** antes de qualquer coisa. Ele contém toda a arquitetura
 
 1. **O app está modularizado** — `src/index.html`, `src/css/*`, `src/js/*` e `src/img/*`. Backend em `netlify/functions/*`. Schema em `supabase/migrations/*`.
 2. **Não quebrar o build** — `npm run build` (`scripts/build-netlify.js`) copia `src/` e `public/` para `dist/` e gera `dist/js/env.js`. Qualquer arquivo novo referenciado pelo `index.html` precisa estar em `src/` ou `public/`.
-3. **Tabela `profiles` usa colunas em português**: `id, nome, email, telefone, data_nascimento, sexo, cidade, estado, avatar_url, provider` + campos de plano `plan, role, pro_until, stripe_customer_id, subscription_status`. Nunca usar `user_id`, `name`, `phone`, `birth`, `gender`, `city` em `profiles` (as outras tabelas usam `user_id`).
-4. **Chaves** — no front só entram chaves públicas (Supabase publishable/anon, Stripe `pk_`), via `window.BT8_ENV` (`src/js/env.js`, sobrescrito no build). O repositório GitHub é **público**: nunca commitar service role, `sk_`, `whsec_` nem `GUEST_USAGE_HASH_SECRET` — essas ficam só nas variáveis do Netlify (escopo Functions).
-5. **Plano Pro só é ativado pelo backend** (webhook Stripe). Nunca liberar Pro ou Admin direto no front. Admin = `profiles.role = 'admin'`.
-6. **Deploy**: push na `main` dispara o build de produção no Netlify (conectado ao GitHub). Outras branches viram Branch Deploy de teste. Drag-and-drop de `dist/` só em emergência (as Functions não sobem por esse caminho).
+3. **Rodar `npm test` antes de commitar** — testa o motor de torneios (`tests/engine.test.js`, `node:test`, sem dependências): geração de rodadas de cada modo, ranking e `escapeHtml`. Nome digitado pelo usuário só entra em `innerHTML` via `escapeHtml()` (`src/js/config.js`).
+4. **Tabela `profiles` usa colunas em português**: `id, nome, email, telefone, data_nascimento, sexo, cidade, estado, avatar_url, provider` + campos de plano `plan, role, pro_until, stripe_customer_id, subscription_status`. Nunca usar `user_id`, `name`, `phone`, `birth`, `gender`, `city` em `profiles` (as outras tabelas usam `user_id`).
+5. **Chaves** — no front só entram chaves públicas (Supabase publishable/anon, Stripe `pk_`), via `window.BT8_ENV` (`src/js/env.js`, sobrescrito no build). O repositório GitHub é **público**: nunca commitar service role, `sk_`, `whsec_` nem `GUEST_USAGE_HASH_SECRET` — essas ficam só nas variáveis do Netlify (escopo Functions).
+6. **Plano Pro só é ativado pelo backend** (webhook Stripe). Nunca liberar Pro ou Admin direto no front. Admin = `profiles.role = 'admin'`.
+7. **Deploy**: push na `main` dispara o build de produção no Netlify (conectado ao GitHub). Outras branches viram Branch Deploy de teste. Drag-and-drop de `dist/` só em emergência (as Functions não sobem por esse caminho).
 
 ## Pendências prioritárias
 

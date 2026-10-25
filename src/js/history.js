@@ -78,7 +78,7 @@ function renderHomeHistory(items) {
     return `<div class="home-hist-item" onclick="openTournament('${t.id}')">
       <span class="home-hist-icon">${icon}</span>
       <div class="home-hist-info">
-        <div class="home-hist-title">${t.title}</div>
+        <div class="home-hist-title">${escapeHtml(t.title)}</div>
         <div class="home-hist-meta">${date} · ${np} jogadores</div>
       </div>
       <span class="home-hist-arrow">›</span>
@@ -158,7 +158,7 @@ async function openHistorico() {
       return `<div class="home-hist-item" onclick="openTournament('${t.id}')">
         <span class="home-hist-icon">${icon}</span>
         <div class="home-hist-info">
-          <div class="home-hist-title">${t.title}</div>
+          <div class="home-hist-title">${escapeHtml(t.title)}</div>
           <div class="home-hist-meta">${date} · ${np} jogadores</div>
         </div>
         <span class="home-hist-arrow">›</span>
@@ -191,7 +191,7 @@ async function openTournament(id) {
       podiumHTML += `<div class="podium-item">
         <div class="podium-place">${medals[idx]||idx+1+'º'}</div>
         <div class="podium-bar p${idx+1}"><span class="podium-medal">${medals[idx]||'🏅'}</span></div>
-        <div class="podium-name">${p.name}</div>
+        <div class="podium-name">${escapeHtml(p.name)}</div>
         <div class="podium-pts">${p.scoreLabel||''}</div>
       </div>`;
     });
@@ -199,7 +199,7 @@ async function openTournament(id) {
     // Tabela ranking
     const rows = stand.map((p,i) => `<tr class="${i<3?'r'+(i+1):''}">
       <td class="rn">${medals[i]||i+1+'º'}</td>
-      <td style="font-weight:500">${p.name}</td>
+      <td style="font-weight:500">${escapeHtml(p.name)}</td>
       <td>${p.j||0}</td><td>${p.v||0}</td>
       <td><span class="pts-chip">${p.scoreLabel||0}</span></td><td></td>
     </tr>`).join('');
@@ -223,9 +223,9 @@ async function openTournament(id) {
           const nameB = m.b||m.teamB||m.p2Name||m.p2||'?';
           const sA = m.sA!=null?m.sA:(m.s1!=null?m.s1:null);
           const sB = m.sB!=null?m.sB:(m.s2!=null?m.s2:null);
-          const score = (sA!=null||sB!=null) ? `${sA??'-'} × ${sB??'-'}` : (m.winner?`▶ ${m.winner}`:'—');
+          const score = (sA!=null||sB!=null) ? `${sA??'-'} × ${sB??'-'}` : (m.winner?`▶ ${escapeHtml(m.winner)}`:'—');
           roundsHTML += `<div class="replay-match">
-            <div class="replay-match-names">${nameA} <span style="color:var(--muted)">vs</span> ${nameB}</div>
+            <div class="replay-match-names">${escapeHtml(nameA)} <span style="color:var(--muted)">vs</span> ${escapeHtml(nameB)}</div>
             <div class="replay-match-score">${score}</div>
           </div>`;
         });
@@ -233,7 +233,7 @@ async function openTournament(id) {
     }
     content.innerHTML = `
       <div class="podium-wrap">
-        <div class="podium-sub">${data.title}</div>
+        <div class="podium-sub">${escapeHtml(data.title)}</div>
       </div>
       ${podiumHTML}
       <div class="accent-line"></div>
