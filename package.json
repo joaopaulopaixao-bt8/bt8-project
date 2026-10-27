@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "node scripts/build-netlify.js",
+    "test": "node --test \"tests/*.test.js\"",
     "db:start": "npx -y supabase@2.120.0 start -x vector,logflare,imgproxy,realtime,storage-api,edge-runtime,supavisor",
     "db:stop": "npx -y supabase@2.120.0 stop",
     "db:reset": "npx -y supabase@2.120.0 db reset",
