@@ -51,7 +51,7 @@ docker exec -i supabase-db pg_restore -U supabase_admin -d postgres --clean --if
 
 - Envio pelo Resend (`smtp.resend.com:465`, usuario `resend`, senha = API key do Resend em `SMTP_PASS`). Remetente `BT8 <noreply@bt8.com.br>`, dominio verificado no Resend com os registros DNS no Cloudflare.
 - Modelos em portugues: gerados por `npm run emails` (`scripts/build-emails.js`) em `public/email/*.html` e publicados em `https://bt8.com.br/email/<nome>.html`. O auth le cada modelo dessa URL; os assuntos ficam em `public/email/subjects.json`.
-- No VPS, `docker-compose.bt8.yml` passa ao servico `auth` as variaveis `GOTRUE_MAILER_TEMPLATES_<NOME>` (URL do modelo), `GOTRUE_MAILER_SUBJECTS_<NOME>` (assunto) e `GOTRUE_MAILER_NOTIFICATIONS_<AVISO>_ENABLED` (avisos de senha/e-mail alterado e login vinculado/removido).
+- No VPS, `docker-compose.bt8.yml` passa ao servico `auth` as variaveis `GOTRUE_MAILER_TEMPLATES_<NOME>` (URL do modelo, `${BT8_EMAIL_BASE}/<nome>.html`; `BT8_EMAIL_BASE=https://bt8.com.br/email` no `.env`; o auth recarrega os modelos sozinho), `GOTRUE_MAILER_SUBJECTS_<NOME>` (assunto) e `GOTRUE_MAILER_NOTIFICATIONS_<AVISO>_ENABLED` (avisos de senha/e-mail alterado e login vinculado/removido).
 - Para mudar um texto: editar `scripts/build-emails.js`, rodar `npm run emails`, testar no staging local (Mailpit em `http://127.0.0.1:55324`), mesclar na `main` e, se mudou assunto, atualizar o compose do VPS e rodar `docker compose up -d auth`.
 - Cadastro por e-mail ainda entra sem confirmacao (`ENABLE_EMAIL_AUTOCONFIRM=true`).
 
