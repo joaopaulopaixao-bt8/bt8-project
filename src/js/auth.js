@@ -2,8 +2,8 @@
 // SISTEMA DE AUTENTICAÇÃO — Supabase
 // ═══════════════════════════════════════════════════════════
 const BT8_ENV = window.BT8_ENV || {};
-const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://srrbnjgixizsjxobvsma.supabase.co';
-const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'sb_publishable_U6D-70GQBH2DkCVJSsVhFA_YvPkqWZl';
+const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://api.bt8.com.br';
+const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'sb_publishable_-wPekaIkdFqP2w-NngaTvR_3zjuTl4r';
 let SUPA = null;
 let SUPA_USER = null;
 let PASSWORD_RECOVERY_ACTIVE = false;

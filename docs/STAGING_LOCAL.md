@@ -2,7 +2,7 @@
 
 Ambiente de teste que roda inteiro no seu PC: um Supabase local (Postgres + Auth) em Docker e o app servido pelo Netlify CLI com as Functions. Nada aqui toca o banco de producao.
 
-Usado porque o plano free do Supabase nao tem vaga para um projeto de staging na nuvem e os Branch Deploys do Netlify apontam para o banco de producao (`srrbnjgixizsjxobvsma`).
+Usado porque o plano free do Supabase nao tem vaga para um projeto de staging na nuvem e os Branch Deploys do Netlify apontam para o banco de producao (`api.bt8.com.br`).
 
 ## Pre-requisitos
 

@@ -6,11 +6,11 @@ O front lê a configuração de `window.BT8_ENV` (gerado no build em `dist/js/en
 
 ```js
 const BT8_ENV = window.BT8_ENV || {};
-const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://srrbnjgixizsjxobvsma.supabase.co';
+const SUPA_URL = BT8_ENV.SUPABASE_URL || 'https://api.bt8.com.br';
 const SUPA_KEY = BT8_ENV.SUPABASE_ANON_KEY || 'sb_publishable_...'; // ver src/js/auth.js
 ```
 
-> Produção = `srrbnjgixizsjxobvsma` (confirmado em 2026-10-24). O antigo `znifpitysqfbepjymtmg` não é mais usado. Branch Deploys apontam para o mesmo projeto — não há staging separado.
+> Produção = Supabase self-hosted no VPS, `https://api.bt8.com.br` (desde 2026-10-25; ver `docs/SUPABASE_VPS.md`). Branch Deploys apontam para o mesmo banco — não há staging separado; use o staging local.
 
 Service role **só** nas Netlify Functions (`BT8_SUPABASE_SERVICE_ROLE_KEY`), nunca no front nem no repositório (que é público).
 
