@@ -1,0 +1,12 @@
+{
+  "confirmation": "Confirme seu e-mail no BT8",
+  "recovery": "Redefina sua senha do BT8",
+  "magic_link": "Seu link de acesso ao BT8",
+  "invite": "Você foi convidado para o BT8",
+  "email_change": "Confirme a troca de e-mail no BT8",
+  "reauthentication": "Seu código de verificação do BT8",
+  "password_changed_notification": "Sua senha do BT8 foi alterada",
+  "email_changed_notification": "O e-mail da sua conta BT8 foi alterado",
+  "identity_linked_notification": "Nova forma de login na sua conta BT8",
+  "identity_unlinked_notification": "Forma de login removida da sua conta BT8"
+}
