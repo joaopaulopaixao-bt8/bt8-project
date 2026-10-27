@@ -9,6 +9,7 @@
     "db:stop": "npx -y supabase@2.120.0 stop",
     "db:reset": "npx -y supabase@2.120.0 db reset",
     "db:status": "npx -y supabase@2.120.0 status",
-    "dev:local": "node scripts/dev-local.js"
+    "dev:local": "node scripts/dev-local.js",
+    "emails": "node scripts/build-emails.js"
   }
 }
