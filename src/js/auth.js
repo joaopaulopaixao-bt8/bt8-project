@@ -48,16 +48,28 @@ async function consumeOAuthHashSession() {
   const accessToken = params.get('access_token');
   const refreshToken = params.get('refresh_token');
   const type = params.get('type');
-  if (!accessToken || !refreshToken || type === 'recovery') return false;
+  if (!accessToken || !refreshToken) return false;
+  // O hash é apagado da URL no carregamento (linha 12), então o supabase-js
+  // não vê o link de recuperação: a sessão e a tela de nova senha saem daqui.
+  const isRecovery = type === 'recovery';
 
-  sessionStorage.setItem('bt8_oauth_enter_app', '1');
+  if (!isRecovery) sessionStorage.setItem('bt8_oauth_enter_app', '1');
   try {
     const { data, error } = await SUPA.auth.setSession({
       access_token: accessToken,
       refresh_token: refreshToken
     });
-    if (error) throw error;
-    SUPA_USER = data?.session?.user || data?.user || null;
+    if (error && !isRecovery) throw error;
+    SUPA_USER = error ? null : (data?.session?.user || data?.user || null);
+    if (isRecovery) {
+      if (SUPA_USER) {
+        PASSWORD_RECOVERY_ACTIVE = true;
+        showResetPasswordModal();
+      } else {
+        showResetPasswordExpiredModal();
+      }
+      return false;
+    }
     return !!SUPA_USER;
   } finally {
     cleanSensitiveAuthHash();
@@ -92,7 +104,8 @@ function initSupabase() {
       if (isResetPasswordRoute() && SUPA_USER && !PASSWORD_RECOVERY_ACTIVE) {
         PASSWORD_RECOVERY_ACTIVE = true;
         showResetPasswordModal();
-      } else if (isResetPasswordRoute() && !SUPA_USER) {
+      } else if (/error_code=otp_expired/.test(BT8_INITIAL_AUTH_HASH)
+        || (isResetPasswordRoute() && !SUPA_USER)) {
         showResetPasswordExpiredModal();
       }
     });
@@ -351,6 +364,21 @@ function checkResetPw() {
   return okLen && okLetter && okNum && okMatch;
 }
 
+// Mensagens do Supabase Auth chegam em inglês.
+function translateAuthError(message) {
+  const m = String(message || '');
+  if (m === 'Invalid login credentials') return 'E-mail ou senha incorretos';
+  if (/should be different from the old password/i.test(m)) return 'A nova senha precisa ser diferente da senha atual.';
+  if (/User already registered/i.test(m)) return 'Este e-mail já tem cadastro. Entre ou use "Esqueci minha senha".';
+  if (/Password should be at least/i.test(m)) return 'A senha é curta demais.';
+  if (/Email not confirmed/i.test(m)) return 'Confirme seu e-mail pelo link que enviamos antes de entrar.';
+  if (/only request this after (\d+) seconds/i.test(m)) return `Aguarde ${m.match(/after (\d+) seconds/i)[1]} segundos para pedir de novo.`;
+  if (/rate limit/i.test(m)) return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+  if (/invalid format|valid email/i.test(m)) return 'E-mail inválido.';
+  if (/session missing|expired|invalid.*token/i.test(m)) return 'Seu link expirou. Peça um novo e-mail.';
+  return m;
+}
+
 async function saveNewPassword() {
   if (!SUPA) return;
   const msg = document.getElementById('reset-password-msg');
@@ -390,7 +418,7 @@ async function saveNewPassword() {
   } catch (e) {
     if (msg) {
       msg.className = 'reset-password-msg err';
-      msg.textContent = e.message || 'Não foi possível atualizar a senha.';
+      msg.textContent = translateAuthError(e.message) || 'Não foi possível atualizar a senha.';
     }
     if (btn) {
       btn.disabled = false;
@@ -480,7 +508,7 @@ async function loginWithGoogle() {
       provider: 'google',
       options: { redirectTo }
     });
-    if (error) showAuthMsg(error.message, 'error');
+    if (error) showAuthMsg(translateAuthError(error.message), 'error');
   } catch(e) { showAuthMsg('Erro ao conectar com Google', 'error'); }
 }
 
@@ -494,7 +522,7 @@ async function doLogin() {
   try {
     const { data, error } = await SUPA.auth.signInWithPassword({ email, password: pw });
     if (error) {
-      showAuthMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
+      showAuthMsg(translateAuthError(error.message), 'error');
     } else {
       SUPA_USER = data?.session?.user || data?.user || null;
       if (SUPA_USER) handleAuthStateChange(SUPA_USER);
@@ -531,7 +559,7 @@ async function doSignup() {
           : {})
       }
     });
-    if (error) { showAuthMsg(error.message, 'error'); }
+    if (error) { showAuthMsg(translateAuthError(error.message), 'error'); }
     else if (data?.user?.identities?.length === 0) {
       showAuthMsg('E-mail já cadastrado. Faça login.', 'error');
       setTimeout(() => switchAuthTab('login'), 2000);
@@ -557,7 +585,7 @@ async function doForgot() {
   if (!email) return showAuthMsg('Informe seu e-mail', 'error');
   try {
     const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
-    if (error) showAuthMsg(error.message, 'error');
+    if (error) showAuthMsg(translateAuthError(error.message), 'error');
     else showAuthMsg('Link enviado! Verifique sua caixa de entrada.', 'success');
   } catch(e) { showAuthMsg('Erro ao enviar link', 'error'); }
 }
@@ -624,7 +652,7 @@ async function lpLogin() {
   const pw = document.getElementById('lp-pw')?.value;
   if (!email || !pw) return lpShowMsg('Preencha e-mail e senha', 'error');
   const { data, error } = await SUPA.auth.signInWithPassword({ email, password: pw }).catch(() => ({ error: { message: 'Erro' } }));
-  if (error) lpShowMsg(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message, 'error');
+  if (error) lpShowMsg(translateAuthError(error.message), 'error');
   else {
     SUPA_USER = data?.session?.user || data?.user || null;
     if (SUPA_USER) handleAuthStateChange(SUPA_USER);
@@ -639,7 +667,7 @@ async function lpSignup() {
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return lpShowMsg('E-mail inválido', 'error');
   if (!checkPw(pw)) return lpShowMsg('Senha não atende os requisitos', 'error');
   const { data, error } = await SUPA.auth.signUp({ email, password: pw, options: { data: { full_name: name } } }).catch(() => ({ error: { message: 'Erro' } }));
-  if (error) lpShowMsg(error.message, 'error');
+  if (error) lpShowMsg(translateAuthError(error.message), 'error');
   else if (data?.user?.identities?.length === 0) { lpShowMsg('E-mail já cadastrado. Faça login.', 'error'); setTimeout(() => lpSwitchTab('login'), 2000); }
   else lpShowMsg('Conta criada! Verifique seu e-mail para confirmar.', 'success');
 }
@@ -648,7 +676,7 @@ async function lpForgot() {
   const email = document.getElementById('lp-email')?.value?.trim();
   if (!email) return lpShowMsg('Informe seu e-mail acima', 'error');
   const { error } = await SUPA.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` }).catch(() => ({ error: { message: 'Erro' } }));
-  if (error) lpShowMsg(error.message, 'error');
+  if (error) lpShowMsg(translateAuthError(error.message), 'error');
   else lpShowMsg('Link enviado! Verifique sua caixa de entrada.', 'success');
 }
 
