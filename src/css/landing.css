@@ -905,6 +905,7 @@
   line-height:1.72;
   margin:10px 0 0;
 }
+.legal-section a { color:var(--yellow); }
 .legal-page-footer { margin-top:16px; }
 
 /* ── DESKTOP ─────────────────────────────── */
