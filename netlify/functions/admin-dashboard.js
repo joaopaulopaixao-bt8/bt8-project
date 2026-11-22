@@ -1,3 +1,5 @@
+const { stripeRequest } = require('./lib/stripe');
+
 const json = (statusCode, body) => ({
   statusCode,
   headers: {
@@ -29,20 +31,6 @@ const supabaseFetch = async (url, key, path, options = {}) => {
 };
 
 const restRows = async (url, key, path) => supabaseFetch(url, key, `rest/v1/${path}`);
-
-const stripeRequest = async (secretKey, path, options = {}) => {
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: options.method || 'GET',
-    headers: {
-      authorization: `Bearer ${secretKey}`,
-      'content-type': 'application/x-www-form-urlencoded'
-    },
-    body: options.body ? new URLSearchParams(options.body) : undefined
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
-  return data;
-};
 
 const parseDate = (value) => {
   const date = value ? new Date(value) : null;

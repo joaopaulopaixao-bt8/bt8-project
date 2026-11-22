@@ -1,3 +1,5 @@
+const { stripeRequest, isResourceMissing, subscriptionPeriodEnd } = require('./lib/stripe');
+
 const json = (statusCode, body) => ({
   statusCode,
   headers: {
@@ -8,23 +10,6 @@ const json = (statusCode, body) => ({
   },
   body: JSON.stringify(body)
 });
-
-const stripeRequest = async (secretKey, path, params) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params || {}).filter(([, value]) => value !== undefined && value !== null && value !== '')
-  );
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${secretKey}`,
-      'content-type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams(cleanParams)
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error?.message || `Stripe ${res.status}`);
-  return data;
-};
 
 const supabaseFetch = async (url, key, path, options = {}) => {
   const res = await fetch(`${url}/${path}`, {
@@ -95,14 +80,33 @@ exports.handler = async (event) => {
       });
     }
 
-    const subscription = await stripeRequest(
-      stripeKey,
-      `subscriptions/${current.stripe_subscription_id}`,
-      { cancel_at_period_end: 'true', 'metadata[cancel_requested_by]': userId }
-    );
-    const periodEnd = subscription.current_period_end
-      ? new Date(subscription.current_period_end * 1000).toISOString()
-      : current.current_period_end;
+    let subscription;
+    try {
+      subscription = await stripeRequest(stripeKey, `subscriptions/${current.stripe_subscription_id}`, {
+        body: { cancel_at_period_end: 'true', 'metadata[cancel_requested_by]': userId }
+      });
+    } catch (e) {
+      if (!isResourceMissing(e)) throw e;
+      // F0-08: a test-mode subscription left over after the switch to live mode. It bills
+      // nothing and must not keep giving Pro.
+      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/subscriptions?id=eq.${current.id}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({
+          status: 'canceled',
+          current_period_end: null,
+          metadata: { ...(current.metadata || {}), missing_in_stripe: true },
+          updated_at: new Date().toISOString()
+        })
+      });
+      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({ plan: 'free', pro_until: null, subscription_status: 'canceled', updated_at: new Date().toISOString() })
+      });
+      return json(404, { error: 'Essa assinatura não existe mais no Stripe e foi encerrada. Se você foi cobrado, fale com o suporte.' });
+    }
+    const periodEnd = subscriptionPeriodEnd(subscription);
     const metadata = {
       ...(current.metadata || {}),
       cancel_at_period_end: true,

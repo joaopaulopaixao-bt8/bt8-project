@@ -1,3 +1,5 @@
+const { stripeRequest, isResourceMissing, isRecurringActive, resolveOrigin } = require('./lib/stripe');
+
 const json = (statusCode, body) => ({
   statusCode,
   headers: {
@@ -8,31 +10,6 @@ const json = (statusCode, body) => ({
   },
   body: JSON.stringify(body)
 });
-
-const stripeRequest = async (secretKey, path, params, options = {}) => {
-  const cleanParams = Object.fromEntries(
-    Object.entries(params).filter(([, value]) => value !== undefined && value !== null && value !== '')
-  );
-  const res = await fetch(`https://api.stripe.com/v1/${path}`, {
-    method: 'POST',
-    headers: {
-      authorization: `Bearer ${secretKey}`,
-      'content-type': 'application/x-www-form-urlencoded',
-      'Stripe-Version': options.apiVersion || '2025-02-24.acacia'
-    },
-    body: new URLSearchParams(cleanParams)
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const error = new Error(data?.error?.message || `Stripe ${res.status}`);
-    error.type = data?.error?.type;
-    error.code = data?.error?.code;
-    error.param = data?.error?.param;
-    error.status = res.status;
-    throw error;
-  }
-  return data;
-};
 
 const supabaseFetch = async (url, key, path, options = {}) => {
   const res = await fetch(`${url}/${path}`, {
@@ -64,6 +41,11 @@ const appendCheckoutParams = (path, status) => {
   return `${path}${separator}checkout=${status}${status === 'success' ? '&session_id={CHECKOUT_SESSION_ID}' : ''}`;
 };
 
+// F0-30: what the buyer reads right above the pay button (custom_text max 1200 chars).
+const checkoutSummary = (isMonthly) => (isMonthly
+  ? 'Assinatura mensal do BT8 Pro com renovação automática todo mês, no mesmo cartão. Cancele quando quiser pelo app; o Pro continua até o fim do período pago. Você pode desistir em até 7 dias da compra e receber o valor de volta (art. 49 do CDC).'
+  : 'BT8 Pro por 30 dias, pagamento único e sem renovação automática. Se você já tiver Pro, os 30 dias são somados ao prazo atual. Você pode desistir em até 7 dias da compra e receber o valor de volta (art. 49 do CDC).');
+
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
   if (event.httpMethod !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -71,7 +53,6 @@ exports.handler = async (event) => {
   const supabaseUrl = process.env.BT8_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.BT8_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   const stripeKey = process.env.BT8_STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
-  const stripeApiVersion = process.env.BT8_STRIPE_API_VERSION || process.env.STRIPE_API_VERSION || '2025-02-24.acacia';
   const monthlyPrice = process.env.BT8_STRIPE_PRO_MONTHLY_PRICE_ID || process.env.STRIPE_PRO_MONTHLY_PRICE_ID;
   const thirtyDayPrice = process.env.BT8_STRIPE_PRO_30D_PRICE_ID || process.env.STRIPE_PRO_30D_PRICE_ID;
 
@@ -92,8 +73,8 @@ exports.handler = async (event) => {
   }
 
   const plan = body.plan === 'pro_30d' ? 'pro_30d' : 'pro_monthly';
-  const origin = String(body.origin || event.headers.origin || '').replace(/\/$/, '');
-  if (!origin) return json(400, { error: 'origin is required.' });
+  const origin = resolveOrigin(body.origin || event.headers.origin);
+  if (!origin) return json(400, { error: 'Origem do checkout não permitida.' });
   const successPath = safePath(body.success_path, '/');
   const cancelPath = safePath(body.cancel_path, '/bt8');
 
@@ -118,28 +99,34 @@ exports.handler = async (event) => {
     if (profile.role === 'admin') {
       return json(403, { error: 'Conta Admin não pode assinar planos.' });
     }
-    let customerId = profile.stripe_customer_id;
-
-    if (!customerId) {
-      const customer = await stripeRequest(stripeKey, 'customers', {
-        email,
-        'metadata[user_id]': userId
-      }, { apiVersion: stripeApiVersion });
-      customerId = customer.id;
-      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
-        method: 'PATCH',
-        headers: { prefer: 'return=minimal' },
-        body: JSON.stringify({ stripe_customer_id: customerId, email })
+    const isMonthly = plan === 'pro_monthly';
+    // Not swallowed on purpose: if this lookup fails we must not risk a double charge.
+    const recurringRows = await supabaseFetch(
+      supabaseUrl,
+      serviceKey,
+      `rest/v1/subscriptions?select=plan_type,status,stripe_subscription_id,metadata&user_id=eq.${encodeURIComponent(userId)}&plan_type=eq.recurring&stripe_subscription_id=not.is.null&order=created_at.desc&limit=1`
+    );
+    if (isRecurringActive(recurringRows?.[0])) {
+      return json(409, {
+        error: isMonthly
+          ? 'Esta conta já tem uma assinatura mensal ativa.'
+          : 'Sua assinatura mensal está ativa e já inclui o Pro. O plano de 30 dias fica disponível depois que você cancelar a renovação.'
       });
     }
 
-    const isMonthly = plan === 'pro_monthly';
-    const latestRows = await supabaseFetch(
-      supabaseUrl,
-      serviceKey,
-      `rest/v1/subscriptions?select=plan_type,status,current_period_end,stripe_subscription_id,metadata&user_id=eq.${encodeURIComponent(userId)}&order=created_at.desc&limit=1`
-    ).catch(() => []);
-    const latest = latestRows?.[0] || null;
+    const createCustomer = async () => {
+      const customer = await stripeRequest(stripeKey, 'customers', {
+        body: { email, 'metadata[user_id]': userId }
+      });
+      await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({ stripe_customer_id: customer.id, email })
+      });
+      return customer.id;
+    };
+    let customerId = profile.stripe_customer_id || await createCustomer();
+
     const latest30dRows = await supabaseFetch(
       supabaseUrl,
       serviceKey,
@@ -150,15 +137,8 @@ exports.handler = async (event) => {
     const activeUntil = proUntil && proUntil.getTime() > Date.now() ? proUntil : null;
     const hasActiveProProfile = profile.plan === 'pro' && !!activeUntil;
     const latest30dIsActive = latest30d?.plan_type === 'one_time_30d'
-      && ['active', 'paid', 'complete', 'succeeded', 'checkout_started'].includes(String(latest30d.status || '').toLowerCase());
+      && ['active', 'paid', 'complete', 'succeeded'].includes(String(latest30d.status || '').toLowerCase());
     const isActive30d = hasActiveProProfile && latest30dIsActive;
-    const alreadyRecurring = latest?.plan_type === 'recurring'
-      && latest?.stripe_subscription_id
-      && !latest?.metadata?.cancel_at_period_end
-      && ['active', 'trialing', 'past_due', 'unpaid'].includes(latest.status);
-    if (isMonthly && alreadyRecurring) {
-      return json(409, { error: 'Esta conta já tem uma assinatura mensal ativa.' });
-    }
 
     const billingAnchor = isMonthly && isActive30d
       ? Math.floor(activeUntil.getTime() / 1000)
@@ -169,10 +149,17 @@ exports.handler = async (event) => {
       client_reference_id: userId,
       'line_items[0][price]': isMonthly ? monthlyPrice : thirtyDayPrice,
       'line_items[0][quantity]': '1',
+      // F0-03: card only until async methods (boleto/Pix) are tested end to end.
+      'payment_method_types[0]': 'card',
+      locale: 'pt-BR',
+      'consent_collection[terms_of_service]': 'required',
+      'custom_text[terms_of_service_acceptance][message]': `Li e aceito os [Termos de uso](${origin}/termos-de-uso) e a [Política de privacidade](${origin}/politica-de-privacidade).`,
+      'custom_text[submit][message]': checkoutSummary(isMonthly),
       success_url: `${origin}${appendCheckoutParams(successPath, 'success')}`,
       cancel_url: `${origin}${appendCheckoutParams(cancelPath, 'cancelled')}`,
       'metadata[user_id]': userId,
-      'metadata[plan_type]': isMonthly ? 'recurring' : 'one_time_30d'
+      'metadata[plan_type]': isMonthly ? 'recurring' : 'one_time_30d',
+      'metadata[price_id]': isMonthly ? monthlyPrice : thirtyDayPrice
     };
     if (isMonthly) {
       sessionParams['subscription_data[metadata][user_id]'] = userId;
@@ -187,10 +174,23 @@ exports.handler = async (event) => {
       }
     }
 
+    const createSession = async (params) => {
+      try {
+        return await stripeRequest(stripeKey, 'checkout/sessions', { body: params });
+      } catch (stripeError) {
+        // F0-08: a test-mode customer id does not exist in live mode; start a new customer.
+        if (isResourceMissing(stripeError) && stripeError.param === 'customer') {
+          customerId = await createCustomer();
+          return stripeRequest(stripeKey, 'checkout/sessions', { body: { ...params, customer: customerId } });
+        }
+        throw stripeError;
+      }
+    };
+
     let session;
     let scheduledStrategy = billingAnchor ? 'billing_cycle_anchor' : null;
     try {
-      session = await stripeRequest(stripeKey, 'checkout/sessions', sessionParams, { apiVersion: stripeApiVersion });
+      session = await createSession(sessionParams);
     } catch (stripeError) {
       const canFallbackToTrial = billingAnchor && (
         stripeError.param === 'subscription_data[billing_cycle_anchor]' ||
@@ -199,13 +199,13 @@ exports.handler = async (event) => {
       );
       if (!canFallbackToTrial) throw stripeError;
 
-      const fallbackParams = { ...sessionParams };
+      const fallbackParams = { ...sessionParams, customer: customerId };
       delete fallbackParams['subscription_data[billing_cycle_anchor]'];
       delete fallbackParams['subscription_data[proration_behavior]'];
       fallbackParams.payment_method_collection = 'always';
       fallbackParams['subscription_data[trial_end]'] = String(billingAnchor);
       fallbackParams['subscription_data[metadata][scheduled_strategy]'] = 'trial_end_fallback';
-      session = await stripeRequest(stripeKey, 'checkout/sessions', fallbackParams, { apiVersion: stripeApiVersion });
+      session = await createSession(fallbackParams);
       scheduledStrategy = 'trial_end_fallback';
     }
 
