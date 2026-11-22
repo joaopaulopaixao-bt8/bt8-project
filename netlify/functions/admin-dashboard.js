@@ -44,27 +44,6 @@ const stripeRequest = async (secretKey, path, options = {}) => {
   return data;
 };
 
-const parseDate = (value) => {
-  const date = value ? new Date(value) : null;
-  return date && Number.isFinite(date.getTime()) ? date : null;
-};
-
-const isActivePro = (profile, now) => (
-  profile.plan === 'pro' && (!profile.pro_until || parseDate(profile.pro_until)?.getTime() > now.getTime())
-);
-
-const modeLabel = (mode) => ({
-  s4: 'Super 4',
-  s6: 'Super 6',
-  s8: 'Super 8',
-  s8x: 'Super 8 Soma X',
-  s12: 'Super 12',
-  mista: 'Super Mista',
-  df: 'Duplas Fixas',
-  dm: 'Duplas Mistas',
-  da: 'Duplas Aleatorias'
-}[mode] || mode || 'Sem modo');
-
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
   if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
@@ -135,73 +114,30 @@ exports.handler = async (event) => {
       }).catch(() => {});
     }
 
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const currentMonthKey = now.toISOString().slice(0, 7);
+    // Os números saem das funções agregadas da migração 003 (só a service role executa).
+    const rpc = (name, args) => supabaseFetch(supabaseUrl, serviceKey, `rest/v1/rpc/${name}`, {
+      method: 'POST',
+      body: JSON.stringify(args)
+    });
+    const query = event.queryStringParameters || {};
 
-    const [profiles, subscriptions, tournaments, events, guestUsage] = await Promise.all([
-      restRows(supabaseUrl, serviceKey, 'profiles?select=id,email,nome,plan,role,pro_until,subscription_status,created_at&order=created_at.desc&limit=1000'),
-      restRows(supabaseUrl, serviceKey, 'subscriptions?select=user_id,plan_type,status,current_period_end,metadata,created_at&order=created_at.desc&limit=1000'),
-      restRows(supabaseUrl, serviceKey, 'tournaments?select=id,user_id,mode,category,players,created_at&order=created_at.desc&limit=1000'),
-      restRows(supabaseUrl, serviceKey, 'app_events?select=event_type,metadata,created_at&order=created_at.desc&limit=80'),
-      restRows(supabaseUrl, serviceKey, `guest_usage?select=month_key,tournaments_created,last_seen_at&month_key=eq.${encodeURIComponent(currentMonthKey)}&limit=1000`)
-    ]);
-
-    const latestByUser = new Map();
-    for (const sub of subscriptions || []) {
-      if (!latestByUser.has(sub.user_id)) latestByUser.set(sub.user_id, sub);
+    if (query.view === 'customers') {
+      const search = String(query.q || '').trim().slice(0, 80);
+      return json(200, { customers: await rpc('admin_customers', { p_search: search || null, p_limit: 100 }) });
     }
 
-    const activeProfiles = (profiles || []).filter(profile => isActivePro(profile, now));
-    const recurringActive = activeProfiles.filter(profile => latestByUser.get(profile.id)?.plan_type === 'recurring').length;
-    const oneTimeActive = activeProfiles.filter(profile => latestByUser.get(profile.id)?.plan_type === 'one_time_30d').length;
-    const proExpired = (profiles || []).filter(profile =>
-      profile.plan === 'pro' && profile.pro_until && parseDate(profile.pro_until)?.getTime() <= now.getTime()
-    ).length;
-    const freeActive = (profiles || []).filter(profile => !isActivePro(profile, now)).length;
+    if (query.view === 'customer') {
+      if (!/^[0-9a-f-]{36}$/i.test(query.id || '')) return json(400, { error: 'Cliente inválido.' });
+      return json(200, await rpc('admin_customer', { p_user_id: query.id }));
+    }
 
-    const paidLast30 = (subscriptions || []).filter(sub => {
-      const created = parseDate(sub.created_at);
-      return created && created >= last30 && ['paid', 'complete', 'completed', 'active'].includes(sub.status);
-    });
-    const revenue30 = paidLast30.reduce((sum, sub) => sum + (sub.plan_type === 'recurring' ? 6.9 : 14.9), 0);
-    const monthlyRecurringRevenue = recurringActive * 6.9;
-
-    const tournamentsMonth = (tournaments || []).filter(t => parseDate(t.created_at) >= monthStart);
-    const modeCounts = {};
-    for (const t of tournamentsMonth) modeCounts[t.mode] = (modeCounts[t.mode] || 0) + 1;
-    const topModes = Object.entries(modeCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([mode, count]) => ({ mode, label: modeLabel(mode), count }));
-
-    const eventCount = (type) => (events || []).filter(event => event.event_type === type).length;
-    const guestTournamentCount = (guestUsage || []).reduce((sum, row) => sum + (row.tournaments_created || 0), 0);
-
+    const period = ['7d', '30d', 'mes'].includes(query.period) ? query.period : 'mes';
+    const dashboard = await rpc('admin_dashboard', { p_period: period });
     return json(200, {
-      generated_at: now.toISOString(),
-      stats: {
-        users_total: profiles?.length || 0,
-        users_new_month: (profiles || []).filter(profile => parseDate(profile.created_at) >= monthStart).length,
-        free_active: freeActive,
-        pro_recurring_active: recurringActive,
-        pro_30d_active: oneTimeActive,
-        pro_expired: proExpired,
-        mrr_estimated_brl: Number(monthlyRecurringRevenue.toFixed(2)),
-        revenue_30d_estimated_brl: Number(revenue30.toFixed(2)),
-        tournaments_month: tournamentsMonth.length,
-        guest_tournaments_month: guestTournamentCount,
-        guest_limit_blocks_recent: eventCount('guest_limit_reached'),
-        free_limit_blocks_recent: eventCount('free_limit_reached')
-      },
-      top_modes: topModes,
-      users: profiles || [],
-      subscriptions: subscriptions || [],
-      tournaments: tournaments || [],
-      recent_users: (profiles || []).slice(0, 10),
-      recent_subscriptions: (subscriptions || []).slice(0, 10),
-      recent_events: events || []
+      generated_at: new Date().toISOString(),
+      ...dashboard,
+      // Sem fonte de dados ainda: o painel mostra "não configurado".
+      ops: { last_backup_at: null, uptime: null }
     });
   } catch (e) {
     return json(500, { error: e.message || 'Admin dashboard failed.' });
