@@ -70,13 +70,13 @@ function renderHomeHistory(items) {
     el.style.display = '';
     return;
   }
-  const modeIcons = { s4:'🎾',s6:'🎾',s8:'🎾',s8x:'➕',s12:'🎾',mista:'⚥',df:'👥',dm:'👫',da:'🎲' };
+  const modeIcons = { s4:'ball',s6:'ball',s8:'ball',s8x:'plus',s12:'ball',mista:'users',df:'users',dm:'users',da:'dices' };
   const rows = items.map(t => {
     const date = new Date(t.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
     const np = Array.isArray(t.players) ? t.players.length : '?';
-    const icon = modeIcons[t.mode] || '🏆';
+    const modeIcon = icon(modeIcons[t.mode] || 'trophy');
     return `<div class="home-hist-item" onclick="openTournament('${t.id}')">
-      <span class="home-hist-icon">${icon}</span>
+      <span class="home-hist-icon">${modeIcon}</span>
       <div class="home-hist-info">
         <div class="home-hist-title">${escapeHtml(t.title)}</div>
         <div class="home-hist-meta">${date} · ${np} jogadores</div>
@@ -150,13 +150,13 @@ async function openHistorico() {
       .order('created_at', { ascending:false })
       .limit(50);
     if (!data||!data.length) { el.innerHTML='<div class="hist-empty">Nenhum torneio salvo ainda.</div>'; return; }
-    const modeIcons = { s4:'🎾',s6:'🎾',s8:'🎾',s8x:'➕',s12:'🎾',mista:'⚥',df:'👥',dm:'👫',da:'🎲' };
+    const modeIcons = { s4:'ball',s6:'ball',s8:'ball',s8x:'plus',s12:'ball',mista:'users',df:'users',dm:'users',da:'dices' };
     el.innerHTML = data.map(t => {
       const date = new Date(t.created_at).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'});
       const np = Array.isArray(t.players) ? t.players.length : '?';
-      const icon = modeIcons[t.mode] || '🏆';
+      const modeIcon = icon(modeIcons[t.mode] || 'trophy');
       return `<div class="home-hist-item" onclick="openTournament('${t.id}')">
-        <span class="home-hist-icon">${icon}</span>
+        <span class="home-hist-icon">${modeIcon}</span>
         <div class="home-hist-info">
           <div class="home-hist-title">${escapeHtml(t.title)}</div>
           <div class="home-hist-meta">${date} · ${np} jogadores</div>
@@ -182,15 +182,14 @@ async function openTournament(id) {
     if (titleEl) titleEl.textContent = data.title;
     // Renderiza pódio + ranking
     const stand = data.standings || [];
-    const medals = ['🥇','🥈','🥉'];
-    const top3 = stand.slice(0,3);
+        const top3 = stand.slice(0,3);
     const podiumOrder = [1,0,2];
     let podiumHTML = '<div class="podium-row">';
     podiumOrder.forEach(idx => {
       const p = top3[idx]; if(!p) return;
       podiumHTML += `<div class="podium-item">
-        <div class="podium-place">${medals[idx]||idx+1+'º'}</div>
-        <div class="podium-bar p${idx+1}"><span class="podium-medal">${medals[idx]||'🏅'}</span></div>
+        <div class="podium-place">${idx+1}º</div>
+        <div class="podium-bar p${idx+1}"><span class="podium-medal">${idx===0?icon('trophy'):''}</span></div>
         <div class="podium-name">${escapeHtml(p.name)}</div>
         <div class="podium-pts">${p.scoreLabel||''}</div>
       </div>`;
@@ -198,7 +197,7 @@ async function openTournament(id) {
     podiumHTML += '</div>';
     // Tabela ranking
     const rows = stand.map((p,i) => `<tr class="${i<3?'r'+(i+1):''}">
-      <td class="rn">${medals[i]||i+1+'º'}</td>
+      <td class="rn">${i+1}º</td>
       <td style="font-weight:500">${escapeHtml(p.name)}</td>
       <td>${p.j||0}</td><td>${p.v||0}</td>
       <td><span class="pts-chip">${p.scoreLabel||0}</span></td><td></td>
@@ -223,7 +222,7 @@ async function openTournament(id) {
           const nameB = m.b||m.teamB||m.p2Name||m.p2||'?';
           const sA = m.sA!=null?m.sA:(m.s1!=null?m.s1:null);
           const sB = m.sB!=null?m.sB:(m.s2!=null?m.s2:null);
-          const score = (sA!=null||sB!=null) ? `${sA??'-'} × ${sB??'-'}` : (m.winner?`▶ ${escapeHtml(m.winner)}`:'—');
+          const score = (sA!=null||sB!=null) ? `${sA??'-'} × ${sB??'-'}` : (m.winner?`${icon('award')} ${escapeHtml(m.winner)}`:'—');
           roundsHTML += `<div class="replay-match">
             <div class="replay-match-names">${escapeHtml(nameA)} <span style="color:var(--muted)">vs</span> ${escapeHtml(nameB)}</div>
             <div class="replay-match-score">${score}</div>

@@ -292,7 +292,7 @@
         </div>
         <button type="button" onclick="openAuthModal('signup')">Criar conta</button>
       </div>
-      <button class="auth-btn" id="auth-btn" onclick="toggleUserMenu()">👤</button>
+      <button class="auth-btn" id="auth-btn" onclick="toggleUserMenu()" aria-label="Conta"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
       <div class="user-menu" id="user-menu"></div>
     </div>
   </div>
@@ -305,12 +305,12 @@
     <div class="cat-grid">
       <div class="cat-card cat-ind" onclick="selectCategory('individual')">
         <span class="cat-badge">ROTATIVO</span>
-        <span class="cat-icon">🎾</span>
+        <span class="cat-icon"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M5.6 4.9c3.2 3.4 3.2 10.8 0 14.2"/><path d="M18.4 4.9c-3.2 3.4-3.2 10.8 0 14.2"/></svg></span>
         <span class="cat-label">Individual</span>
         <span class="cat-desc">Duplas rotativas · Ranking individual por vitórias</span>
       </div>
       <div class="cat-card cat-dup" onclick="selectCategory('duplas')">
-        <span class="cat-icon">👥</span>
+        <span class="cat-icon"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
         <span class="cat-label">Duplas</span>
         <span class="cat-desc">Fixas ou aleatórias · Round robin e chaves</span>
       </div>
@@ -348,7 +348,7 @@
 <div class="profile-modal" id="profile-modal">
   <div class="profile-box profile-wrap">
     <button class="profile-close" onclick="closeProfileModal()">✕</button>
-    <div class="profile-title">👤 Meu Perfil</div>
+    <div class="profile-title">Meu Perfil</div>
     <div id="profile-plan-card"></div>
     <div id="profile-avatar-wrap" style="margin-bottom:4px;"></div>
     <div class="profile-avatar-actions">
@@ -459,7 +459,7 @@
         <label>Senha</label>
         <div class="password-wrap">
           <input class="auth-input password-input" type="password" id="login-pw" placeholder="••••••••">
-          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('login-pw', this)">👁</button>
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('login-pw', this)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
       </div>
       <button class="btn-auth-submit" onclick="doLogin()">ENTRAR</button>
@@ -481,7 +481,7 @@
         <label>Senha</label>
         <div class="password-wrap">
           <input class="auth-input password-input" type="password" id="signup-pw" placeholder="Mínimo 8 caracteres" oninput="checkPw(this.value)">
-          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('signup-pw', this)">👁</button>
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('signup-pw', this)"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
         </div>
         <div class="pw-checks">
           <span class="pw-check" id="pwc-len">8 ou mais caracteres</span>
@@ -534,7 +534,7 @@
   </div>
   <div class="bottom-fixed">
     <button class="btn btn-yellow btn-full" id="btn-gerar" onclick="gerarTorneio()">
-      ⚡ Gerar Torneio
+      Gerar Torneio
     </button>
   </div>
 </div>
@@ -564,7 +564,7 @@
   <div class="bg-mesh"></div>
   <div class="topbar">
     <button class="back-btn" onclick="voltarParaCorrecao()" style="font-size:12px;width:auto;padding:0 10px;gap:4px">
-      ✏️ Corrigir
+      Corrigir
     </button>
     <span class="topbar-title">Resultado Final</span>
   </div>
@@ -577,7 +577,7 @@
 <!-- ══════════ SHARE MODAL ══════════ -->
 <div class="share-modal" id="share-modal">
   <div class="share-topbar">
-    <span class="share-title">📤 Compartilhar</span>
+    <span class="share-title">Compartilhar</span>
     <button class="btn btn-ghost btn-sm" onclick="closeShare()">Fechar ✕</button>
   </div>
   <div class="share-canvas-area">

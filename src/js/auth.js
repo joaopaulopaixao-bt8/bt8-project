@@ -184,7 +184,7 @@ function handleAuthStateChange(user) {
     buildUserMenu(user);
   } else {
     const btn = document.getElementById('auth-btn');
-    if (btn) { btn.innerHTML = '👤'; btn.style.background = ''; btn.style.padding = ''; }
+    if (btn) { btn.innerHTML = icon('user'); btn.style.background = ''; btn.style.padding = ''; }
     buildGuestMenu();
   }
 }
@@ -215,7 +215,7 @@ function togglePasswordVisibility(inputId, btn) {
   if (btn) {
     btn.classList.toggle('is-visible', show);
     btn.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha');
-    btn.textContent = show ? '🙈' : '👁';
+    btn.innerHTML = icon(show ? 'eyeOff' : 'eye');
   }
   input.focus();
 }
@@ -316,14 +316,14 @@ function showResetPasswordModal() {
         <label>Nova senha</label>
         <div class="password-wrap">
           <input class="auth-input password-input" type="password" id="reset-new-pw" placeholder="Mínimo 8 caracteres" oninput="checkResetPw()">
-          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-new-pw', this)">👁</button>
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-new-pw', this)">${icon('eye')}</button>
         </div>
       </div>
       <div class="auth-field">
         <label>Confirmar nova senha</label>
         <div class="password-wrap">
           <input class="auth-input password-input" type="password" id="reset-confirm-pw" placeholder="Repita a senha" oninput="checkResetPw()">
-          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-confirm-pw', this)">👁</button>
+          <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('reset-confirm-pw', this)">${icon('eye')}</button>
         </div>
       </div>
       <div class="pw-checks reset-pw-checks">
@@ -470,7 +470,7 @@ function showEmailConfirmationModal(email, intent) {
   modal.className = 'email-confirm-modal';
   modal.innerHTML = `
     <div class="email-confirm-card">
-      <div class="email-confirm-icon">✉</div>
+      <div class="email-confirm-icon">${icon('mail')}</div>
       <div class="email-confirm-kicker">${hasPlan ? planLabel : 'Cadastro criado'}</div>
       <h3>Confirme seu e-mail para continuar</h3>
       <p>Enviamos um link para <strong>${email || 'seu e-mail'}</strong>. Abra sua caixa de entrada e clique no link de confirmação.</p>

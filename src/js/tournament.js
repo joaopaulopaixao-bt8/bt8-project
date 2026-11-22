@@ -25,7 +25,7 @@ async function selectCategory(cat) {
   list.innerHTML = items.map(m => {
     const info = MODE_INFO[m];
     return `<div class="type-item" onclick="selectMode('${m}')">
-      <span class="type-icon">${info.icon}</span>
+      <span class="type-icon">${icon(info.icon)}</span>
       <div class="type-info">
         <div class="type-name">${info.label}</div>
         <div class="type-tag">${info.stats.slice(0,2).join(' · ')}</div>
@@ -68,7 +68,7 @@ function renderConfigScreen() {
     <div class="section-label">Formato</div>
     <div class="fmt-row">
       <div class="fmt-opt ${APP.fmt==='rr'?'active':''}" onclick="setFmt('rr',this)">
-        <div class="fmt-opt-name">Round Robin 🏅</div>
+        <div class="fmt-opt-name">Round Robin</div>
         <div class="fmt-opt-desc">Ranking por vitórias</div>
       </div>
       <div class="fmt-opt ${APP.fmt==='final'?'active':''}" onclick="setFmt('final',this)">
@@ -81,7 +81,7 @@ function renderConfigScreen() {
     <div class="section-label">Formato</div>
     <div class="fmt-row">
       <div class="fmt-opt ${APP.fmt==='rr'?'active':''}" onclick="setFmt('rr',this)">
-        <div class="fmt-opt-name">Round Robin 🏅</div>
+        <div class="fmt-opt-name">Round Robin</div>
         <div class="fmt-opt-desc">Ranking por vitórias</div>
       </div>
       <div class="fmt-opt ${APP.fmt==='semi'?'active':''}" onclick="setFmt('semi',this)">
@@ -95,7 +95,7 @@ function renderConfigScreen() {
         <div class="fmt-opt-desc">Cada par joga 1x</div>
       </div>
       <div class="fmt-opt ${APP.idaVolta?'active':''}" onclick="setIdaVolta(true,this)">
-        <div class="fmt-opt-name">Ida e Volta 🔁</div>
+        <div class="fmt-opt-name">Ida e Volta</div>
         <div class="fmt-opt-desc">Cada par joga 2x</div>
       </div>
     </div>`;
@@ -109,7 +109,7 @@ function renderConfigScreen() {
     const nDuplas = Math.floor(n/2);
     const parStr = n>=6 ? (n%2===0
       ? `<span style="color:#4ade80">✓ ${n} jogadores → ${nDuplas} duplas → Round Robin</span>`
-      : `<span style="color:var(--yellow)">⚠ ${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
+      : `<span style="color:var(--yellow)">${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
       : `<span style="color:var(--muted2)">Mínimo 6 jogadores (3 duplas)</span>`;
     playerInput = `
     <div class="section-label">Jogadores <span style="color:var(--yellow)">${n}</span></div>
@@ -127,7 +127,7 @@ function renderConfigScreen() {
     <div class="section-label">Duplas Mistas <span style="color:var(--yellow)">${nD} dupla${nD!==1?'s':''}</span></div>
     <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;line-height:1.5">
       Cada dupla: 1 Homem + 1 Mulher. Mínimo 3 duplas.
-      ${nD>=3?(nD%2===1?'<span style="color:var(--yellow)">⚡ Ímpar → uma dupla descansa por rodada (bye)</span>':'<span style="color:#4ade80">✓ Par de duplas → sem byes</span>'):''}
+      ${nD>=3?(nD%2===1?'<span style="color:var(--yellow)">Ímpar → uma dupla descansa por rodada (bye)</span>':'<span style="color:#4ade80">✓ Par de duplas → sem byes</span>'):''}
     </div>
     <div class="input-row" style="gap:6px">
       <input class="input-field half" id="inp-p1" placeholder="Homem..." maxlength="22" onkeydown="if(event.key==='Enter')addPlayerOrDupla()">
@@ -141,7 +141,7 @@ function renderConfigScreen() {
     <div class="section-label">Duplas <span style="color:var(--yellow)">${nD} dupla${nD!==1?'s':''}</span></div>
     <div style="font-size:11px;color:var(--muted2);margin-bottom:8px;line-height:1.5">
       Mínimo 3 duplas.
-      ${nD>=3?(nD%2===1?'<span style="color:var(--yellow)">⚡ Ímpar → uma dupla descansa por rodada (bye)</span>':'<span style="color:#4ade80">✓ Par de duplas → sem byes</span>'):''}
+      ${nD>=3?(nD%2===1?'<span style="color:var(--yellow)">Ímpar → uma dupla descansa por rodada (bye)</span>':'<span style="color:#4ade80">✓ Par de duplas → sem byes</span>'):''}
     </div>
     <div class="input-row">
       <input class="input-field half" id="inp-p1" placeholder="Jogador 1..." maxlength="22" onkeydown="if(event.key==='Enter')addPlayerOrDupla()">
@@ -157,7 +157,7 @@ function renderConfigScreen() {
     const equilibrio = nH === nF;
     let statusStr = '';
     if(nH===0&&nF===0) statusStr = '<span style="color:var(--muted2)">Mínimo 2H + 2M</span>';
-    else if(!equilibrio) statusStr = `<span style="color:var(--yellow)">⚠️ ${nH}H + ${nF}F — precisa ser igual</span>`;
+    else if(!equilibrio) statusStr = `<span style="color:var(--yellow)">${nH}H + ${nF}F — precisa ser igual</span>`;
     else if(nDuplas < 2) statusStr = `<span style="color:var(--yellow)">Mínimo 2H + 2F</span>`;
     else {
       const nRodadas = nDuplas;
@@ -173,8 +173,8 @@ function renderConfigScreen() {
     <div class="input-row">
       <input class="input-field" id="inp-name" placeholder="Nome do jogador..." maxlength="28" onkeydown="if(event.key==='Enter')addPlayerOrDupla()">
       <select class="input-field" id="inp-gender" style="width:90px;flex:none">
-        <option value="M">♂ Homem</option>
-        <option value="F">♀ Mulher</option>
+        <option value="M">Homem</option>
+        <option value="F">Mulher</option>
       </select>
     </div>
     <button class="btn btn-primary btn-full" onclick="addPlayerOrDupla()" style="margin-bottom:10px">+ Adicionar</button>`;
@@ -190,7 +190,7 @@ function renderConfigScreen() {
   document.getElementById('config-content').innerHTML = `
     <div class="info-card">
       <div class="info-card-header">
-        <span class="info-card-icon">${info.icon}</span>
+        <span class="info-card-icon">${icon(info.icon)}</span>
         <span class="info-card-title">${info.label}</span>
       </div>
       <div class="info-card-body">${info.desc}${isSoma?' Acumule mais games do que todos para vencer.':''}</div>
@@ -231,8 +231,8 @@ function addPlayerOrDupla() {
   // ── da: Duplas Aleatórias — cadastro individual ──
   if(isAleatorio) {
     const name = document.getElementById('inp-name')?.value.trim();
-    if(!name){alert('Informe o nome!');return;}
-    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado!');return;}
+    if(!name){alert('Informe o nome');return;}
+    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado');return;}
     APP.players.push({name});
     document.getElementById('inp-name').value='';
     document.getElementById('inp-name').focus();
@@ -245,11 +245,11 @@ function addPlayerOrDupla() {
   if(isMistaDupla) {
     const p1 = document.getElementById('inp-p1')?.value.trim(); // Homem
     const p2 = document.getElementById('inp-p2')?.value.trim(); // Mulher
-    if(!p1||!p2){alert('Informe o Homem e a Mulher!');return;}
+    if(!p1||!p2){alert('Informe o Homem e a Mulher');return;}
     // Verificar nomes duplicados
     const allNames = APP.players.flatMap(p=>[p.p1,p.p2]);
-    if(allNames.includes(p1)){alert(`"${p1}" já está cadastrado!`);return;}
-    if(allNames.includes(p2)){alert(`"${p2}" já está cadastrada!`);return;}
+    if(allNames.includes(p1)){alert(`"${p1}" já está cadastrado`);return;}
+    if(allNames.includes(p2)){alert(`"${p2}" já está cadastrada`);return;}
     APP.players.push({name:`${p1} / ${p2}`, p1, p2, mista:true});
     document.getElementById('inp-p1').value='';
     document.getElementById('inp-p2').value='';
@@ -263,10 +263,10 @@ function addPlayerOrDupla() {
   if(isDupla) {
     const p1 = document.getElementById('inp-p1')?.value.trim();
     const p2 = document.getElementById('inp-p2')?.value.trim();
-    if(!p1||!p2){alert('Informe os dois jogadores!');return;}
+    if(!p1||!p2){alert('Informe os dois jogadores');return;}
     const allNames = APP.players.flatMap(p=>[p.p1,p.p2]);
-    if(allNames.includes(p1)){alert(`"${p1}" já está cadastrado!`);return;}
-    if(allNames.includes(p2)){alert(`"${p2}" já está cadastrado!`);return;}
+    if(allNames.includes(p1)){alert(`"${p1}" já está cadastrado`);return;}
+    if(allNames.includes(p2)){alert(`"${p2}" já está cadastrado`);return;}
     APP.players.push({name:`${p1} / ${p2}`, p1, p2});
     document.getElementById('inp-p1').value='';
     document.getElementById('inp-p2').value='';
@@ -280,8 +280,8 @@ function addPlayerOrDupla() {
   if(isMista) {
     const name = document.getElementById('inp-name')?.value.trim();
     const gen = document.getElementById('inp-gender')?.value;
-    if(!name){alert('Informe o nome!');return;}
-    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado!');return;}
+    if(!name){alert('Informe o nome');return;}
+    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado');return;}
     APP.players.push({name, gender:gen});
     document.getElementById('inp-name').value='';
     document.getElementById('inp-name').focus();
@@ -293,9 +293,9 @@ function addPlayerOrDupla() {
   // ── Modalidades individuais (s4/s6/s8/s8x/s12) ──
   {
     const name = document.getElementById('inp-name')?.value.trim();
-    if(!name){alert('Informe o nome!');return;}
-    if(APP.players.length >= max){alert('Máximo atingido!');return;}
-    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado!');return;}
+    if(!name){alert('Informe o nome');return;}
+    if(APP.players.length >= max){alert('Máximo atingido');return;}
+    if(APP.players.some(p=>p.name===name)){alert('Jogador já cadastrado');return;}
     APP.players.push({name});
     document.getElementById('inp-name').value='';
     document.getElementById('inp-name').focus();
@@ -321,7 +321,7 @@ function renderPlayerList() {
     <div class="player-item">
       <div class="p-num">${i+1}</div>
       <div class="p-name">${escapeHtml(p.name)}</div>
-      ${p.gender?`<span class="p-badge ${p.gender}">${p.gender==='M'?'♂':'♀'}</span>`:''}
+      ${p.gender?`<span class="p-badge ${p.gender}">${p.gender==='M'?'H':'M'}</span>`:''}
       ${isMistaDupla?`<span class="p-badge" style="background:rgba(244,192,38,0.15);color:var(--yellow);font-size:9px">MISTA</span>`:''}
       <button class="p-remove" onclick="removePlayer(${i})">✕</button>
     </div>`).join('');
@@ -344,7 +344,7 @@ function renderPlayerList() {
       ? `Cada dupla: 1 Homem + 1 Mulher. Mínimo 3 duplas.`
       : `Mínimo 3 duplas.`)
       + (nD>=3?(nD%2===1
-        ? ' <span style="color:var(--yellow)">⚡ Ímpar → bye rotativo por rodada</span>'
+        ? ' <span style="color:var(--yellow)">Ímpar → bye rotativo por rodada</span>'
         : ' <span style="color:#4ade80">✓ Par de duplas → sem byes</span>'):'');
   }
   if(hintEl && IS_MISTA_ROTATIVA[m]) {
@@ -353,7 +353,7 @@ function renderPlayerList() {
     const nD = Math.min(nH,nF);
     let statusStr = '';
     if(nH===0&&nF===0) statusStr = '<span style="color:var(--muted2)">Mínimo 2H + 2M</span>';
-    else if(nH!==nF) statusStr = `<span style="color:var(--yellow)">⚠️ ${nH}H + ${nF}F — precisa ser igual</span>`;
+    else if(nH!==nF) statusStr = `<span style="color:var(--yellow)">${nH}H + ${nF}F — precisa ser igual</span>`;
     else if(nD < 2) statusStr = `<span style="color:var(--yellow)">Mínimo 2H + 2F</span>`;
     else {
       const partPorRod = nD%2===0 ? nD/2 : (nD-1)/2;
@@ -367,7 +367,7 @@ function renderPlayerList() {
     const nD = Math.floor(n/2);
     const parStr = n>=6 ? (n%2===0
       ? `<span style="color:#4ade80">✓ ${n} jogadores → ${nD} duplas → Round Robin</span>`
-      : `<span style="color:var(--yellow)">⚠ ${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
+      : `<span style="color:var(--yellow)">${n} jogadores. Adicione mais 1 participante para fechar as duplas.</span>`)
       : `<span style="color:var(--muted2)">Mínimo 6 jogadores (3 duplas)</span>`;
     hintEl.innerHTML = `Duplas sorteadas automaticamente. ${parStr}`;
   }
@@ -390,12 +390,12 @@ function updateGerarBtn() {
       const n = nH;
       const partPorRod = n%2===0 ? n/2 : (n-1)/2;
       const byeInfo = n%2===1 ? ' · bye' : '';
-      btn.textContent = `⚡ Gerar ${n}H + ${n}M → ${n} rodadas${byeInfo}`;
+      btn.textContent = `Gerar ${n}H + ${n}M → ${n} rodadas${byeInfo}`;
     } else if(nH !== nF) {
-      btn.textContent = `⚠️ ${nH}H ≠ ${nF}F — precisam ser iguais`;
+      btn.textContent = `${nH}H ≠ ${nF}F — precisam ser iguais`;
     } else {
       const falta = 2 - Math.min(nH,nF);
-      btn.textContent = `⚡ Adicione mais ${falta}H e ${falta}F`;
+      btn.textContent = `Adicione mais ${falta}H e ${falta}F`;
     }
   } else if(isAleatorio) {
     // da: mínimo 6 jogadores (3 duplas)
@@ -403,11 +403,11 @@ function updateGerarBtn() {
     const ok = n >= 6 && n % 2 === 0;
     btn.disabled = !ok;
     if(ok) {
-      btn.textContent = '🎲 Sortear e Gerar (Round Robin)';
+      btn.textContent = 'Sortear e Gerar (Round Robin)';
     } else {
       btn.textContent = n >= 6 && n % 2 !== 0
-        ? '⚠ Adicione mais 1 participante'
-        : `⚡ Adicione mais ${6-n} jogador(es)`;
+        ? 'Adicione mais 1 participante'
+        : `Adicione mais ${6-n} jogador(es)`;
     }
   } else if(isDuplasFixas) {
     // df ou dm: mínimo 3 duplas, sem máximo
@@ -419,16 +419,16 @@ function updateGerarBtn() {
       const jogos = APP.idaVolta ? n*(n-1) : Math.floor(n*(n-1)/2);
       const byeInfo = n%2===1 ? ' · bye rotativo' : '';
       const ivInfo = APP.idaVolta ? ' · Ida e Volta' : '';
-      btn.textContent = `⚡ Gerar ${n} Duplas · ${jogos} jogos${byeInfo}${ivInfo}`;
+      btn.textContent = `Gerar ${n} Duplas · ${jogos} jogos${byeInfo}${ivInfo}`;
     } else {
-      btn.textContent = `⚡ Adicione mais ${3-n} dupla(s)`;
+      btn.textContent = `Adicione mais ${3-n} dupla(s)`;
     }
   } else {
     // Modalidades individuais
     const max = MAX_PLAYERS[m];
     const ok = APP.players.length === max;
     btn.disabled = !ok;
-    btn.textContent = ok ? '⚡ Gerar Torneio' : `⚡ Adicione ${max - APP.players.length} jogador(es)`;
+    btn.textContent = ok ? 'Gerar Torneio' : `Adicione ${max - APP.players.length} jogador(es)`;
   }
 }
 
@@ -508,7 +508,7 @@ async function gerarTorneio() {
     const men   = ps.filter(p=>p.gender==='M');
     const women = ps.filter(p=>p.gender==='F');
     if(men.length < 2 || women.length < 2 || men.length !== women.length) {
-      alert('Precisa de igual quantidade de Homens e Mulheres (mínimo 2 de cada)!');return;
+      alert('Precisa de igual quantidade de Homens e Mulheres (mínimo 2 de cada)');return;
     }
     APP._mistaMen   = shuffle(men.map(p=>p.name));
     APP._mistaWomen = shuffle(women.map(p=>p.name));
@@ -524,7 +524,7 @@ async function gerarTorneio() {
 
   // ── da: Duplas Aleatórias ──────────────────────────────
   if(isAleatorio) {
-    if(ps.length < 6){alert('Adicione pelo menos 6 jogadores!');return;}
+    if(ps.length < 6){alert('Adicione pelo menos 6 jogadores');return;}
     if(ps.length % 2 !== 0){
       alert('Adicione mais 1 participante para fechar as duplas. Torneios de duplas precisam ter número par de participantes.');
       return;
@@ -552,7 +552,7 @@ async function gerarTorneio() {
 
   // ── df / dm: Duplas Fixas (ou Mistas) ─────────────────
   if(isDuplaFixa) {
-    if(ps.length < 3){alert('Adicione pelo menos 3 duplas!');return;}
+    if(ps.length < 3){alert('Adicione pelo menos 3 duplas');return;}
     if(isMistaDupla) {
       // Verificar que cada dupla tem H e M (já garantido no add, mas checagem dupla)
       const invalid = ps.some(p=>!p.mista);
@@ -578,7 +578,7 @@ async function gerarTorneio() {
   // ── Modalidades individuais (s4/s6/s8/s8x/s12/mista) ──
   const max = MAX_PLAYERS[m];
   if(ps.length !== max) {
-    alert('Cadastre todos os jogadores!');return;
+    alert('Cadastre todos os jogadores');return;
   }
   buildMatches();
   APP.tourneyClosed = false;
@@ -896,7 +896,7 @@ function renderRotativoRounds() {
     html+=`<div class="round-block">
       <div class="round-header">
         <span class="round-tag">Rodada ${ri+1}</span>
-        ${restText?`<span class="rest-tag">💤 ${escapeHtml(restText)}</span>`:''}
+        ${restText?`<span class="rest-tag">${icon('moon')} ${escapeHtml(restText)}</span>`:''}
         ${allDone?`<span class="round-done-tag">✓ Concluída</span>`:''}
       </div>`;
     rMatches.forEach(mx=>{ html+=matchCard(mx); });
@@ -910,7 +910,7 @@ function renderRotativoRounds() {
     if(stand.length>=2){ final.teamA=stand[0].name; final.teamB=stand[1].name;
       final.pA0=stand[0].name; final.pA1=''; final.pB0=stand[1].name; final.pB1=''; }
     html+=`<div class="round-block" style="border-color:rgba(244,192,38,0.25)">
-      <div class="round-header"><span class="round-tag" style="color:var(--yellow-l)">🏆 Final</span></div>
+      <div class="round-header"><span class="round-tag" style="color:var(--yellow-l)">Final</span></div>
       ${finalCard(final)}
     </div>`;
   }
@@ -962,14 +962,14 @@ function renderDuplaFixaRounds() {
     // Cabeçalho de seção Ida / Volta
     if(idaVolta && phase !== lastPhase) {
       lastPhase = phase;
-      html += `<div style="text-align:center;padding:8px 0 4px;font-family:'Bebas Neue';font-size:13px;letter-spacing:2px;color:var(--muted2)">${isVolta?'↩ VOLTA':'↪ IDA'}</div>`;
+      html += `<div style="text-align:center;padding:8px 0 4px;font-family:'Bebas Neue';font-size:13px;letter-spacing:2px;color:var(--muted2)">${isVolta?'VOLTA':'IDA'}</div>`;
     }
 
     if(hasRounds && rNum) {
       html += `<div class="round-block">
         <div class="round-header">
           <span class="round-tag">Rodada ${rNum}${isVolta?' (V)':''}</span>
-          ${byeMatch?`<span class="rest-tag">💤 ${escapeHtml(byeMatch.byeWinner)} descansa</span>`:''}
+          ${byeMatch?`<span class="rest-tag">${icon('moon')} ${escapeHtml(byeMatch.byeWinner)} descansa</span>`:''}
           ${allDone&&realMatches.length?`<span class="round-done-tag">✓ Concluída</span>`:''}
         </div>`;
       realMatches.forEach(mx=>{ html+=simpleDuplaCard(mx); });
@@ -1011,7 +1011,7 @@ function renderEliminatoriaRounds() {
     const rMatches = rounds[rn];
     const allDone = rMatches.every(mx=>mx.sA!==null||mx.a===''||mx.b==='');
     const isFinalRound = rMatches.some(mx=>mx.phase==='final');
-    const label = isFinalRound ? '🏆 Final' : (rMatches.length===2?'Semifinais':rMatches.length===1&&!isFinalRound?`${rMatches[0].label}`:`Rodada ${rn}`);
+    const label = isFinalRound ? 'Final' : (rMatches.length===2?'Semifinais':rMatches.length===1&&!isFinalRound?`${rMatches[0].label}`:`Rodada ${rn}`);
     const borderStyle = isFinalRound ? 'border-color:rgba(244,192,38,0.25)' : rMatches.length<=2&&rn>1?'border-color:rgba(26,127,196,0.25)':'';
 
     html += `<div class="round-block" id="rb-elim-${rn}" ${borderStyle?`style="${borderStyle}"`:''}>
@@ -1042,7 +1042,7 @@ function renderEliminatoriaRounds() {
             <span class="vs-badge">VS</span>
             <span class="t-name${bW?' won':''}">${escapeHtml(mx.b)}</span>
           </div>
-          ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.a:mx.b)}</span>`:`
+          ${done?`<span class="win-tag">${icon('award')} ${escapeHtml(aW?mx.a:mx.b)}</span>`:`
           <div class="score-row">
             <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,0)}" placeholder="—" oninput="tmpScore('${mx.id}',0,this.value);checkConfirmBtn('${mx.id}')">
             <span class="score-sep">×</span>
@@ -1105,7 +1105,7 @@ function matchCard(mx) {
       <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,1)}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
       <button class="confirm-btn" id="cbtn-${mx.id}" ${hasBothScores(mx)?'':'disabled'} onclick="confirmScore('${mx.id}')">✓</button>
     </div>
-    ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.teamA:mx.teamB)}</span>`:''}
+    ${done?`<span class="win-tag">${icon('award')} ${escapeHtml(aW?mx.teamA:mx.teamB)}</span>`:''}
   </div>`;
 }
 
@@ -1113,7 +1113,7 @@ function simpleDuplaCard(mx) {
   // Match de bye: exibir como "Folga" sem inputs
   if(mx.isBye) {
     return `<div class="match-card" id="mc-${mx.id}" style="opacity:0.55;border-style:dashed">
-      <span class="court-tag" style="color:var(--muted2)">💤 Folga</span>
+      <span class="court-tag" style="color:var(--muted2)">${icon('moon')} Folga</span>
       <div class="match-teams">
         <span class="t-name" style="color:var(--muted)">${mx.byeWinner}</span>
         <span class="vs-badge" style="color:var(--muted2)">W.O.</span>
@@ -1138,7 +1138,7 @@ function simpleDuplaCard(mx) {
       <input class="score-input" type="number" min="0" max="99" value="${scoreValue(mx,1)}" placeholder="—" oninput="tmpScore('${mx.id}',1,this.value);checkConfirmBtn('${mx.id}')">
       <button class="confirm-btn" id="cbtn-${mx.id}" ${hasBothScores(mx)?'':'disabled'} onclick="confirmDupla('${mx.id}')">✓</button>
     </div>`:''}
-    ${done?`<span class="win-tag">🏅 ${escapeHtml(aW?mx.a:mx.b)}</span>`:''}
+    ${done?`<span class="win-tag">${icon('award')} ${escapeHtml(aW?mx.a:mx.b)}</span>`:''}
   </div>`;
 }
 
@@ -1158,7 +1158,7 @@ function finalCard(fx) {
       <input class="score-input" type="number" min="0" max="99" value="${scoreValue(fx,1)}" placeholder="—" oninput="tmpScore('${fx.id}',1,this.value);checkConfirmBtn('${fx.id}')">
       <button class="confirm-btn" id="cbtn-${fx.id}" ${hasBothScores(fx)?'':'disabled'} style="background:${(fx.sA!==null&&fx.sB!==null)?'var(--yellow)':'rgba(255,255,255,0.08)'};color:${(fx.sA!==null&&fx.sB!==null)?'#080f18':'rgba(255,255,255,0.2)'}" onclick="confirmFinal('${fx.id}')">✓</button>
     </div>
-    ${done?`<span class="win-tag">🏆 ${escapeHtml(aW?fx.teamA:fx.teamB)}</span>`:''}
+    ${done?`<span class="win-tag">${icon('trophy')} ${escapeHtml(aW?fx.teamA:fx.teamB)}</span>`:''}
   </div>`;
 }
 
@@ -1201,7 +1201,7 @@ function checkConfirmBtn(id) {
       warn = document.createElement('div');
       warn.className = 'empate-warn';
       warn.style.cssText = 'color:#f87171;font-size:11px;text-align:center;margin-top:4px;font-weight:500';
-      warn.textContent = '⚠️ Empate não permitido — alguém precisa vencer';
+      warn.textContent = 'Empate não permitido — alguém precisa vencer';
       card.querySelector('.score-row')?.after(warn);
     }
   } else {
@@ -1219,9 +1219,9 @@ function checkConfirmBtn(id) {
 function confirmScore(id){
   const card=document.getElementById('mc-'+id);
   const inputs=card.querySelectorAll('input');
-  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares!');return;}
+  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares');return;}
   const sA=parseInt(inputs[0].value), sB=parseInt(inputs[1].value);
-  if(sA===sB){alert('Empate não é permitido!\nUm dos times precisa ter pelo menos 1 set a mais.');return;}
+  if(sA===sB){alert('Empate não é permitido\nUm dos times precisa ter pelo menos 1 set a mais.');return;}
   const mx=APP.matches.find(x=>x.id===id);
   mx.sA=sA; mx.sB=sB;
   // Propagar resultado no bracket (eliminatória)
@@ -1235,9 +1235,9 @@ function confirmScore(id){
 function confirmDupla(id){
   const card=document.getElementById('mc-'+id);
   const inputs=card.querySelectorAll('input');
-  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares!');return;}
+  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares');return;}
   const sA=parseInt(inputs[0].value), sB=parseInt(inputs[1].value);
-  if(sA===sB){alert('Empate não é permitido!\nUma das duplas precisa ter pelo menos 1 set a mais.');return;}
+  if(sA===sB){alert('Empate não é permitido\nUma das duplas precisa ter pelo menos 1 set a mais.');return;}
   const mx=APP.matches.find(x=>x.id===id);
   mx.sA=sA; mx.sB=sB;
   APP._autoNavigateResult = true;
@@ -1278,7 +1278,7 @@ function updateSeeAllBtn(){
   const btn=footer.querySelector('.see-all-btn');
   if(!btn) return;
   if(allDone){
-    btn.textContent='🏆 Ver Resultado Final →';
+    btn.textContent='Ver Resultado Final →';
     btn.style.color='var(--yellow)';
     btn.style.fontWeight='700';
     btn.style.fontSize='13px';
@@ -1368,7 +1368,7 @@ function applyRoundLock() {
           block.classList.add('locked');
           if(!block.querySelector('.round-lock-tag')){
             const h=block.querySelector('.round-header');
-            if(h){const t=document.createElement('span');t.className='round-lock-tag';t.textContent='🔒';h.appendChild(t);}
+            if(h){const t=document.createElement('span');t.className='round-lock-tag';t.innerHTML=icon('lock');h.appendChild(t);}
           }
         }
       });
@@ -1407,7 +1407,7 @@ function applyRoundLock() {
           if (header) {
             const lockTag = document.createElement('span');
             lockTag.className = 'round-lock-tag';
-            lockTag.textContent = '🔒';
+            lockTag.innerHTML = icon('lock');
             header.appendChild(lockTag);
           }
         }
@@ -1611,7 +1611,6 @@ function trackTournamentFinishedOnce(stand, champ, isAutoOpen) {
 // ── FOOTER RANKING ────────────────────────────────────────
 function updateFooterRanking(){
   const stand=getStandings();
-  const medals=['🥇','🥈','🥉'];
   const posClass=['p1','p2','p3'];
   const list=document.getElementById('rank-mini-list');
   if(!list) return;
@@ -1620,7 +1619,7 @@ function updateFooterRanking(){
     const hasTie = stand.some((q,j)=>j!==i && q.scoreVal===p.scoreVal);
     const tieSpan = (hasTie && p.tieLabel) ? `<span class="rank-tie">(${p.tieLabel})</span>` : '';
     return `<div class="rank-mini-item">
-      <span class="rank-pos ${posClass[i]||''}">${medals[i]||i+1+'º'}</span>
+      <span class="rank-pos ${posClass[i]||''}">${i+1}º</span>
       <span class="rank-name">${escapeHtml(p.name)}</span>
       ${tieSpan}
       <span class="rank-pts ${p.isSoma?'soma':''}">${p.scoreLabel}</span>
@@ -1635,7 +1634,6 @@ function verResultadoFinal(isAutoOpen) {
   const stand=getStandings();
   const fn=APP.matches.find(x=>x.phase==='final');
   const champ=fn?simWinner(fn):null;
-  const medals=['🥇','🥈','🥉'];
   const m=APP.mode;
   const isDupla=IS_DUPLA_FIXA[m];
   const isSoma=IS_SOMA[m];
@@ -1649,8 +1647,8 @@ function verResultadoFinal(isAutoOpen) {
     const p=top3[idx];
     if(!p) return;
     podiumHTML+=`<div class="podium-item">
-      <div class="podium-place">${medals[idx]||idx+1+'º'}</div>
-      <div class="podium-bar p${idx+1}"><span class="podium-medal">${medals[idx]||'🏅'}</span></div>
+      <div class="podium-place">${idx+1}º</div>
+      <div class="podium-bar p${idx+1}"><span class="podium-medal">${idx===0?icon('trophy'):''}</span></div>
       <div class="podium-name">${escapeHtml(p.name)}</div>
       <div class="podium-pts">${p.scoreLabel}</div>
     </div>`;
@@ -1661,7 +1659,7 @@ function verResultadoFinal(isAutoOpen) {
   const ptsLabel = isSoma?'Games':isDupla?'Sets':'Pts';
   const rows=stand.map((p,i)=>`
     <tr class="${i<3?'r'+(i+1):''}">
-      <td class="rn">${medals[i]||i+1+'º'}</td>
+      <td class="rn">${i+1}º</td>
       <td style="font-weight:500">${escapeHtml(p.name)}</td>
       <td>${p.j}</td>
       <td>${p.v||0}</td>
@@ -1674,11 +1672,11 @@ function verResultadoFinal(isAutoOpen) {
 
   const content=`
     <div class="podium-wrap">
-      <div class="podium-title">${isAutoOpen?'🏆 Torneio Finalizado!':'Ranking'}</div>
+      <div class="podium-title">${isAutoOpen?'Torneio finalizado':'Ranking'}</div>
       <div class="podium-sub">${MODE_INFO[m].label} · ${new Date().toLocaleDateString('pt-BR')}</div>
     </div>
     ${champ?`<div class="info-card" style="text-align:center;background:linear-gradient(135deg,rgba(244,192,38,0.15),rgba(13,74,107,0.3));border-color:rgba(244,192,38,0.4)">
-      <div style="font-size:36px;margin-bottom:6px">🏆</div>
+      <div style="font-size:36px;margin-bottom:6px;color:var(--yellow-l)">${icon('trophy')}</div>
       <div style="font-family:'Bebas Neue';font-size:14px;color:var(--muted2);letter-spacing:2px">CAMPEÃO</div>
       <div style="font-family:'Bebas Neue';font-size:28px;color:var(--yellow-l);letter-spacing:1px">${champ}</div>
     </div>`:''}
@@ -1703,7 +1701,7 @@ function verResultadoFinal(isAutoOpen) {
           Compartilhar
         </button>
       </div>
-      <button class="btn btn-ghost btn-full" onclick="confirmNewTourney()">🔄 Novo Torneio</button>
+      <button class="btn btn-ghost btn-full" onclick="confirmNewTourney()">${icon('refresh')} Novo Torneio</button>
     </div>
   `;
   // Garante que o canvas é gerado ao entrar na tela de resultado
@@ -1801,7 +1799,7 @@ function offerResumeTournament() {
   modal.id = 'resume-tourney-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
   modal.innerHTML = `<div role="dialog" aria-modal="true" aria-labelledby="resume-tourney-title" style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-      <div style="font-size:28px;text-align:center;margin-bottom:8px">🎾</div>
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;color:var(--yellow-l)">${icon('ball')}</div>
       <div id="resume-tourney-title" style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio em andamento</div>
       <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px"><b style="color:var(--white)">${escapeHtml(label)}</b> com ${done} de ${total} jogos lançados. Quer continuar de onde parou?</div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -1834,7 +1832,7 @@ function confirmNewTourney(){
 
   if (isLogado && !APP._savedCurrentTournament) {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-      <div style="font-size:28px;text-align:center;margin-bottom:8px">⚠️</div>
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;color:var(--yellow-l)">${icon('alert')}</div>
       <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Sair deste torneio?</div>
       <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">Este torneio ainda não terminou e não está no seu histórico. Ao começar outro, ele será descartado.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
@@ -1844,8 +1842,8 @@ function confirmNewTourney(){
     </div>`;
   } else if (isLogado) {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-      <div style="font-size:28px;text-align:center;margin-bottom:8px">✅</div>
-      <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio salvo!</div>
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;color:#4ade80">${icon('check')}</div>
+      <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio salvo</div>
       <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">Este torneio ficou salvo no seu histórico. Você pode consultá-lo quando quiser em <b style="color:var(--white)">Meus Torneios</b>.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button onclick="document.getElementById('new-tourney-modal').remove();_doNewTourney()" style="background:var(--blue);color:var(--white);border:none;border-radius:var(--radius-sm);padding:12px;font-family:'Bebas Neue';font-size:16px;letter-spacing:1px;cursor:pointer">NOVO TORNEIO</button>
@@ -1854,7 +1852,7 @@ function confirmNewTourney(){
     </div>`;
   } else {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
-      <div style="font-size:28px;text-align:center;margin-bottom:8px">⚠️</div>
+      <div style="font-size:28px;text-align:center;margin-bottom:8px;color:var(--yellow-l)">${icon('alert')}</div>
       <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Torneio não salvo</div>
       <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">Você não está logado — este torneio não ficou no histórico. Crie uma conta para não perder os próximos.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
