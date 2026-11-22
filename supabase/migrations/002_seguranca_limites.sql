@@ -52,6 +52,13 @@ before insert or update on public.profiles
 for each row execute function public.protect_profile_billing_fields();
 
 -- ══ F0-02: limite do plano Free também no banco ═════════════════════
+-- Id gerado no front para salvar sem duplicar: upsert(..., { onConflict: 'user_id,client_uid' }).
+-- Índice completo (não parcial): o PostgREST gera ON CONFLICT (user_id, client_uid) sem WHERE,
+-- que não casa com índice parcial. NULLs não colidem, então os registros antigos ficam livres.
+alter table public.tournaments add column if not exists client_uid text;
+create unique index if not exists tournaments_user_client_uid_uidx
+on public.tournaments (user_id, client_uid);
+
 -- Mesma regra do front (src/js/access.js, FREE_MONTHLY_TOURNAMENT_LIMIT): Free salva até
 -- 3 torneios por mês; Pro (plan='pro' e pro_until vazio ou no futuro) e Admin sem limite.
 -- O mês é o de Brasília.
@@ -96,6 +103,12 @@ begin
   end if;
 
   new.created_at := now();
+  -- Upsert por client_uid de um torneio que já existe vira UPDATE (ON CONFLICT): não é torneio novo.
+  if new.client_uid is not null and exists (
+    select 1 from public.tournaments t where t.user_id = new.user_id and t.client_uid = new.client_uid
+  ) then
+    return new;
+  end if;
   -- Serializa os inserts do mesmo usuário: dois salvamentos simultâneos não furam o limite.
   perform pg_advisory_xact_lock(hashtextextended('bt8_tournament_limit:' || new.user_id::text, 0));
   if not private.can_save_tournament() then
@@ -161,6 +174,29 @@ with check (
   )
   and octet_length(metadata::text) <= 4096
 );
+
+-- Data e dono do evento do cliente vêm do banco, não do front.
+create or replace function private.enforce_app_event_client()
+returns trigger
+language plpgsql
+set search_path = public, private
+as $$
+begin
+  if current_user not in ('anon', 'authenticated') then
+    return new;
+  end if;
+  new.created_at := now();
+  if new.user_id is not null and new.user_id is distinct from auth.uid() then
+    raise exception 'Evento com user_id de outro usuário.' using errcode = '42501';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists app_events_enforce_client on public.app_events;
+create trigger app_events_enforce_client
+before insert on public.app_events
+for each row execute function private.enforce_app_event_client();
 
 -- Idempotência do webhook do Stripe (PR #9): a segunda reserva do mesmo evento dá 23505.
 -- Se falhar por duplicata antiga, ver a consulta em docs/SUPABASE_VPS.md.

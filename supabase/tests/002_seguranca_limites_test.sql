@@ -75,8 +75,8 @@ begin
 end $$;
 
 -- created_at no passado é ignorado (senão burlaria a conta do mês).
-insert into public.tournaments (user_id, mode, created_at)
-select auth.uid(), 's8', '2020-01-01' from generate_series(1, 3);
+insert into public.tournaments (user_id, mode, created_at, client_uid)
+select auth.uid(), 's8', '2020-01-01', 'c' || g from generate_series(1, 3) g;
 
 do $$
 begin
@@ -90,6 +90,35 @@ begin
     raise;
   end;
   raise exception 'FALHOU: 4º torneio do mês no Free foi aceito';
+end $$;
+
+-- Upsert por client_uid, no formato que o PostgREST gera para
+-- upsert(..., { onConflict: 'user_id,client_uid' }): torneio existente atualiza mesmo no limite.
+insert into public.tournaments (user_id, client_uid, mode, title)
+values (auth.uid(), 'c1', 's8', 'Atualizado')
+on conflict (user_id, client_uid) do update
+set user_id = excluded.user_id, client_uid = excluded.client_uid, mode = excluded.mode, title = excluded.title
+returning id;
+
+do $$
+begin
+  if (select count(*) from public.tournaments where user_id = auth.uid()) <> 3
+     or not exists (select 1 from public.tournaments where user_id = auth.uid() and client_uid = 'c1' and title = 'Atualizado') then
+    raise exception 'FALHOU: upsert de torneio existente não atualizou ou duplicou';
+  end if;
+  raise notice 'ok: upsert de torneio existente atualiza no limite do Free, sem duplicar';
+
+  begin
+    insert into public.tournaments (user_id, client_uid, mode) values (auth.uid(), 'c9', 's8')
+    on conflict (user_id, client_uid) do update set mode = excluded.mode;
+  exception when others then
+    if sqlerrm like 'Limite do plano Free atingido%' then
+      raise notice 'ok: upsert de torneio novo no limite é recusado';
+      return;
+    end if;
+    raise;
+  end;
+  raise exception 'FALHOU: upsert com client_uid novo furou o limite Free';
 end $$;
 
 do $$
@@ -114,7 +143,23 @@ begin
 end $$;
 
 -- ── app_events: cliente só grava eventos do front ──
-insert into public.app_events (user_id, event_type, metadata) values (auth.uid(), 'tournament_created', '{"format":"s8"}');
+insert into public.app_events (user_id, event_type, metadata, created_at)
+values (auth.uid(), 'tournament_created', '{"format":"s8"}', '2999-01-01');
+
+do $$
+begin
+  if exists (select 1 from public.app_events where user_id = auth.uid() and created_at > now()) then
+    raise exception 'FALHOU: created_at do cliente no futuro foi mantido';
+  end if;
+  raise notice 'ok: created_at do evento do cliente vira now()';
+
+  begin
+    insert into public.app_events (user_id, event_type) values ('00000000-0000-4000-a000-000000000001', 'tournament_created');
+    raise exception 'FALHOU: cliente gravou evento em nome de outro usuário';
+  exception when insufficient_privilege then
+    raise notice 'ok: cliente não grava evento com user_id de outro';
+  end;
+end $$;
 
 do $$
 declare
@@ -139,14 +184,21 @@ end $$;
 
 reset role;
 set local role anon;
-select set_config('request.jwt.claims', '{"role":"anon"}', true);
+select set_config('request.jwt.claims', '{"role":"anon"}', true),
+       set_config('request.jwt.claim.sub', '', true);
 insert into public.app_events (event_type, metadata) values ('client_error', '{"kind":"error","message":"teste"}');
 do $$
+declare
+  tipo text;
 begin
-  insert into public.app_events (event_type) values ('lixo');
-  raise exception 'FALHOU: anon gravou evento fora da lista';
-exception when insufficient_privilege or check_violation then
-  raise notice 'ok: anon não grava evento fora da lista';
+  foreach tipo in array array['lixo', 'payment_completed', 'stripe_event_processed'] loop
+    begin
+      insert into public.app_events (event_type, metadata) values (tipo, '{"event_id":"evt_anon"}');
+      raise exception 'FALHOU: anon gravou %', tipo;
+    exception when insufficient_privilege or check_violation then
+      raise notice 'ok: anon não grava %', tipo;
+    end;
+  end loop;
 end $$;
 reset role;
 

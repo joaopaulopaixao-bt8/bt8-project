@@ -45,7 +45,7 @@ Sem `--dry-run`, aplica. Toda migracao nova termina com `insert into private.sch
 
 ### Aplicar a 002 (seguranca e limites) em producao
 
-O que muda: o cliente nao cria nem altera `plan`/`role`/campos de cobranca do perfil (corrigidos em silencio, em INSERT e UPDATE); o Free salva ate 3 torneios por mes tambem no banco (erro `P0001`, hint `free_limit_reached`); limite de tamanho em `tournaments` e `app_events`; `app_events` so aceita os eventos conhecidos (o cliente so os do front); indice unico da idempotencia do webhook do Stripe; tabela `private.schema_migrations`.
+O que muda: o cliente nao cria nem altera `plan`/`role`/campos de cobranca do perfil (corrigidos em silencio, em INSERT e UPDATE); o Free salva ate 3 torneios por mes tambem no banco (erro `P0001`, hint `free_limit_reached`); coluna `tournaments.client_uid` com indice unico `(user_id, client_uid)` para o upsert sem duplicar (upsert de torneio existente nao conta no limite); limite de tamanho em `tournaments` e `app_events`; `app_events` so aceita os eventos conhecidos (o cliente so os do front, com `created_at` do banco e `user_id` proprio); indice unico da idempotencia do webhook do Stripe; tabela `private.schema_migrations`.
 
 1. Backup e conferencia de duplicatas do webhook (o indice unico falha se houver):
 
