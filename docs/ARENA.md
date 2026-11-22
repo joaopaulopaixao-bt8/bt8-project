@@ -23,6 +23,7 @@ Migração: `supabase/migrations/004_arena.sql` (idempotente, registrada em `pri
 | `grupos_abertos` | gerar mata-mata com grupo ainda aberto |
 | `motivo_obrigatorio` | correção, suspensão ou WO sem motivo |
 | `dados_invalidos` | payload malformado |
+| `atleta_ja_inscrito` | atleta já está em outra dupla não cancelada da mesma categoria |
 
 - Exceção: `match_score_push` e `match_finish` **não** dão erro para conflito, outro aparelho ou partida encerrada; devolvem `{"ok": false, "erro": ...}` (ver 4.2), para a fila offline do scout tratar tudo num caminho só.
 - Objeto **partida** (`match`) devolvido pelas RPCs de partida:
@@ -171,7 +172,7 @@ Todas devolvem `{"ok": true, "match": {...}}` (ou `{"ok": true, "team": {...}}` 
   ] }
 ```
 
-Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `espera`, e cada uma aparece em um grupo só. Partida de grupo tem `team_a` e `team_b` do mesmo grupo. Partidas de mata-mata nascem sem duplas. `origem` é guardada como veio, com `match_ref` trocado por `{"match": "<uuid>"}`. Formatos de origem: `{grupo, pos}`, `{melhor2: n}`, `{match}`. Devolve `{"ok": true, "grupos": n, "partidas": n}`.
+Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `espera`, e cada uma aparece em um grupo só. Partida de grupo tem `team_a` e `team_b` do mesmo grupo. Partidas de mata-mata nascem sem duplas. `origem` é guardada como veio (precisa ser objeto), com `{"match_ref": ref}` ou `{"match": ref}` trocados por `{"match": "<uuid>"}`. Formatos de origem (os do motor): `{grupo, pos}`, `{melhor1: n}`, `{melhor2: n}`, `{match}`. Devolve `{"ok": true, "grupos": n, "partidas": n}`.
 
 **`group_close(p_group uuid, p_sorteio jsonb default null)`** \* — exige todas as partidas do grupo em `encerrada`, `wo` ou `anulada`. Grava `fechado_em`, `fechado_por` e o sorteio de desempate (`{"ordem": ["team-uuid", ...], "observacao": "..."}`), se houve. Depois disso nenhuma correção no grupo.
 
@@ -230,7 +231,7 @@ Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `esp
 
 ### 4.7 Só service role
 
-**`arena_inscrever(p_token text, p_ip_hash text, p_dados jsonb, p_limite_hora int default 10)`** — usada só pela Function `arena-register`. Limite por hash de IP por hora, advisory lock por categoria, atleta reaproveitado pelo telefone na arena. Status final: `espera` se a categoria lotou (`confirmada + pendente >= max_duplas`), senão `pendente` se o campeonato tem Pix, senão `confirmada`.
+**`arena_inscrever(p_token text, p_ip_hash text, p_dados jsonb, p_limite_hora int default 10)`** — usada só pela Function `arena-register`. Limite por hash de IP por hora, advisory lock por categoria, atleta reaproveitado pelo telefone na arena. Status final: `espera` se a categoria lotou (`confirmada + pendente >= max_duplas`), senão `pendente` se o campeonato tem Pix, senão `confirmada`. Recusas voltam como `{"ok": false, "erro": "limite" | "nao_encontrado" | "status_invalido" | "dados_invalidos" | "atleta_ja_inscrito", "mensagem": "..."}` (sem erro HTTP), para o contador do limite não ser desfeito por rollback; tentativas recusadas também contam.
 
 ## 5. Netlify Functions
 
