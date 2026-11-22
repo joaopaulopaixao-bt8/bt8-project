@@ -1,5 +1,6 @@
 const BT8_LEGAL_UPDATED_AT = '29 de abril de 2026';
 const BT8_LEGAL_CNPJ = '53.243.248/0001-40';
+const BT8_SUPPORT_EMAIL = 'suporte@bt8.com.br';
 
 function legalRouteKey() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -30,6 +31,7 @@ function legalFooter() {
         <a href="/direitos-do-sistema">Direitos do sistema</a>
         <a href="/termos-de-uso">Termos de uso</a>
         <a href="/politica-de-privacidade">Política de privacidade</a>
+        <a href="mailto:${BT8_SUPPORT_EMAIL}">Suporte: ${BT8_SUPPORT_EMAIL}</a>
       </div>
       <div class="legal-footer-cnpj">Última atualização: ${BT8_LEGAL_UPDATED_AT}</div>
     </div>`;
@@ -142,7 +144,7 @@ const LEGAL_PAGES = {
         'O app possui fluxo de exclusão de conta. Ao excluir a conta, dados de perfil e acesso são removidos ou desativados conforme necessidade técnica, legal e operacional.'
       ]],
       ['9. Contato e atualizações', [
-        `Dúvidas sobre privacidade, termos ou direitos do sistema podem ser direcionadas ao responsável pela marca vinculada ao CNPJ ${BT8_LEGAL_CNPJ}.`,
+        `Dúvidas sobre privacidade, termos ou direitos do sistema podem ser enviadas para <a href="mailto:${BT8_SUPPORT_EMAIL}">${BT8_SUPPORT_EMAIL}</a>, canal do responsável pela marca vinculada ao CNPJ ${BT8_LEGAL_CNPJ}.`,
         'Esta política pode ser atualizada conforme o produto evoluir. A versão vigente será sempre a publicada nesta página.'
       ]]
     ]

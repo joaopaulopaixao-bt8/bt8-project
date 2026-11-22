@@ -8,6 +8,7 @@ const path = require('path');
 
 const SITE = 'https://bt8.com.br';
 const LOGO = `${SITE}/logo-bt8.png`;
+const SUPPORT = 'suporte@bt8.com.br';
 const OUT = path.resolve(__dirname, '..', 'public', 'email');
 
 const C = {
@@ -78,7 +79,7 @@ function layout({ title, preheader, body }) {
         <tr>
           <td align="center" style="padding:20px 24px 8px;font-family:${FONT};font-size:12px;line-height:19px;color:${C.muted}">
             BT8 — torneios de beach tennis em minutos<br>
-            <a href="${SITE}" style="color:${C.muted}">bt8.com.br</a> · Este e-mail foi enviado automaticamente, não é preciso responder.
+            <a href="${SITE}" style="color:${C.muted}">bt8.com.br</a> · Dúvidas? Escreva para <a href="mailto:${SUPPORT}" style="color:${C.muted}">${SUPPORT}</a>.
           </td>
         </tr>
       </table>
@@ -162,7 +163,7 @@ const EMAILS = {
     preheader: 'O e-mail de acesso da sua conta BT8 mudou.',
     body: p('O e-mail da sua conta foi alterado de <strong>{{ .OldEmail }}</strong> para <strong>{{ .Email }}</strong>.')
       + p('Se foi você, está tudo certo e não precisa fazer nada.')
-      + note(`Se não foi você, sua conta pode estar em risco: fale com o BT8 pelo site <a href="${SITE}" style="color:${C.blue}">bt8.com.br</a> o quanto antes.`)
+      + note(`Se não foi você, sua conta pode estar em risco: escreva o quanto antes para <a href="mailto:${SUPPORT}" style="color:${C.blue}">${SUPPORT}</a>.`)
   },
   identity_linked_notification: {
     subject: 'Nova forma de login na sua conta BT8',
