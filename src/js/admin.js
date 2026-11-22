@@ -133,7 +133,7 @@ const admDateTime = value => value
 const ADM_PLAN_LABEL = { recurring: 'Pro mensal', one_time_30d: 'Pro 30 dias', pro: 'Pro', free: 'Free', admin: 'Admin' };
 const ADM_STATUS_LABEL = {
   active: 'ativa', past_due: 'cobrança recusada', paid: 'paga', canceled: 'cancelada', refunded: 'reembolsada',
-  disputed: 'contestada', payment_pending: 'pagamento pendente', payment_failed: 'pagamento falhou', expired: 'expirada',
+  disputed: 'contestada', cancel_at_period_end: 'cancela no fim do período', trialing: 'em teste', payment_pending: 'pagamento pendente', payment_failed: 'pagamento falhou', expired: 'expirada',
   checkout_started: 'checkout iniciado', superseded: 'substituída', admin_blocked: 'bloqueada (admin)', pending: 'pendente'
 };
 const ADM_EVENT_LABEL = {
@@ -295,7 +295,7 @@ function adminRevenueChart(daily, period) {
 function adminNeedsYou(n) {
   const rows = [
     ...(n.declined || []).map(c => ({ kind: 'Cobrança recusada', who: c.nome || c.email, meta: `${c.email || ''} · desde ${admDate(c.since)}`, id: c.id })),
-    ...(n.expiring || []).map(c => ({ kind: 'Pro 30 dias vence', who: c.nome || c.email, meta: `${c.email || ''} · vence ${admDate(c.pro_until)}`, id: c.id })),
+    ...(n.expiring || []).map(c => ({ kind: 'Pro vence', who: c.nome || c.email, meta: `${c.email || ''} · vence ${admDate(c.pro_until)}`, id: c.id })),
     ...(n.new_errors || []).slice(0, 3).map(e => ({ kind: 'Erro novo', who: e.message, meta: `${e.total}x desde ${admDateTime(e.first_at)}`, tab: 'health' }))
   ];
   const moreErrors = (n.new_errors || []).length - 3;
@@ -330,7 +330,7 @@ function renderAdminOverview(target, d) {
     ${adminAlerts(d)}
     <div class="adm-kpis">
       ${adminKpi('Receita', admMoney(k.revenue_cents), admDelta(k.revenue_cents, k.revenue_prev_cents), k.revenue_estimated)}
-      ${adminKpi('MRR', admMoney(k.mrr_cents), 'recorrentes ativas', k.mrr_estimated)}
+      ${adminKpi('MRR', admMoney(k.mrr_cents), k.mrr_cancelling ? `recorrentes ativas · ${k.mrr_cancelling} cancela(m) no fim do período` : 'recorrentes ativas', k.mrr_estimated)}
       ${adminKpi('Pro ativos', k.pro_active ?? 0, `<span class="adm-delta">+${k.pro_new || 0} novo(s) · −${k.pro_lost || 0} saída(s)</span>`)}
       ${adminKpi('Cadastros', k.signups ?? 0, admDelta(k.signups, k.signups_prev))}
     </div>
@@ -368,7 +368,7 @@ function renderAdminRevenue(target, d) {
   target.innerHTML = `
     <div class="adm-kpis">
       ${adminKpi('Receita do mês', admMoney(r.month_cents), 'pagamentos − reembolsos', r.month_estimated)}
-      ${adminKpi('MRR', admMoney(k.mrr_cents), 'mensais active/past_due', k.mrr_estimated)}
+      ${adminKpi('MRR', admMoney(k.mrr_cents), `mensais ativas${k.mrr_cancelling ? ` · ${k.mrr_cancelling} cancela(m) no fim` : ''}`, k.mrr_estimated)}
       ${adminKpi('Novos x cancelados', `${r.new_count || 0} <small>x</small> ${r.cancelled_count || 0}`, ADM_PERIOD_LABEL[d.period])}
       ${adminKpi('Reembolsos', admMoney(r.refunds_cents), `${r.refunds_count || 0} reembolso(s) · ${r.disputes_count || 0} contestação(ões)`, r.refunds_count > 0 && k.revenue_estimated)}
     </div>

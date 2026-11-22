@@ -9,13 +9,24 @@ Fuso de "dia" e "mês": `America/Sao_Paulo`. Admins ficam fora de todas as conta
 | Métrica | Definição |
 |---|---|
 | Pro ativo | `profiles.plan = 'pro'` e `pro_until` nulo ou no futuro, sem contar `role = 'admin'`. |
-| MRR | Soma do valor mensal das assinaturas recorrentes com status `active` ou `past_due` (só a última assinatura de cada usuário). |
+| MRR | Soma do valor mensal das assinaturas recorrentes com `stripe_subscription_id` e status `active`, `past_due` ou `cancel_at_period_end` (uma por usuário). `cancel_at_period_end` entra porque o período já foi pago; o painel mostra quantas cancelam no fim. `trialing` não entra (ainda não pagou). `checkout_started` e outras linhas sem assinatura Stripe são ignoradas. |
 | Receita (do período / do mês) | Pagamentos confirmados no período (`app_events.event_type = 'payment_completed'`) menos reembolsos no período (`payment_refunded`). |
-| Pro vencendo | `pro_until` nos próximos 7 dias e sem recorrente `active`/`past_due`. |
+| Pro vencendo | `pro_until` nos próximos 7 dias e sem recorrente `active`/`past_due`/`trialing` (quem marcou `cancel_at_period_end` aparece). |
 | Cobrança recusada | `profiles.subscription_status = 'past_due'` (gravado pelo webhook em `invoice.payment_failed`). |
 | Erro novo | Mensagem de `client_error` que apareceu nas últimas 24 h e não apareceu nos 30 dias anteriores. |
-| Novos x cancelados | Pagamentos confirmados no período x eventos `subscription_cancelled` no período. |
+| Novos x cancelados | Pessoas distintas com pagamento confirmado no período x pessoas distintas com `subscription_cancelled` no período. |
+| Bloqueio de visitante | Só o `guest_limit_reached` gravado pela Function `guest-usage` (tem `month_key`); o do front (`source = 'frontend'`) é o mesmo bloqueio e não conta. |
 | Variação | Período atual contra o mesmo trecho do período anterior (mês: dia 1 até hoje contra dia 1 até o mesmo dia do mês anterior). |
+
+## Confiança nos eventos
+
+Qualquer visitante consegue gravar em `app_events` (política da 001). A migração **002** (frente do banco) restringe eventos de dinheiro e webhook à service role e força `created_at = now()`; **a 003 depende dela**. Mesmo assim, a 003 se defende sozinha:
+
+- Todo número lido de `metadata` passa por `private.admin_int()` (só 1 a 9 dígitos; o resto vira nulo). Um `amount_cents: "x"` não derruba o painel.
+- `private.admin_event_trusted()` só aceita um evento de dinheiro se ele bater com uma linha de `subscriptions` (que só o backend grava): `payment_completed` e `checkout_payment_failed` pelo `checkout_session_id` e pelo usuário; `payment_refunded` e `payment_disputed` pelo `revoked_charge_id`; `subscription_cancelled` pelo `stripe_subscription_id`; `invoice_payment_failed` exige `invoice_id` `in_...` e uma recorrente do usuário. O plano usado no cálculo vem da assinatura, não do evento.
+- Pagamento e reembolso repetidos (mesmo checkout, mesma cobrança) contam uma vez.
+- `stripe_webhook_failed` e `stripe_event_processed` só têm checagem de formato (sem usuário, `type`/`event_id` válidos); contra falsificação deles vale a 002.
+- `client_error` nunca entra em contador de dinheiro, uso ou webhook; só na lista de erros.
 
 ## Valor cobrado: estimado até o webhook gravar o valor
 
@@ -42,12 +53,24 @@ Agrupados por `metadata.message`; mostra também o `metadata.source` mais recent
 
 ```bash
 npm run db:start
-docker exec -i supabase_db_bt8 psql -U postgres -d postgres < supabase/migrations/003_admin_dashboard.sql   # se o banco já existia
-docker exec -i supabase_db_bt8 psql -U postgres -d postgres < supabase/seed_admin_demo.sql                 # 40 clientes fictícios
+docker exec -i supabase_db_bt8 psql -U postgres -d postgres -v ON_ERROR_STOP=1 --single-transaction < supabase/migrations/003_admin_dashboard.sql   # se o banco já existia
+docker exec -i supabase_db_bt8 psql -U postgres -d postgres -v ambiente=local < supabase/seed_admin_demo.sql   # 40 clientes fictícios
 npm run dev:local
 ```
 
-Entrar em http://localhost:8888/admin com `admin@bt8.test` / `bt8-local-123`. O seed só roda no banco local (recusa se achar o admin de produção ou não achar o `admin@bt8.test`).
+Entrar em http://localhost:8888/admin com `admin@bt8.test` / `bt8-local-123`. O seed só roda com `-v ambiente=local`, para no primeiro erro (`ON_ERROR_STOP`, tudo numa transação) e recusa o banco se não achar o `admin@bt8.test` do seed local ou se achar qualquer e-mail fora de `.test`. As contas demo não têm senha: não dá para entrar com elas em lugar nenhum.
+
+## Ordem de deploy em produção
+
+A 003 só acrescenta (funções e índices), então vai **antes** do merge, depois da 002:
+
+```bash
+# no VPS, com backup feito antes (docs/SUPABASE_VPS.md)
+psql -v ON_ERROR_STOP=1 --single-transaction -f supabase/migrations/003_admin_dashboard.sql
+psql -c "NOTIFY pgrst, 'reload schema';"
+```
+
+Se a Function nova subir antes da 003, o painel mostra "Painel em atualização: falta instalar as funções do banco" (HTTP 503), sem quebrar.
 
 ## Abas novas
 

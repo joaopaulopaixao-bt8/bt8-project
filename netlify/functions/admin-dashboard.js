@@ -23,7 +23,10 @@ const supabaseFetch = async (url, key, path, options = {}) => {
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const message = data?.message || data?.error_description || text || `Supabase ${res.status}`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.code = data?.code || null;
+    throw error;
   }
   return data;
 };
@@ -46,14 +49,14 @@ const stripeRequest = async (secretKey, path, options = {}) => {
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
-  if (event.httpMethod !== 'GET') return json(405, { error: 'Method not allowed' });
+  if (event.httpMethod !== 'GET') return json(405, { error: 'Método não permitido.' });
 
   const supabaseUrl = process.env.BT8_SUPABASE_URL || process.env.SUPABASE_URL;
   const serviceKey = process.env.BT8_SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   const stripeKey = process.env.BT8_STRIPE_SECRET_KEY || process.env.STRIPE_SECRET_KEY;
   if (!supabaseUrl || !serviceKey) {
     return json(500, {
-      error: 'Admin service is not configured.',
+      error: 'Painel Admin não configurado no servidor.',
       missing: [
         !supabaseUrl ? 'BT8_SUPABASE_URL' : null,
         !serviceKey ? 'BT8_SUPABASE_SERVICE_ROLE_KEY' : null
@@ -62,15 +65,18 @@ exports.handler = async (event) => {
   }
 
   const token = (event.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!token) return json(401, { error: 'Login required.' });
+  if (!token) return json(401, { error: 'Faça login para abrir o painel.' });
 
   try {
     const authUser = await supabaseFetch(supabaseUrl, serviceKey, 'auth/v1/user', {
       method: 'GET',
       authorization: `Bearer ${token}`
+    }).catch(e => {
+      if (e.status === 401 || e.status === 403) return null;
+      throw e;
     });
     const userId = authUser?.id;
-    if (!userId) return json(401, { error: 'Invalid session.' });
+    if (!userId) return json(401, { error: 'Sessão expirada. Faça login de novo.' });
 
     const adminRows = await restRows(
       supabaseUrl,
@@ -140,6 +146,11 @@ exports.handler = async (event) => {
       ops: { last_backup_at: null, uptime: null }
     });
   } catch (e) {
-    return json(500, { error: e.message || 'Admin dashboard failed.' });
+    // PGRST202/42883: a migração 003 ainda não foi aplicada neste banco.
+    if (e.code === 'PGRST202' || e.code === '42883') {
+      return json(503, { error: 'Painel em atualização: falta instalar as funções do banco (migração 003). Os dados voltam assim que ela for aplicada.' });
+    }
+    console.error('admin-dashboard:', e.code || '', e.message);
+    return json(500, { error: 'Não foi possível carregar o painel agora. Tente de novo em instantes.' });
   }
 };

@@ -1,16 +1,31 @@
 -- BT8 — Painel Admin 360 (etapas D1 e D2): funções agregadas.
 -- Chamadas só pela Netlify Function admin-dashboard (service role), depois de ela validar role = 'admin'.
+-- Depende da 002 (insert em app_events: eventos de dinheiro/webhook só pela service role, created_at = now()).
+-- Mesmo assim, app_events não é confiável sozinho: evento de dinheiro só conta se estiver ligado a uma linha de
+-- subscriptions (que só o backend grava) e todo número lido de metadata passa por private.admin_int().
 -- Definições (detalhes em docs/ADMIN_METRICAS.md):
 --   Pro ativo      = plan 'pro' com pro_until nulo ou futuro, sem contar admin.
---   MRR            = valor mensal das recorrentes (última assinatura de cada usuário) com status active/past_due.
---   Receita        = pagamentos confirmados (app_events 'payment_completed') no período menos reembolsos
---                    ('payment_refunded') no período. Valor = metadata.amount_cents; sem ele, preço de tabela e "estimado".
---   Pro vencendo   = pro_until nos próximos 7 dias e sem recorrente active/past_due.
+--   MRR            = valor mensal das recorrentes com stripe_subscription_id e status active, past_due ou
+--                    cancel_at_period_end (uma por usuário). trialing e checkout_started não entram.
+--   Receita        = pagamentos confirmados ('payment_completed') no período menos reembolsos ('payment_refunded')
+--                    no período. Valor = metadata.amount_cents; sem ele, preço de tabela e "estimado".
+--   Pro vencendo   = pro_until nos próximos 7 dias e sem recorrente active/past_due/trialing.
 -- Fuso: America/Sao_Paulo para "dia" e "mês".
 
 create index if not exists app_events_type_created_idx on public.app_events(event_type, created_at desc);
 create index if not exists profiles_created_idx on public.profiles(created_at desc);
 create index if not exists tournaments_created_idx on public.tournaments(created_at desc);
+create index if not exists subscriptions_checkout_session_idx on public.subscriptions((metadata->>'checkout_session_id'));
+create index if not exists subscriptions_revoked_charge_idx on public.subscriptions((metadata->>'revoked_charge_id'));
+
+-- Inteiro vindo de metadata: só aceita 1 a 9 dígitos; qualquer outra coisa vira null (nunca derruba a consulta).
+create or replace function private.admin_int(p_value text)
+returns integer
+language sql
+immutable
+as $$
+  select case when p_value ~ '^\d{1,9}$' then p_value::integer end;
+$$;
 
 -- Preço de tabela (centavos) usado quando o evento não traz o valor cobrado.
 create or replace function private.admin_list_price_cents(p_plan_type text)
@@ -21,7 +36,41 @@ as $$
   select case p_plan_type when 'recurring' then 690 when 'one_time_30d' then 1490 else 0 end;
 $$;
 
--- Pagamentos (+) e reembolsos (-) com valor em centavos e flag de estimativa.
+-- Evento de dinheiro/webhook só vale se tiver os campos esperados e bater com o que o backend gravou.
+-- Outros tipos passam direto (não entram em conta de dinheiro).
+create or replace function private.admin_event_trusted(p_type text, p_user_id uuid, p_meta jsonb)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public, private
+as $$
+  select case p_type
+    when 'payment_completed' then
+      p_meta->>'plan_type' in ('recurring', 'one_time_30d') and exists (
+        select 1 from public.subscriptions s
+        where s.metadata->>'checkout_session_id' = p_meta->>'checkout_session_id' and s.user_id = p_user_id)
+    when 'checkout_payment_failed' then exists (
+        select 1 from public.subscriptions s
+        where s.metadata->>'checkout_session_id' = p_meta->>'checkout_session_id' and s.user_id = p_user_id)
+    when 'payment_refunded' then exists (
+        select 1 from public.subscriptions s where s.metadata->>'revoked_charge_id' = p_meta->>'charge_id')
+    when 'payment_disputed' then exists (
+        select 1 from public.subscriptions s where s.metadata->>'revoked_charge_id' = p_meta->>'charge_id')
+    when 'subscription_cancelled' then exists (
+        select 1 from public.subscriptions s
+        where s.stripe_subscription_id = p_meta->>'subscription_id' and s.user_id = p_user_id)
+    when 'invoice_payment_failed' then coalesce(p_meta->>'invoice_id', '') ~ '^in_[A-Za-z0-9_]+$' and exists (
+        select 1 from public.subscriptions s
+        where s.user_id = p_user_id and s.plan_type = 'recurring' and s.stripe_subscription_id is not null)
+    when 'stripe_webhook_failed' then p_user_id is null and coalesce(p_meta->>'type', '') ~ '^[a-z_.]{3,80}$'
+    when 'stripe_event_processed' then p_user_id is null and coalesce(p_meta->>'event_id', '') ~ '^evt_[A-Za-z0-9_]+$'
+    else true
+  end;
+$$;
+
+-- Pagamentos e reembolsos confiáveis, com valor em centavos e flag de estimativa.
+-- O plano vem da linha de subscriptions (gravada pelo backend), não do evento.
 create or replace function private.admin_money_events(p_from timestamptz, p_to timestamptz)
 returns table (kind text, user_id uuid, plan_type text, amount_cents integer, estimated boolean, created_at timestamptz)
 language sql
@@ -29,34 +78,42 @@ stable
 security definer
 set search_path = public, private
 as $$
-  select 'payment',
-         e.user_id,
-         e.metadata->>'plan_type',
-         coalesce((e.metadata->>'amount_cents')::integer, private.admin_list_price_cents(e.metadata->>'plan_type')),
-         (e.metadata->>'amount_cents') is null,
-         e.created_at
-  from public.app_events e
-  where e.event_type = 'payment_completed' and e.created_at >= p_from and e.created_at < p_to
+  -- distinct on: o mesmo checkout ou a mesma cobrança gravados duas vezes contam uma vez só.
+  select * from (
+    select distinct on (e.metadata->>'checkout_session_id')
+           'payment'::text as kind, e.user_id, s.plan_type,
+           coalesce(private.admin_int(e.metadata->>'amount_cents'), private.admin_list_price_cents(s.plan_type)) as amount_cents,
+           private.admin_int(e.metadata->>'amount_cents') is null as estimated,
+           e.created_at
+    from public.app_events e
+    join lateral (
+      select x.plan_type from public.subscriptions x
+      where x.metadata->>'checkout_session_id' = e.metadata->>'checkout_session_id' and x.user_id = e.user_id
+      order by x.created_at desc limit 1
+    ) s on true
+    where e.event_type = 'payment_completed' and e.created_at >= p_from and e.created_at < p_to
+    order by e.metadata->>'checkout_session_id', e.created_at
+  ) pay
   union all
-  select 'refund',
-         s.user_id,
-         s.plan_type,
-         coalesce((e.metadata->>'amount_cents')::integer, private.admin_list_price_cents(s.plan_type)),
-         (e.metadata->>'amount_cents') is null,
-         e.created_at
-  from public.app_events e
-  left join lateral (
-    select x.user_id, x.plan_type
-    from public.subscriptions x
-    where x.metadata->>'revoked_charge_id' = e.metadata->>'charge_id'
-    order by x.updated_at desc
-    limit 1
-  ) s on true
-  where e.event_type = 'payment_refunded' and e.created_at >= p_from and e.created_at < p_to;
+  select * from (
+    select distinct on (e.metadata->>'charge_id')
+           'refund'::text, s.user_id, s.plan_type,
+           coalesce(private.admin_int(e.metadata->>'amount_cents'), private.admin_list_price_cents(s.plan_type)),
+           private.admin_int(e.metadata->>'amount_cents') is null,
+           e.created_at
+    from public.app_events e
+    join lateral (
+      select x.user_id, x.plan_type from public.subscriptions x
+      where x.metadata->>'revoked_charge_id' = e.metadata->>'charge_id'
+      order by x.updated_at desc limit 1
+    ) s on true
+    where e.event_type = 'payment_refunded' and e.created_at >= p_from and e.created_at < p_to
+    order by e.metadata->>'charge_id', e.created_at
+  ) ref;
 $$;
 
--- Última assinatura de cada usuário não admin.
-create or replace function private.admin_latest_subscriptions()
+-- Assinaturas recorrentes vivas (uma por usuário não admin): base do MRR e do "Pro vencendo".
+create or replace function private.admin_recurring_live()
 returns setof public.subscriptions
 language sql
 stable
@@ -66,6 +123,9 @@ as $$
   select distinct on (s.user_id) s.*
   from public.subscriptions s
   join public.profiles p on p.id = s.user_id and p.role <> 'admin'
+  where s.plan_type = 'recurring'
+    and s.stripe_subscription_id is not null
+    and s.status in ('active', 'past_due', 'cancel_at_period_end', 'trialing')
   order by s.user_id, s.created_at desc;
 $$;
 
@@ -113,8 +173,16 @@ begin
   prev_full as (
     select * from private.admin_money_events(v_prev_from, case when p_period = 'mes' then v_month_from else v_from end)
   ),
-  latest as (select * from private.admin_latest_subscriptions()),
-  recurring_live as (select * from latest where plan_type = 'recurring' and status in ('active', 'past_due')),
+  recurring_live as (select * from private.admin_recurring_live()),
+  recurring_paying as (select * from recurring_live where status <> 'trialing'),
+  -- Eventos de dinheiro/webhook confiáveis desde o início do período anterior (nunca inclui client_error).
+  trusted as (
+    select e.* from public.app_events e
+    where e.event_type in ('subscription_cancelled', 'payment_refunded', 'payment_disputed', 'checkout_payment_failed',
+                           'invoice_payment_failed', 'stripe_webhook_failed', 'stripe_event_processed')
+      and e.created_at >= least(v_prev_from, v_now - interval '7 days')
+      and private.admin_event_trusted(e.event_type, e.user_id, e.metadata)
+  ),
   pro_active as (
     select p.* from public.profiles p
     where p.role <> 'admin' and p.plan = 'pro' and (p.pro_until is null or p.pro_until > v_now)
@@ -149,12 +217,19 @@ begin
       'revenue_cents', (select coalesce(sum(case kind when 'refund' then -amount_cents else amount_cents end), 0) from cur),
       'revenue_prev_cents', (select coalesce(sum(case kind when 'refund' then -amount_cents else amount_cents end), 0) from prev),
       'revenue_estimated', (select coalesce(bool_or(estimated), false) from cur),
-      'mrr_cents', (select coalesce(sum(coalesce((metadata->>'amount_cents')::integer, 690)), 0) from recurring_live),
-      'mrr_estimated', (select coalesce(bool_or((metadata->>'amount_cents') is null), false) from recurring_live),
+      'mrr_cents', (
+        select coalesce(sum(coalesce(private.admin_int(metadata->>'amount_cents'), 690)), 0) from recurring_paying
+      ),
+      'mrr_estimated', (
+        select coalesce(bool_or(private.admin_int(metadata->>'amount_cents') is null), false) from recurring_paying
+      ),
+      'mrr_cancelling', (select count(*) from recurring_paying where status = 'cancel_at_period_end'),
       'pro_active', (select count(*) from pro_active),
-      'pro_new', (select count(*) from cur where kind = 'payment'),
+      'pro_new', (select count(distinct user_id) from cur where kind = 'payment'),
       'pro_lost', (
-        select count(*) from public.app_events e
+        select count(distinct coalesce(e.user_id, s.user_id))
+        from trusted e
+        left join public.subscriptions s on s.metadata->>'revoked_charge_id' = e.metadata->>'charge_id'
         where e.event_type in ('subscription_cancelled', 'payment_refunded', 'payment_disputed')
           and e.created_at >= v_from
       ),
@@ -183,7 +258,7 @@ begin
         from public.profiles p
         where p.role <> 'admin'
           and p.pro_until > v_now and p.pro_until <= v_now + interval '7 days'
-          and not exists (select 1 from recurring_live r where r.user_id = p.id)
+          and not exists (select 1 from recurring_live r where r.user_id = p.id and r.status <> 'cancel_at_period_end')
       ), '[]'::jsonb),
       'declined', coalesce((
         select jsonb_agg(jsonb_build_object('id', p.id, 'nome', p.nome, 'email', p.email, 'since', p.updated_at)
@@ -211,8 +286,10 @@ begin
         select count(distinct user_id) from public.tournaments where created_at >= v_now - interval '7 days'
       ),
       'guest_limit_blocks', (
+        -- Só o evento da Function guest-usage (o front grava outro com source = 'frontend' no mesmo bloqueio).
         select count(*) from public.app_events
         where event_type = 'guest_limit_reached' and created_at >= v_now - interval '7 days'
+          and metadata ? 'month_key'
       ),
       'free_limit_blocks', (
         select count(*) from public.app_events
@@ -230,10 +307,10 @@ begin
           'plan_type', t.plan_type,
           'active', (
             case t.plan_type
-              when 'recurring' then (select count(*) from recurring_live)
+              when 'recurring' then (select count(*) from recurring_paying)
               else (
                 select count(*) from pro_active pa
-                where not exists (select 1 from recurring_live r where r.user_id = pa.id)
+                where not exists (select 1 from recurring_paying r where r.user_id = pa.id)
               )
             end
           ),
@@ -242,15 +319,15 @@ begin
         ))
         from (values ('recurring'), ('one_time_30d')) t(plan_type)
       ), '[]'::jsonb),
-      'new_count', (select count(*) from cur where kind = 'payment'),
+      'new_count', (select count(distinct user_id) from cur where kind = 'payment'),
       'cancelled_count', (
-        select count(*) from public.app_events
+        select count(distinct user_id) from trusted
         where event_type = 'subscription_cancelled' and created_at >= v_from
       ),
       'refunds_count', (select count(*) from cur where kind = 'refund'),
       'refunds_cents', (select coalesce(sum(amount_cents), 0) from cur where kind = 'refund'),
       'disputes_count', (
-        select count(*) from public.app_events where event_type = 'payment_disputed' and created_at >= v_from
+        select count(*) from trusted where event_type = 'payment_disputed' and created_at >= v_from
       ),
       'recent', coalesce((
         select jsonb_agg(x order by x.created_at desc)
@@ -272,7 +349,7 @@ begin
         select jsonb_agg(x order by x.created_at desc)
         from (
           select e.event_type, e.created_at, e.metadata, p.nome, p.email
-          from public.app_events e left join public.profiles p on p.id = e.user_id
+          from trusted e left join public.profiles p on p.id = e.user_id
           where e.event_type in ('checkout_payment_failed', 'invoice_payment_failed')
             and e.created_at >= v_now - interval '7 days'
           order by e.created_at desc limit 20
@@ -280,11 +357,13 @@ begin
       ), '[]'::jsonb),
       'webhook_failures', coalesce((
         select jsonb_agg(jsonb_build_object('created_at', e.created_at, 'metadata', e.metadata) order by e.created_at desc)
-        from public.app_events e
+        from trusted e
         where e.event_type = 'stripe_webhook_failed' and e.created_at >= v_now - interval '7 days'
       ), '[]'::jsonb),
       'webhook_last_processed', (
-        select max(created_at) from public.app_events where event_type = 'stripe_event_processed'
+        select max(e.created_at) from public.app_events e
+        where e.event_type = 'stripe_event_processed' and e.created_at >= v_now - interval '30 days'
+          and private.admin_event_trusted(e.event_type, e.user_id, e.metadata)
       )
     )
   ) into v_result;
@@ -318,9 +397,13 @@ as $$
     left join lateral (
       select count(*) as total, max(x.created_at) as last_at from public.tournaments x where x.user_id = p.id
     ) t on true
+    -- % e _ digitados na busca são literais.
+    cross join lateral (
+      select '%' || replace(replace(replace(coalesce(p_search, ''), '!', '!!'), '%', '!%'), '_', '!_') || '%' as pattern
+    ) q
     where coalesce(p_search, '') = ''
-       or p.nome ilike '%' || p_search || '%'
-       or p.email ilike '%' || p_search || '%'
+       or p.nome ilike q.pattern escape '!'
+       or p.email ilike q.pattern escape '!'
     order by p.created_at desc
     limit least(greatest(coalesce(p_limit, 50), 1), 200)
   ) c;
@@ -356,6 +439,7 @@ as $$
       where e.user_id = p_user_id
         and e.event_type in ('payment_completed', 'payment_refunded', 'payment_disputed', 'subscription_cancelled',
                              'invoice_payment_failed', 'checkout_payment_failed')
+        and private.admin_event_trusted(e.event_type, e.user_id, e.metadata)
     ), '[]'::jsonb),
     'tournaments', jsonb_build_object(
       'total', (select count(*) from public.tournaments where user_id = p_user_id),
@@ -365,9 +449,11 @@ as $$
 $$;
 
 -- Só a service role executa. O Supabase dá EXECUTE a anon/authenticated por padrão em funções novas.
+revoke all on function private.admin_int(text) from public, anon, authenticated;
 revoke all on function private.admin_list_price_cents(text) from public, anon, authenticated;
+revoke all on function private.admin_event_trusted(text, uuid, jsonb) from public, anon, authenticated;
 revoke all on function private.admin_money_events(timestamptz, timestamptz) from public, anon, authenticated;
-revoke all on function private.admin_latest_subscriptions() from public, anon, authenticated;
+revoke all on function private.admin_recurring_live() from public, anon, authenticated;
 revoke all on function public.admin_dashboard(text) from public, anon, authenticated;
 revoke all on function public.admin_customers(text, integer) from public, anon, authenticated;
 revoke all on function public.admin_customer(uuid) from public, anon, authenticated;
