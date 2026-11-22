@@ -112,11 +112,13 @@ create unique index if not exists athletes_arena_telefone_uidx
 on public.athletes (arena_id, telefone) where telefone is not null;
 create index if not exists athletes_arena_idx on public.athletes (arena_id);
 
+-- FKs sem cascata são "deferrable initially deferred": apagar a arena/categoria em cascata só é
+-- conferido no commit (senão o atleta é apagado antes da dupla que aponta para ele).
 create table if not exists public.teams (
   id uuid primary key default gen_random_uuid(),
   category_id uuid not null references public.categories(id) on delete cascade,
-  athlete1_id uuid not null references public.athletes(id),
-  athlete2_id uuid not null references public.athletes(id),
+  athlete1_id uuid not null references public.athletes(id) deferrable initially deferred,
+  athlete2_id uuid not null references public.athletes(id) deferrable initially deferred,
   status text not null default 'confirmada' check (status in ('pendente', 'confirmada', 'espera', 'cancelada')),
   pagamento text not null default 'nao_se_aplica' check (pagamento in ('nao_se_aplica', 'pendente', 'pago')),
   pago_em timestamptz,
@@ -146,7 +148,7 @@ create table if not exists public.category_groups (
 
 create table if not exists public.group_teams (
   group_id uuid not null references public.category_groups(id) on delete cascade,
-  team_id uuid not null references public.teams(id),
+  team_id uuid not null references public.teams(id) deferrable initially deferred,
   primary key (group_id, team_id)
 );
 create index if not exists group_teams_team_idx on public.group_teams (team_id);
@@ -159,21 +161,21 @@ create table if not exists public.matches (
   group_id uuid references public.category_groups(id) on delete cascade,
   rodada int not null default 1,
   slot int not null default 1,
-  team_a uuid references public.teams(id),
-  team_b uuid references public.teams(id),
+  team_a uuid references public.teams(id) deferrable initially deferred,
+  team_b uuid references public.teams(id) deferrable initially deferred,
   origem_a jsonb check (octet_length(origem_a::text) <= 512),
   origem_b jsonb check (octet_length(origem_b::text) <= 512),
-  next_match_id uuid references public.matches(id),
+  next_match_id uuid references public.matches(id) deferrable initially deferred,
   next_slot text check (next_slot in ('a', 'b')),
   prioridade int not null default 0,
-  court_id uuid references public.courts(id),
+  court_id uuid references public.courts(id) deferrable initially deferred,
   status text not null default 'agendada'
     check (status in ('agendada', 'chamada', 'em_jogo', 'suspensa', 'encerrada', 'wo', 'anulada')),
   games_a int not null default 0 check (games_a between 0 and 7),
   games_b int not null default 0 check (games_b between 0 and 7),
   tb_a int check (tb_a between 0 and 50),
   tb_b int check (tb_b between 0 and 50),
-  vencedor uuid references public.teams(id),
+  vencedor uuid references public.teams(id) deferrable initially deferred,
   wo boolean not null default false,
   desistencia boolean not null default false,
   alerta_origem boolean not null default false,

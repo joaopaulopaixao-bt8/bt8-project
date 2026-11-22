@@ -258,4 +258,11 @@ reset role;
 select teste.ok((select consentimento_versao = '2026-11-22' from public.athletes where telefone = '+5581977770001'),
   'consentimento versionado gravado');
 
+-- Apagar a arena (como a arena TESTE depois do demo) leva tudo em cascata.
+delete from public.arenas where id = 'aaaaaaaa-0000-4000-8000-00000000000a';
+set constraints all immediate;
+select teste.ok(not exists (select 1 from public.matches where championship_id = 'eeeeeeee-0000-4000-8000-000000000001')
+                and not exists (select 1 from public.athletes where arena_id = 'aaaaaaaa-0000-4000-8000-00000000000a'),
+  'apagar a arena apaga campeonatos, partidas e atletas');
+
 rollback;
