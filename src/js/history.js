@@ -2,44 +2,166 @@
 // HISTÓRICO DE TORNEIOS
 // ══════════════════════════════════════════════════
 
-async function saveTournament() {
-  if (!SUPA || !SUPA_USER || !APP.mode) return;
-  if (APP._savedCurrentTournament) return;
-  try {
-    if (typeof validateFreeSaveLimit === 'function') {
-      const limitInfo = await validateFreeSaveLimit();
-      if (!limitInfo.allowed) {
-        showFreeLimitReached(limitInfo);
-        return;
-      }
-    }
+// ── TORNEIO PENDENTE DE SALVAR ───────────────────────────
+// O torneio em andamento fica no aparelho (saveActiveTournament). Se terminou e ainda não
+// foi gravado no histórico (visitante, sem conexão, erro ou limite do Free), continua lá
+// como "pendente" e é salvo assim que der: login/cadastro, retorno do checkout, conexão
+// voltando, app voltando para a tela ou abrindo de novo.
+let SAVE_IN_FLIGHT = null;
+let PENDING_SAVE_REASON = null;   // 'guest' | 'error' | 'limit' | null
+let PENDING_SAVE_READY = false;   // só depois de saber se há usuário logado
+let PENDING_NOTICE_CLOSED = null; // motivo que o usuário fechou no aviso
 
-    const standings = getStandings();
-    const title = MODE_INFO[APP.mode].label + ' · ' + new Date().toLocaleDateString('pt-BR');
-    const { error } = await SUPA.from('tournaments').insert({
-      user_id:  SUPA_USER.id,
-      mode:     APP.mode,
-      category: APP.category,
-      title,
-      players:  APP.players,
+function logSaveError(stage, e, extra) {
+  console.error('[bt8] tournament_save_failed', {
+    stage, code: e?.code || null, message: e?.message || String(e), ...(extra || {})
+  });
+}
+
+// Snapshot do aparelho que terminou e ainda não está no histórico (ou tem correção não gravada).
+function pendingTournament() {
+  const data = typeof readActiveTournament === 'function' ? readActiveTournament() : null;
+  const st = data?.state;
+  if (!st || !isTournamentComplete(st.matches)) return null;
+  // Snapshots antigos não têm _pendingSave: pendente se nunca foi salvo.
+  return (st._pendingSave ?? !st._savedCurrentTournament) ? data : null;
+}
+
+// Calcula algo com o APP temporariamente apontando para outro torneio (ex.: ranking do snapshot).
+function withTournamentState(state, fn) {
+  const keys = ['mode', 'category', 'fmt', 'players', 'matches', 'rounds', '_hasBye', 'idaVolta'];
+  const backup = {};
+  keys.forEach(k => { backup[k] = APP[k]; APP[k] = state[k]; });
+  try { return fn(); } finally { keys.forEach(k => { APP[k] = backup[k]; }); }
+}
+
+function markTournamentSaved(savedState, id) {
+  const cur = readActiveTournament();
+  if (!cur || cur.state.tourneyUid !== savedState.tourneyUid) return;
+  // Se o placar mudou enquanto gravava, continua pendente para o próximo salvamento.
+  const unchanged = JSON.stringify(cur.state.matches) === JSON.stringify(savedState.matches);
+  const patch = { _savedTournamentId: id, _savedCurrentTournament: true };
+  if (unchanged) patch._pendingSave = false;
+  Object.assign(cur.state, patch);
+  writeActiveTournament(cur);
+  if (APP.tourneyUid === savedState.tourneyUid) Object.assign(APP, patch);
+}
+
+// Grava o torneio atual: chamado ao abrir o resultado final.
+async function saveTournament() {
+  saveActiveTournament();
+  return savePendingTournament({ fromUser: true });
+}
+
+function savePendingTournament(opts = {}) {
+  if (SAVE_IN_FLIGHT) return SAVE_IN_FLIGHT.then(() => savePendingTournament(opts));
+  SAVE_IN_FLIGHT = doSavePendingTournament(opts).finally(() => {
+    SAVE_IN_FLIGHT = null;
+    renderPendingSaveNotice();
+  });
+  return SAVE_IN_FLIGHT;
+}
+
+async function doSavePendingTournament(opts) {
+  const data = pendingTournament();
+  if (!data) { PENDING_SAVE_REASON = null; return true; }
+  if (!SUPA || !SUPA_USER) { PENDING_SAVE_REASON = 'guest'; return false; }
+  const st = data.state;
+  let stage = 'prepare';
+  try {
+    const standings = withTournamentState(st, getStandings);
+    const row = {
+      mode: st.mode,
+      category: st.category,
+      players: st.players,
       standings,
       state: {
-        mode: APP.mode, category: APP.category, fmt: APP.fmt,
-        players: APP.players, rounds: APP.rounds||[], matches: APP.matches
+        mode: st.mode, category: st.category, fmt: st.fmt,
+        players: st.players, rounds: st.rounds || [], matches: st.matches
       }
-    });
-    if (error) throw error;
-    APP._savedCurrentTournament = true;
-    const access = typeof currentAccess === 'function' ? currentAccess() : null;
-    trackEvent(access?.isPro ? 'pro_tournament_saved' : 'free_tournament_saved', {
-      format: APP.mode || '',
-      category: APP.category || '',
-      players: (APP.players || []).length
-    });
-    // Atualiza histórico na home silenciosamente
+    };
+    let id = st._savedTournamentId || null;
+    if (id) {
+      // Correção de placar: atualiza o mesmo registro em vez de inserir outro.
+      stage = 'update';
+      const { data: rows, error } = await SUPA.from('tournaments').update(row).eq('id', id).select('id');
+      if (error) throw error;
+      if (!rows?.length) id = null; // registro não existe mais: grava de novo
+    }
+    if (!id) {
+      stage = 'limit';
+      const limitInfo = await validateFreeSaveLimit();
+      if (!limitInfo.allowed) {
+        PENDING_SAVE_REASON = 'limit';
+        // Tentativas automáticas só mostram o aviso fixo, sem abrir modal por cima de outra tela.
+        if (opts.fromUser) showFreeLimitReached(limitInfo);
+        return false;
+      }
+      stage = 'insert';
+      const title = MODE_INFO[st.mode].label + ' · ' + new Date(data.savedAt || Date.now()).toLocaleDateString('pt-BR');
+      const { data: inserted, error } = await SUPA.from('tournaments')
+        .insert({ user_id: SUPA_USER.id, title, ...row })
+        .select('id')
+        .single();
+      if (error) throw error;
+      id = inserted.id;
+      const access = typeof currentAccess === 'function' ? currentAccess() : null;
+      trackEvent(access?.isPro ? 'pro_tournament_saved' : 'free_tournament_saved', {
+        format: st.mode || '',
+        category: st.category || '',
+        players: (st.players || []).length
+      });
+    }
+    markTournamentSaved(st, id);
+    PENDING_SAVE_REASON = null;
     loadHomeHistory();
-  } catch(e) { /* silencioso */ }
+    return true;
+  } catch (e) {
+    PENDING_SAVE_REASON = 'error';
+    logSaveError(stage, e, { mode: st.mode, online: navigator.onLine });
+    return false;
+  }
 }
+
+function retryPendingSave() {
+  PENDING_SAVE_READY = true;
+  if (pendingTournament()) savePendingTournament();
+  else { PENDING_SAVE_REASON = null; renderPendingSaveNotice(); }
+}
+
+function closePendingSaveNotice() {
+  PENDING_NOTICE_CLOSED = PENDING_SAVE_REASON;
+  document.getElementById('pending-save-banner')?.remove();
+}
+
+function renderPendingSaveNotice() {
+  const old = document.getElementById('pending-save-banner');
+  const data = pendingTournament();
+  const reason = data ? PENDING_SAVE_REASON : null;
+  const hidden = !PENDING_SAVE_READY || !reason || reason === PENDING_NOTICE_CLOSED
+    || (typeof isAdminRoute === 'function' && isAdminRoute());
+  if (hidden) { old?.remove(); return; }
+  const label = escapeHtml(MODE_INFO[data.state.mode]?.label || 'Torneio');
+  const msg = {
+    guest: [`<b>${label} terminado e não salvo.</b> Crie uma conta grátis para guardar no histórico.`, 'Criar conta', "openAuthModal('signup')"],
+    error: [`<b>${label} ainda não foi salvo.</b> Vamos tentar de novo quando a conexão voltar.`, 'Tentar agora', 'savePendingTournament({fromUser:true})'],
+    limit: [`<b>${label} não foi salvo:</b> limite do plano Free atingido. Com o Pro ele é salvo na hora.`, 'Ver Pro', 'openPlansModal()']
+  }[reason];
+  const el = old || document.createElement('div');
+  el.id = 'pending-save-banner';
+  el.className = 'pending-save-banner';
+  el.setAttribute('role', 'status');
+  el.innerHTML = `<span class="psb-icon">${icon('alert')}</span>
+    <span class="psb-text">${msg[0]}</span>
+    <button type="button" onclick="${msg[2]}">${msg[1]}</button>
+    <button type="button" class="psb-close" aria-label="Fechar aviso" onclick="closePendingSaveNotice()">×</button>`;
+  if (!old) document.body.appendChild(el);
+}
+
+window.addEventListener('online', () => { if (PENDING_SAVE_READY) retryPendingSave(); });
+document.addEventListener('visibilitychange', () => {
+  if (PENDING_SAVE_READY && document.visibilityState === 'visible') retryPendingSave();
+});
 
 async function loadHomeHistory() {
   if (APP.isGuest && !SUPA_USER) {
@@ -48,13 +170,14 @@ async function loadHomeHistory() {
   }
   if (!SUPA || !SUPA_USER) return;
   try {
-    const { data } = await SUPA.from('tournaments')
+    const { data, error } = await SUPA.from('tournaments')
       .select('id,title,mode,created_at,players')
       .eq('user_id', SUPA_USER.id)
       .order('created_at', { ascending:false })
       .limit(5);
+    if (error) throw error;
     renderHomeHistory(data || []);
-  } catch(e) { /* silencioso */ }
+  } catch(e) { console.error('[bt8] history_load_failed', { message: e?.message || String(e) }); }
 }
 
 function renderHomeHistory(items) {
@@ -208,9 +331,13 @@ async function openTournament(id) {
     const matches = state.matches || [];
     if (matches.length) {
       const byRound = {};
+      const phaseLabel = { rr:'Round Robin', round:'Rodadas', final:'Final', elim:'Eliminatória' };
       matches.forEach(m => {
+        // Folga (__BYE__) não é jogo: não aparece no replay.
+        if (m.isBye || m.a==='__BYE__' || m.b==='__BYE__') return;
+        // roundNum (rotativos/duplas) e round (eliminatória) já são 1-based.
         const rn = m.roundNum!=null ? m.roundNum : (m.round!=null ? m.round : null);
-        const r = rn!=null ? `Rodada ${rn+1}` : (m.phase==='elim'?'Eliminatória':(m.phase||'Partidas'));
+        const r = m.phase==='final' ? 'Final' : rn!=null ? `Rodada ${rn}` : (phaseLabel[m.phase]||'Partidas');
         if (!byRound[r]) byRound[r] = [];
         byRound[r].push(m);
       });

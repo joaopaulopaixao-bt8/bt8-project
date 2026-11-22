@@ -168,6 +168,8 @@ function handleAuthStateChange(user) {
         setTimeout(() => continuePendingCheckout(params.get('auth') === 'confirmed' ? 'email_confirmed' : 'login_completed'), 700);
       }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
+      // Torneio terminado como visitante ou que falhou ao salvar: grava agora que sabemos quem é o usuário.
+      if (typeof retryPendingSave === 'function') retryPendingSave();
     });
   }
 
