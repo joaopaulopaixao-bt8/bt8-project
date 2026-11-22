@@ -432,3 +432,40 @@ test('payloadSorteio no formato do category_publish_draw e slots do category_see
   const fim = C.avancar(cheia.map(x => (x.id === 'm-sf2' ? { ...x, vencedor: 'a2' } : x)), 'm-sf2');
   assert.equal(fim.find(x => x.id === 'm-f').team_b, 'a2');
 });
+
+test('resumoCategoria a partir do arena_public: tabela com nomes, vagas rotuladas e campeões', () => {
+  const montagem = C.montarGrupos(duplas(6), { semente: 3 });
+  const draw = C.payloadSorteio(montagem, C.gerarChave(['A', 'B']));
+  const ids = {}; draw.partidas.forEach((p, i) => (ids[p.ref] = 'm' + i));
+  const origem = o => (o && o.match_ref ? { match: ids[o.match_ref] } : o);
+  const partidas = draw.partidas.map(p => ({
+    id: ids[p.ref], category_id: 'cat', fase: p.fase, group_id: p.grupo ? 'g' + p.grupo : null, rodada: p.rodada, slot: p.slot,
+    team_a: p.team_a || null, team_b: p.team_b || null, next_match_id: p.next_ref ? ids[p.next_ref] : null, next_slot: p.next_slot || null,
+    origem_a: origem(p.origem_a), origem_b: origem(p.origem_b),
+    status: p.fase === 'grupo' ? 'encerrada' : 'agendada', games_a: p.fase === 'grupo' ? 6 : null, games_b: p.fase === 'grupo' ? 2 : null,
+    vencedor: p.fase === 'grupo' ? p.team_a : null,
+  }));
+  const pub = {
+    championship: { regras: { desistencia_modo: 'anular', wo_conta_saldo: true } },
+    categorias: [{ id: 'cat', nome: 'Mista', formato: { classificam: 2 } }],
+    duplas: duplas(6).map(d => ({ id: d.id, category_id: 'cat', nome: 'Dupla ' + d.id, desistente: false })),
+    grupos: montagem.grupos.map((g, i) => ({ id: 'g' + g.nome, category_id: 'cat', nome: g.nome, ordem: i + 1, fechado: true, duplas: g.duplas })),
+    partidas,
+  };
+  let r = C.resumoCategoria(pub, 'cat');
+  assert.equal(r.grupos.length, 2);
+  assert.ok(r.grupos.every(g => g.tabela.length === 3 && g.tabela[0].nome.startsWith('Dupla ')));
+  assert.deepEqual(r.mata.map(p => [p.fase, p.nome_a, p.nome_b]), [
+    ['sf', '1º Grupo A', '2º Grupo B'], ['sf', '1º Grupo B', '2º Grupo A'], ['final', 'Vencedor Semifinal 1', 'Vencedor Semifinal 2'],
+  ]);
+  assert.equal(r.campeoes, null);
+  const [s1, s2, f] = r.mata;
+  const jogado = pub.partidas.map(p => {
+    if (p.id === s1.id) return { ...p, team_a: 'T1', team_b: 'T2', status: 'encerrada', vencedor: 'T1' };
+    if (p.id === s2.id) return { ...p, team_a: 'T3', team_b: 'T4', status: 'encerrada', vencedor: 'T4' };
+    if (p.id === f.id) return { ...p, team_a: 'T1', team_b: 'T4', status: 'encerrada', vencedor: 'T4' };
+    return p;
+  });
+  r = C.resumoCategoria({ ...pub, partidas: jogado }, 'cat');
+  assert.deepEqual(r.campeoes, { campeao: 'Dupla T4', vice: 'Dupla T1', terceiros: ['Dupla T2', 'Dupla T3'] });
+});

@@ -56,6 +56,17 @@ test('preset B: 4x2 acaba, 5x3 acaba, tie-break no 4x4 vira 5x4', () => {
   assert.ok(validarPlacar(S.paraPlacarFinal(toques('aaabbbaa', 'B'), 'B'), 'B').ok); // 5x3
 });
 
+test('ida e volta com o servidor: 7x6 com tie-break vira 6x6 + tb e volta a 7x6', () => {
+  let e = toques('aaaaabbbbbab');
+  for (let i = 0; i < 7; i++) e = S.marcar(e, 'a', 1);
+  const enviado = S.paraServidor(e);
+  assert.deepEqual(enviado, { games_a: 7, games_b: 6, tb_a: 7, tb_b: 0 });
+  assert.deepEqual(S.dePlacarServidor(enviado), e);
+  assert.deepEqual(S.paraServidor(toques('aab')), { games_a: 2, games_b: 1, tb_a: null, tb_b: null });
+  assert.deepEqual(S.dePlacarServidor({ games_a: 7, games_b: 5, tb_a: null, tb_b: null }), { games_a: 7, games_b: 5, tb_a: null, tb_b: null });
+  assert.deepEqual(S.dePlacarServidor({ games_a: 4, games_b: 5, tb_a: 3, tb_b: 7 }, 'B'), { games_a: 4, games_b: 4, tb_a: 3, tb_b: 7 });
+});
+
 test('todo placar final do scoring passa em validarPlacar', () => {
   let rnd = 7;
   const r = () => ((rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648);
