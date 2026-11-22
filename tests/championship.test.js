@@ -115,13 +115,13 @@ test('desistência "anular todos os jogos" (grupo de 4)', () => {
 });
 
 test('desistência "manter os feitos e WO no restante" (grupo de 4)', () => {
-  const r = C.classificarGrupo(['A', 'B', 'C', 'D'], comDesistente, { desistentes: ['D'], desistencia_modo: 'wo' });
+  const r = C.classificarGrupo(['A', 'B', 'C', 'D'], comDesistente, { desistentes: ['D'], desistencia_modo: 'manter_wo' });
   // A 2v (perdeu para D); B 2v (C e WO de D); A>B no confronto; C 1v (WO).
   assert.deepEqual(ordem(r), ['A', 'B', 'C', 'D']);
   assert.deepEqual(r.tabela.map(l => l.vitorias), [2, 2, 1, 1]);
   assert.equal(r.tabela[1].jogos, 3);
   assert.equal(r.tabela[1].gp, 2 + 6 + 6); // 2 vs A, 6 vs C, WO 6x0
-  const fora = C.classificarGrupo(['A', 'B', 'C', 'D'], comDesistente, { desistentes: ['D'], desistencia_modo: 'wo', wo_conta_saldo: false });
+  const fora = C.classificarGrupo(['A', 'B', 'C', 'D'], comDesistente, { desistentes: ['D'], desistencia_modo: 'manter_wo', wo_conta_saldo: false });
   assert.equal(fora.tabela[1].gp, 2 + 6);
 });
 
@@ -130,7 +130,7 @@ test('desistência em grupo de 3, nos dois modos', () => {
   const anular = C.classificarGrupo(['A', 'B', 'C'], jogos, { desistentes: ['A'] });
   assert.deepEqual(ordem(anular), ['B', 'C', 'A']);
   assert.equal(anular.tabela[1].jogos, 1);
-  const wo = C.classificarGrupo(['A', 'B', 'C'], jogos, { desistentes: ['A'], desistencia_modo: 'wo' });
+  const wo = C.classificarGrupo(['A', 'B', 'C'], jogos, { desistentes: ['A'], desistencia_modo: 'manter_wo' });
   assert.deepEqual(ordem(wo), ['B', 'C', 'A']);
   assert.deepEqual(wo.tabela.map(l => l.vitorias), [2, 0, 1]);
 });
@@ -171,9 +171,9 @@ test('cruzamentos de 2, 4 e 8 grupos', () => {
   const c8 = C.gerarChave(nomes(8));
   assert.equal(c8.tamanho, 16);
   assert.equal(c8.partidas.length, 15);
-  assert.deepEqual(c8.partidas.find(p => p.id === 'qf1').origem_a, { match: 'r161' });
-  assert.deepEqual([c8.partidas[0].next_match_id, c8.partidas[0].next_slot, c8.partidas[1].next_slot], ['qf1', 'a', 'b']);
-  assert.equal(c8.partidas.find(p => p.id === 'final').next_match_id, null);
+  assert.deepEqual(c8.partidas.find(p => p.id === 'QF1').origem_a, { match: 'R16-1' });
+  assert.deepEqual([c8.partidas[0].next_match_id, c8.partidas[0].next_slot, c8.partidas[1].next_slot], ['QF1', 'a', 'b']);
+  assert.equal(c8.partidas.find(p => p.id === 'F').next_match_id, null);
 });
 
 // Classificações em que o grupo A tem o melhor 1º e o melhor 2º (força o conflito).
@@ -214,29 +214,29 @@ test('avancar leva o vencedor; correção limpa o slot da partida seguinte e ref
   let ps = C.preencherChave(C.gerarChave(['A', 'B']), {
     A: [{ team: 'a1' }, { team: 'a2' }], B: [{ team: 'b1' }, { team: 'b2' }],
   });
-  ps = ps.map(p => (p.id === 'sf1' ? { ...p, vencedor: 'a', status: 'encerrada' } : p));
-  ps = C.avancar(ps, 'sf1');
-  assert.equal(ps.find(p => p.id === 'final').team_a, 'a1');
+  ps = ps.map(p => (p.id === 'SF1' ? { ...p, vencedor: 'a', status: 'encerrada' } : p));
+  ps = C.avancar(ps, 'SF1');
+  assert.equal(ps.find(p => p.id === 'F').team_a, 'a1');
   // correção: o vencedor da sf1 era b2
-  ps = C.limpar(ps, 'sf1');
-  assert.equal(ps.find(p => p.id === 'final').team_a, null);
-  ps = C.avancar(ps.map(p => (p.id === 'sf1' ? { ...p, vencedor: 'b' } : p)), 'sf1');
-  assert.equal(ps.find(p => p.id === 'final').team_a, 'b2');
-  assert.equal(ps.find(p => p.id === 'final').alerta_origem, false);
+  ps = C.limpar(ps, 'SF1');
+  assert.equal(ps.find(p => p.id === 'F').team_a, null);
+  ps = C.avancar(ps.map(p => (p.id === 'SF1' ? { ...p, vencedor: 'b' } : p)), 'SF1');
+  assert.equal(ps.find(p => p.id === 'F').team_a, 'b2');
+  assert.equal(ps.find(p => p.id === 'F').alerta_origem, false);
 });
 
 test('correção com a partida seguinte já iniciada exige "forçar" e marca alerta de origem', () => {
   let ps = C.preencherChave(C.gerarChave(['A', 'B']), {
     A: [{ team: 'a1' }, { team: 'a2' }], B: [{ team: 'b1' }, { team: 'b2' }],
   });
-  ps = C.avancar(ps.map(p => (p.id === 'sf1' ? { ...p, vencedor: 'a' } : p)), 'sf1');
-  ps = ps.map(p => (p.id === 'final' ? { ...p, status: 'em_jogo' } : p));
-  assert.throws(() => C.limpar(ps, 'sf1'), /forçar/);
-  const corr = ps.map(p => (p.id === 'sf1' ? { ...p, vencedor: 'b' } : p));
-  assert.throws(() => C.avancar(corr, 'sf1'), /forçar/);
-  const f = C.avancar(corr, 'sf1', { forcar: true }).find(p => p.id === 'final');
+  ps = C.avancar(ps.map(p => (p.id === 'SF1' ? { ...p, vencedor: 'a' } : p)), 'SF1');
+  ps = ps.map(p => (p.id === 'F' ? { ...p, status: 'em_jogo' } : p));
+  assert.throws(() => C.limpar(ps, 'SF1'), /forçar/);
+  const corr = ps.map(p => (p.id === 'SF1' ? { ...p, vencedor: 'b' } : p));
+  assert.throws(() => C.avancar(corr, 'SF1'), /forçar/);
+  const f = C.avancar(corr, 'SF1', { forcar: true }).find(p => p.id === 'F');
   assert.deepEqual([f.team_a, f.alerta_origem], ['b2', true]);
-  assert.equal(C.limpar(ps, 'sf1', { forcar: true }).find(p => p.id === 'final').alerta_origem, true);
+  assert.equal(C.limpar(ps, 'SF1', { forcar: true }).find(p => p.id === 'F').alerta_origem, true);
 });
 
 test('campeonato completo de 6 a 32 duplas: grupos, classificação, chave e campeão', () => {
@@ -265,7 +265,7 @@ test('campeonato completo de 6 a 32 duplas: grupos, classificação, chave e cam
       assert.ok(atual.team_a && atual.team_b, `n=${n}: ${p.id} sem dupla`);
       ps = C.avancar(ps, p.id);
     }
-    const final = ps.find(p => p.id === 'final');
+    const final = ps.find(p => p.id === 'F');
     assert.ok(final.team_a && final.team_b && final.team_a !== final.team_b);
   }
 });
@@ -307,7 +307,7 @@ test('proximoApto: suspensa primeiro, atleta em duas categorias, ausência e des
   const presentes = ['fulano', 'x1', 'x2', 'x3', 'y1', 'y2', 'y3', 'z1', 'z2', 'z3', 'beltrano', 'w1', 'w2', 'w3', 'w4'];
   // Fulano joga a categoria Mista (m1) e está na Q3 pela categoria Masculina.
   const emQuadra = { fulano: 'Q3' };
-  const descanso = { agora, ultimoFim: { beltrano: agora - 7 * 60000 }, minimoMin: 15 };
+  const descanso = { agora, ultimoFim: { beltrano: agora - 7 * 60000 }, descanso_min: 15 };
   const r = C.proximoApto(fila, presentes, emQuadra, descanso);
   assert.equal(r.sugestao.id, 'm4');
   const motivo = id => r.lista.find(l => l.partida.id === id).motivos;
@@ -371,4 +371,64 @@ test('parseListaInscritos: telefones opcionais, linhas inválidas e duplicadas',
   ]);
   assert.deepEqual(r.invalidas.map(x => x.linha), [4, 5, 7, 9]);
   assert.deepEqual(r.duplicadas.map(x => [x.linha, x.motivo]), [[6, 'Ana Souza já está na linha 1']]);
+});
+
+// ── Formato do banco (docs/ARENA.md) ──────────────────────
+test('classificarGrupo aceita partidas do banco: team_a/team_b, vencedor uuid, WO preset B e sorteio {ordem}', () => {
+  const ps = [
+    { team_a: 'u1', team_b: 'u2', status: 'encerrada', games_a: 6, games_b: 3, vencedor: 'u1' },
+    { team_a: 'u2', team_b: 'u3', status: 'wo', wo: true, vencedor: 'u2' },
+    { team_a: 'u3', team_b: 'u1', status: 'encerrada', games_a: 6, games_b: 4, vencedor: 'u3' },
+    { team_a: 'u1', team_b: 'u4', status: 'anulada', wo: true, vencedor: null },
+  ];
+  const r = C.classificarGrupo(['u1', 'u2', 'u3', 'u4'], ps, { preset: 'B' });
+  const u2 = r.tabela.find(l => l.team === 'u2');
+  assert.deepEqual([u2.vitorias, u2.gp], [1, 3 + 4]); // WO no preset B = 4x0
+  assert.equal(r.tabela.find(l => l.team === 'u4').jogos, 0);
+  const emp = [jogo('A', 'B', 6, 3), jogo('B', 'C', 6, 3), jogo('C', 'A', 6, 3)];
+  assert.deepEqual(ordem(C.classificarGrupo(['A', 'B', 'C'], emp, { sorteio: { ordem: ['B', 'C', 'A'] } })), ['B', 'C', 'A']);
+});
+
+test('tam_grupo 3 ("grupos de 3") e capacidade com regras do contrato', () => {
+  assert.deepEqual(C.tamanhosGrupos(16, 3), [4, 3, 3, 3, 3]);
+  assert.deepEqual(C.tamanhosGrupos(9, 3), [3, 3, 3]);
+  assert.equal(C.montarGrupos(duplas(16), { semente: 1, tam_grupo: 3 }).grupos.length, 5);
+  const regras = { dias: [{ data: '2026-12-11', inicio: '08:00', fim: '20:00', pausas: [{ inicio: '12:00', fim: '13:00' }] }],
+    duracao_media_min: 35, intervalo_min: 5 };
+  const r = C.capacidade({ ...regras, quadras: 4, categorias: [{ nome: 'X', duplas: 16, tam_grupo: 3 }] });
+  assert.deepEqual([r.porCategoria[0].jogosGrupo, r.porCategoria[0].jogosMata, r.capacidade], [18, 7, 66]);
+});
+
+test('payloadSorteio no formato do category_publish_draw e slots do category_seed_knockout', () => {
+  const montagem = C.montarGrupos(duplas(8), { semente: 42 });
+  const chave = C.gerarChave(montagem.grupos.map(g => g.nome));
+  const p = C.payloadSorteio(montagem, chave, { categoriaIndice: 1 });
+  assert.equal(p.semente, '42');
+  assert.deepEqual(p.grupos.map(g => [g.nome, g.ordem, g.duplas.length]), [['A', 1, 4], ['B', 2, 4]]);
+  const grupo = p.partidas.filter(x => x.fase === 'grupo');
+  assert.equal(grupo.length, 12);
+  assert.deepEqual(grupo[0], { ref: 'A1', fase: 'grupo', grupo: 'A', rodada: 1, slot: 1,
+    team_a: montagem.grupos[0].duplas[0], team_b: montagem.grupos[0].duplas[3], prioridade: 1001 });
+  const sf1 = p.partidas.find(x => x.ref === 'SF1');
+  assert.deepEqual([sf1.origem_a, sf1.origem_b, sf1.next_ref, sf1.next_slot], [{ grupo: 'A', pos: 1 }, { grupo: 'B', pos: 2 }, 'F', 'a']);
+  assert.deepEqual(p.partidas.find(x => x.ref === 'F').origem_a, { match_ref: 'SF1' });
+  assert.ok(!('next_ref' in p.partidas.find(x => x.ref === 'F')));
+  // grupos intercalados na fila e mata-mata depois de todos os jogos de grupo
+  const prio = grupo.map(x => x.prioridade);
+  assert.equal(new Set(prio).size, prio.length);
+  assert.ok(Math.min(...p.partidas.filter(x => x.fase !== 'grupo').map(x => x.prioridade)) > Math.max(...prio));
+  // como o banco devolve depois de publicar: uuid no id, {match: uuid} na origem, rodada 1 em cada fase
+  const banco = [
+    { id: 'm-sf1', fase: 'sf', rodada: 1, origem_a: { grupo: 'A', pos: 1 }, origem_b: { grupo: 'B', pos: 2 }, next_match_id: 'm-f', next_slot: 'a' },
+    { id: 'm-sf2', fase: 'sf', rodada: 1, origem_a: { grupo: 'B', pos: 1 }, origem_b: { grupo: 'A', pos: 2 }, next_match_id: 'm-f', next_slot: 'b' },
+    { id: 'm-f', fase: 'final', rodada: 1, origem_a: { match: 'm-sf1' }, origem_b: { match: 'm-sf2' } },
+  ];
+  const cheia = C.preencherChave(banco, { A: [{ team: 'a1' }, { team: 'a2' }], B: [{ team: 'b1' }, { team: 'b2' }] });
+  assert.deepEqual(C.slotsMataMata(cheia), [
+    { match: 'm-sf1', slot: 'a', team: 'a1' }, { match: 'm-sf1', slot: 'b', team: 'b2' },
+    { match: 'm-sf2', slot: 'a', team: 'b1' }, { match: 'm-sf2', slot: 'b', team: 'a2' },
+  ]);
+  // vencedor como uuid (coluna matches.vencedor)
+  const fim = C.avancar(cheia.map(x => (x.id === 'm-sf2' ? { ...x, vencedor: 'a2' } : x)), 'm-sf2');
+  assert.equal(fim.find(x => x.id === 'm-f').team_b, 'a2');
 });
