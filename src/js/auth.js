@@ -721,7 +721,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initLandingObserver();
   initStickyCtaObserver();
   const specialRoute = (typeof isAdminRoute === 'function' && isAdminRoute()) ||
-    (typeof legalRouteKey === 'function' && legalRouteKey()) || isResetPasswordRoute();
+    (typeof legalRouteKey === 'function' && legalRouteKey()) || isResetPasswordRoute() ||
+    (typeof arenaRoute === 'function' && arenaRoute());
   if (!specialRoute && typeof offerResumeTournament === 'function') setTimeout(offerResumeTournament, 600);
   // Copia logo do screen-home para a landing (evita duplicar base64)
   const appLogo = document.querySelector('#screen-home .topbar-logo');
