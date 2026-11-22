@@ -87,7 +87,7 @@ test('torneio ativo: terminado e não salvo nunca expira; em andamento expira em
 });
 
 // Supabase falso: registra inserts/updates em `calls`.
-function fakeSupa(calls, { failInsert = false, noClientUid = false, updateRows = [{ id: 't1' }] } = {}) {
+function fakeSupa(calls, { failInsert = false, noClientUid = false, limitError = false, updateRows = [{ id: 't1' }] } = {}) {
   const chain = result => {
     const p = Promise.resolve(result);
     const c = { select: () => c, eq: () => c, order: () => c, limit: () => c, single: () => p, then: (...a) => p.then(...a) };
@@ -99,6 +99,7 @@ function fakeSupa(calls, { failInsert = false, noClientUid = false, updateRows =
       upsert: (row, opts) => {
         calls.push(['upsert', row, opts]);
         if (noClientUid) return chain({ error: { code: 'PGRST204', message: "Could not find the 'client_uid' column" } });
+        if (limitError) return chain({ error: { code: 'P0001', hint: 'free_limit_reached', message: 'Limite do plano Free atingido' } });
         return chain(failInsert ? { error: { code: '500', message: 'falhou' } } : { data: { id: 't1' } });
       },
       update: row => { calls.push(['update', row]); return chain({ data: updateRows }); },
@@ -176,7 +177,7 @@ test('erro ao salvar: continua pendente e registra o erro', async () => {
   assert.equal(get('PENDING_SAVE_REASON'), 'error');
   assert.ok(get('pendingTournament()'));
   assert.equal(logged[0][0], '[bt8] tournament_save_failed');
-  assert.equal(logged[0][1].stage, 'insert');
+  assert.equal(logged[0][1].stage, 'upsert');
 });
 
 const silenciar = async fn => {
@@ -225,7 +226,63 @@ test('UPDATE sem linhas (RLS ou apagado) não vira insert de cópia', async () =
   ctx.SUPA = fakeSupa(calls, { updateRows: [] });
   assert.equal(await silenciar(() => get('saveTournament()')), false);
   assert.deepEqual(calls.map(c => c[0]), ['update']);
-  assert.equal(get('PENDING_SAVE_REASON'), 'error');
+  assert.equal(get('PENDING_SAVE_REASON'), 'missing');
+});
+
+test('torneio não encontrado: sem novas tentativas automáticas até "Salvar como novo"', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  ctx.APP._savedTournamentId = 'sumiu';
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls, { updateRows: [] });
+  await silenciar(() => get('saveTournament()'));
+  assert.equal(get('readActiveTournament()').state._saveMissing, true);
+  await get('savePendingTournament()'); // online / visibilitychange / reabrir o app
+  assert.deepEqual(calls.map(c => c[0]), ['update'], 'não tentou de novo sozinho');
+  assert.equal(get('PENDING_SAVE_REASON'), 'missing');
+
+  await get('saveMissingAsNew()');
+  await get('SAVE_IN_FLIGHT');
+  assert.deepEqual(calls.map(c => c[0]), ['update', 'upsert']);
+  assert.equal(get('pendingTournament()'), null);
+  assert.equal(get('readActiveTournament()').state._saveMissing, false);
+});
+
+test('resposta do upsert perdida no limite do Free: nova tentativa salva sem mostrar limite', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  // O front contaria 3/3 (o próprio torneio já está no banco), mas o upsert vem antes.
+  ctx.validateFreeSaveLimit = async () => ({ allowed: false, used: 3, limit: 3 });
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls);
+  assert.equal(await get('saveTournament()'), true);
+  assert.deepEqual(calls.map(c => c[0]), ['upsert']);
+  assert.equal(get('PENDING_SAVE_REASON'), null);
+});
+
+test('limite recusado pelo banco no upsert aparece como limite, não como erro', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls, { limitError: true });
+  let modal = 0;
+  ctx.showFreeLimitReached = () => { modal++; };
+  assert.equal(await get('saveTournament()'), false);
+  assert.equal(get('PENDING_SAVE_REASON'), 'limit');
+  assert.equal(modal, 1);
+});
+
+test('salvamento falhou com usuário logado: torneio de visitante passa a ser dele e sai no logout', async () => {
+  const { ctx, get } = torneioTerminado();
+  get('saveActiveTournament()'); // visitante: dono nulo
+  get('APP.matches = []; APP.tourneyUid = null'); // app reaberto, só o aparelho tem o torneio
+  assert.equal(get('readActiveTournament()').state.ownerId ?? null, null);
+  ctx.SUPA_USER = { id: 'uA' };
+  ctx.SUPA = fakeSupa([], { failInsert: true });
+  await silenciar(() => get('savePendingTournament()'));
+  assert.equal(get('readActiveTournament()').state.ownerId, 'uA');
+  get("forgetUserTournament('uA', { ask: false })");
+  assert.equal(get('readActiveTournament()'), null);
 });
 
 test('várias abas: snapshot já salvo por outra aba mantém o id e a correção vira UPDATE', async () => {
