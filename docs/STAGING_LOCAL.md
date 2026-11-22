@@ -56,7 +56,7 @@ Use sempre que mudar uma migracao.
 ## Como testar uma migracao nova
 
 1. Criar o arquivo em `supabase/migrations/` com prefixo numerico maior que o ultimo (ex.: `002_minha_mudanca.sql`).
-2. `npm run db:reset` e conferir se aplica sem erro.
+2. `npm run db:reset` e conferir se aplica sem erro. Testes SQL ficam em `supabase/tests/` e rodam com ROLLBACK (nao deixam dados): `docker exec -i supabase_db_bt8 psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f - < supabase/tests/002_seguranca_limites_test.sql`.
 3. `npm run dev:local` e testar o fluxo no app.
 4. So depois aplicar o mesmo SQL no Supabase de producao (SQL Editor), com backup antes.
 
