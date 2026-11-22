@@ -1,4 +1,4 @@
-const { stripeRequest, isResourceMissing, subscriptionPeriodEnd } = require('./lib/stripe');
+const { stripeRequest, isResourceMissing, isLiveKey, subscriptionPeriodEnd, ENTITLED_ROW_STATUSES } = require('./lib/stripe');
 
 const json = (statusCode, body) => ({
   statusCode,
@@ -87,8 +87,28 @@ exports.handler = async (event) => {
       });
     } catch (e) {
       if (!isResourceMissing(e)) throw e;
-      // F0-08: a test-mode subscription left over after the switch to live mode. It bills
-      // nothing and must not keep giving Pro.
+      // Only close it locally when the row was written in the same mode as this key; a
+      // mismatch (or an old row without livemode) means wrong key or leftover test data,
+      // which docs/STRIPE_PRODUCAO.md cleans with SQL.
+      if (current.metadata?.livemode !== isLiveKey(stripeKey)) {
+        console.error('manage-subscription: subscription missing and mode does not match', {
+          subscription_id: current.stripe_subscription_id,
+          row_livemode: current.metadata?.livemode ?? null,
+          key_livemode: isLiveKey(stripeKey)
+        });
+        await supabaseFetch(supabaseUrl, serviceKey, 'rest/v1/app_events', {
+          method: 'POST',
+          headers: { prefer: 'return=minimal' },
+          body: JSON.stringify({
+            user_id: userId,
+            event_type: 'subscription_cancel_mode_mismatch',
+            metadata: { subscription_id: current.stripe_subscription_id, row_livemode: current.metadata?.livemode ?? null }
+          })
+        }).catch(() => {});
+        return json(409, { error: 'Não foi possível cancelar agora: a assinatura não foi encontrada no Stripe. Fale com o suporte.' });
+      }
+      // F0-08: the subscription really no longer exists in Stripe. It bills nothing and must
+      // not keep giving Pro.
       await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/subscriptions?id=eq.${current.id}`, {
         method: 'PATCH',
         headers: { prefer: 'return=minimal' },
@@ -99,10 +119,22 @@ exports.handler = async (event) => {
           updated_at: new Date().toISOString()
         })
       });
+      // Another paid row (e.g. a 30-day pass) keeps its Pro.
+      const others = await supabaseFetch(
+        supabaseUrl,
+        serviceKey,
+        `rest/v1/subscriptions?select=status,current_period_end&user_id=eq.${encodeURIComponent(userId)}&id=neq.${current.id}&status=in.(${ENTITLED_ROW_STATUSES.join(',')})&current_period_end=gt.${encodeURIComponent(new Date().toISOString())}&order=current_period_end.desc&limit=1`
+      );
+      const keep = others?.[0];
       await supabaseFetch(supabaseUrl, serviceKey, `rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
         method: 'PATCH',
         headers: { prefer: 'return=minimal' },
-        body: JSON.stringify({ plan: 'free', pro_until: null, subscription_status: 'canceled', updated_at: new Date().toISOString() })
+        body: JSON.stringify({
+          plan: keep ? 'pro' : 'free',
+          pro_until: keep ? keep.current_period_end : null,
+          subscription_status: keep ? keep.status : 'canceled',
+          updated_at: new Date().toISOString()
+        })
       });
       return json(404, { error: 'Essa assinatura não existe mais no Stripe e foi encerrada. Se você foi cobrado, fale com o suporte.' });
     }

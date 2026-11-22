@@ -7,18 +7,36 @@ const DAY = 24 * 60 * 60 * 1000;
 const now = new Date('2026-11-22T12:00:00Z');
 
 test('Pro 30 dias soma a partir do vencimento atual quando ainda está valendo', () => {
-  assert.equal(lib.extendOneTimeProUntil('2026-12-01T12:00:00Z', now), '2026-12-31T12:00:00.000Z');
+  assert.deepEqual(lib.oneTimeGrant('2026-12-01T12:00:00Z', now), { start: '2026-12-01T12:00:00.000Z', end: '2026-12-31T12:00:00.000Z' });
 });
 
 test('Pro 30 dias conta a partir de agora quando não há Pro ou já venceu', () => {
-  assert.equal(lib.extendOneTimeProUntil(null, now), new Date(now.getTime() + 30 * DAY).toISOString());
-  assert.equal(lib.extendOneTimeProUntil('2026-01-01T00:00:00Z', now), new Date(now.getTime() + 30 * DAY).toISOString());
+  const expected = { start: now.toISOString(), end: new Date(now.getTime() + 30 * DAY).toISOString() };
+  assert.deepEqual(lib.oneTimeGrant(null, now), expected);
+  assert.deepEqual(lib.oneTimeGrant('2026-01-01T00:00:00Z', now), expected);
 });
 
-test('reembolso do 30 dias tira só os 30 dias daquela compra', () => {
-  assert.equal(lib.revokeOneTimeProUntil('2026-12-31T12:00:00Z', now), '2026-12-01T12:00:00.000Z');
-  assert.equal(lib.revokeOneTimeProUntil('2026-12-10T12:00:00Z', now), null);
-  assert.equal(lib.revokeOneTimeProUntil(null, now), null);
+test('reembolso tira só o que sobra daquele passe: max(0, fim - max(início, agora))', () => {
+  // Passe ainda não começou (empilhado depois de outro): tira os 30 dias inteiros.
+  const future = { start: '2026-12-01T12:00:00Z', end: '2026-12-31T12:00:00Z' };
+  assert.equal(lib.revokeOneTimeProUntil('2026-12-31T12:00:00Z', future, now), '2026-12-01T12:00:00.000Z');
+  // Passe em uso há 20 dias: tira só os 10 que faltam.
+  const running = { start: new Date(now.getTime() - 20 * DAY).toISOString(), end: new Date(now.getTime() + 10 * DAY).toISOString() };
+  assert.equal(lib.revokeOneTimeProUntil(new Date(now.getTime() + 40 * DAY).toISOString(), running, now), new Date(now.getTime() + 30 * DAY).toISOString());
+  // Passe antigo, já vencido: não tira nada.
+  const old = { start: '2026-01-01T00:00:00Z', end: '2026-01-31T00:00:00Z' };
+  assert.equal(lib.unusedGrantMs(old, now), 0);
+  assert.equal(lib.revokeOneTimeProUntil('2026-12-10T12:00:00Z', old, now), '2026-12-10T12:00:00.000Z');
+  // Registro antigo sem intervalo: conta 30 dias.
+  assert.equal(lib.revokeOneTimeProUntil('2026-12-10T12:00:00Z', null, now), null);
+  assert.equal(lib.revokeOneTimeProUntil(null, running, now), null);
+});
+
+test('past_due mantém Pro só por uma carência curta depois do início do período', () => {
+  const start = Math.floor(now.getTime() / 1000);
+  const sub = { status: 'past_due', current_period_start: start, current_period_end: start + 30 * 86400 };
+  assert.equal(lib.subscriptionProUntil(sub), new Date((start + lib.PAST_DUE_GRACE_DAYS * 86400) * 1000).toISOString());
+  assert.equal(lib.subscriptionProUntil({ ...sub, status: 'active' }), new Date((start + 30 * 86400) * 1000).toISOString());
 });
 
 test('só libera Pro com payment_status paid ou no_payment_required', () => {
@@ -70,11 +88,15 @@ const signedEvent = (payload) => {
 // Minimal fake: profiles/subscriptions/app_events tables plus canned Stripe objects.
 const fakeBackend = ({ profiles = [], subscriptions = [], events = [], stripe = {} }) => {
   const calls = [];
+  let seq = 0;
   const db = { profiles, subscriptions, app_events: events };
   const filtersOf = (query) => [...query.entries()].filter(([k]) => !['select', 'order', 'limit'].includes(k));
   const matches = (row, filters) => filters.every(([k, v]) => {
     const value = k.includes('->>') ? row[k.split('->>')[0]]?.[k.split('->>')[1]] : row[k];
     if (v.startsWith('eq.')) return String(value) === v.slice(3);
+    if (v.startsWith('neq.')) return String(value) !== v.slice(4);
+    if (v.startsWith('in.(')) return v.slice(4, -1).split(',').includes(String(value));
+    if (v.startsWith('gt.')) return value != null && new Date(value) > new Date(v.slice(3));
     if (v === 'not.is.null') return value != null;
     return true;
   });
@@ -91,8 +113,27 @@ const fakeBackend = ({ profiles = [], subscriptions = [], events = [], stripe = 
     const rows = db[table];
     const filters = filtersOf(u.searchParams);
     if (method === 'GET') return reply(rows.filter(r => matches(r, filters)));
-    if (method === 'POST') { rows.push({ id: `${table}_${rows.length + 1}`, ...JSON.parse(init.body) }); return reply(null, 201); }
-    if (method === 'PATCH') { rows.filter(r => matches(r, filters)).forEach(r => Object.assign(r, JSON.parse(init.body))); return reply(null, 204); }
+    if (method === 'POST') {
+      const row = { id: `${table}_${++seq}`, ...JSON.parse(init.body) };
+      // Same unique index the docs ask for: one stripe_event_processed per event_id.
+      if (table === 'app_events' && row.event_type === 'stripe_event_processed'
+        && rows.some(e => e.event_type === row.event_type && e.metadata?.event_id === row.metadata?.event_id)) {
+        return reply({ code: '23505', message: 'duplicate key value violates unique constraint' }, 409);
+      }
+      rows.push(row);
+      return reply([row], 201);
+    }
+    if (method === 'PATCH') {
+      const hit = rows.filter(r => matches(r, filters));
+      hit.forEach(r => Object.assign(r, JSON.parse(init.body)));
+      return reply(hit, 200);
+    }
+    if (method === 'DELETE') {
+      const keep = rows.filter(r => !matches(r, filters));
+      rows.length = 0;
+      rows.push(...keep);
+      return reply(null, 204);
+    }
     throw new Error(`unexpected ${method} ${url}`);
   };
   return { db, calls };
@@ -304,4 +345,154 @@ test('checkout: só cartão, pt-BR, aceite dos termos e cliente recriado se o de
   assert.equal(params.get('consent_collection[terms_of_service]'), 'required');
   assert.match(params.get('custom_text[submit][message]'), /7 dias/);
   assert.ok(params.get('success_url').startsWith('https://bt8.com.br/'));
+});
+
+// ---- revisão do PR #9 ----
+
+const iso = (ms) => new Date(ms).toISOString();
+
+test('cenário 1: deleted do mensal com cancelamento agendado não apaga o 30 dias comprado depois', async () => {
+  const D = Date.now() + 5 * DAY;
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(D + 30 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_old', user_id: 'u1', plan_type: 'recurring', status: 'cancel_at_period_end', stripe_subscription_id: 'sub_old', current_period_end: iso(D), metadata: {} },
+      { id: 's_pass', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_1', current_period_end: iso(D + 30 * DAY), metadata: { granted_start: iso(D), granted_end: iso(D + 30 * DAY) } }
+    ]
+  });
+  await runWebhook({ id: 'evt_del', type: 'customer.subscription.deleted', data: { object: { id: 'sub_old', customer: 'cus_1', status: 'canceled', current_period_end: Math.floor(D / 1000) } } });
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.equal(new Date(db.profiles[0].pro_until).getTime(), D + 30 * DAY);
+  assert.equal(db.subscriptions[0].status, 'canceled');
+});
+
+test('cenário 1: deleted da assinatura antiga não derruba o mensal novo', async () => {
+  const E2 = Date.now() + 25 * DAY;
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(E2), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_old', user_id: 'u1', plan_type: 'recurring', status: 'cancel_at_period_end', stripe_subscription_id: 'sub_old', current_period_end: iso(Date.now() + DAY), metadata: {} },
+      { id: 's_new', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_new', current_period_end: iso(E2), metadata: {} }
+    ]
+  });
+  await runWebhook({ id: 'evt_del2', type: 'customer.subscription.deleted', data: { object: { id: 'sub_old', customer: 'cus_1', status: 'canceled' } } });
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.equal(new Date(db.profiles[0].pro_until).getTime(), E2);
+  assert.equal(db.profiles[0].subscription_status, 'active');
+});
+
+test('cenário 1: updated da assinatura antiga não encurta o pro_until garantido por outro registro', async () => {
+  const shortEnd = Math.floor((Date.now() + 2 * DAY) / 1000);
+  const passEnd = Date.now() + 20 * DAY;
+  const old = { id: 'sub_old', customer: 'cus_1', status: 'active', cancel_at_period_end: true, current_period_end: shortEnd, items: { data: [] } };
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(passEnd), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_old', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_old', current_period_end: iso(shortEnd * 1000), metadata: {} },
+      { id: 's_pass', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', current_period_end: iso(passEnd), metadata: {} }
+    ],
+    stripe: { 'GET subscriptions/sub_old': old }
+  });
+  await runWebhook({ id: 'evt_upd', type: 'customer.subscription.updated', data: { object: old } });
+  assert.equal(new Date(db.profiles[0].pro_until).getTime(), passEnd);
+  assert.equal(db.subscriptions[0].status, 'cancel_at_period_end');
+});
+
+test('cenário 1: sem nenhum outro direito, deleted tira o Pro', async () => {
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(Date.now() + DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [{ id: 's_old', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_old', current_period_end: iso(Date.now() + DAY), metadata: {} }]
+  });
+  await runWebhook({ id: 'evt_del3', type: 'customer.subscription.deleted', data: { object: { id: 'sub_old', customer: 'cus_1', status: 'canceled' } } });
+  assert.equal(db.profiles[0].plan, 'free');
+  assert.equal(db.profiles[0].pro_until, null);
+});
+
+test('cenário 2: duas entregas simultâneas do mesmo evento somam 30 dias uma vez só', async () => {
+  const { db } = fakeBackend({ profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }] });
+  const payload = { id: 'evt_race', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
+  const [a, b] = await Promise.all([runWebhook(payload), runWebhook(payload)]);
+  assert.deepEqual([a.status, b.status], [200, 200]);
+  assert.equal([a.body, b.body].filter(r => r.duplicate === 'event_id').length, 1);
+  const until = new Date(db.profiles[0].pro_until).getTime();
+  assert.ok(Math.abs(until - (Date.now() + 30 * DAY)) < 60 * 1000, 'somou mais de 30 dias');
+  assert.equal(db.app_events.filter(e => e.event_type === 'stripe_event_processed').length, 1);
+});
+
+test('cenário 2: se o processamento falha, a reserva é apagada e o reenvio processa', async () => {
+  const { db } = fakeBackend({ profiles: [] });
+  const payload = { id: 'evt_fail', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
+  const first = await runWebhook(payload);
+  assert.equal(first.status, 500);
+  assert.equal(db.app_events.filter(e => e.event_type === 'stripe_event_processed').length, 0);
+  db.profiles.push({ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' });
+  const retry = await runWebhook(payload);
+  assert.equal(retry.status, 200);
+  assert.equal(db.profiles[0].plan, 'pro');
+});
+
+test('cenário 3: reembolso do passe em uso tira só o que falta dele e puxa o passe seguinte', async () => {
+  const t = Date.now();
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(t + 40 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_a', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_a', current_period_end: iso(t + 10 * DAY), metadata: { granted_start: iso(t - 20 * DAY), granted_end: iso(t + 10 * DAY) } },
+      { id: 's_b', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_b', current_period_end: iso(t + 40 * DAY), metadata: { granted_start: iso(t + 10 * DAY), granted_end: iso(t + 40 * DAY) } }
+    ]
+  });
+  await runWebhook({ id: 'evt_ra', type: 'charge.refunded', data: { object: { id: 'ch_a', customer: 'cus_1', payment_intent: 'pi_a', refunded: true } } });
+  const until = new Date(db.profiles[0].pro_until).getTime();
+  assert.ok(Math.abs(until - (t + 30 * DAY)) < 60 * 1000, `pro_until ${db.profiles[0].pro_until}`);
+  assert.ok(Math.abs(new Date(db.subscriptions[1].current_period_end).getTime() - (t + 30 * DAY)) < 60 * 1000);
+  assert.equal(db.subscriptions[0].status, 'refunded');
+});
+
+test('cenário 3: reembolso de um passe antigo, já vencido, não mexe no passe atual', async () => {
+  const t = Date.now();
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(t + 25 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_old', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_old', current_period_end: iso(t - 40 * DAY), metadata: { granted_start: iso(t - 70 * DAY), granted_end: iso(t - 40 * DAY) } },
+      { id: 's_now', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_now', current_period_end: iso(t + 25 * DAY), metadata: { granted_start: iso(t - 5 * DAY), granted_end: iso(t + 25 * DAY) } }
+    ]
+  });
+  await runWebhook({ id: 'evt_rold', type: 'charge.refunded', data: { object: { id: 'ch_old', customer: 'cus_1', payment_intent: 'pi_old', refunded: true } } });
+  assert.equal(new Date(db.profiles[0].pro_until).getTime(), t + 25 * DAY);
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.equal(db.subscriptions[1].current_period_end, iso(t + 25 * DAY));
+});
+
+test('cliente desconhecido: acha o perfil pelo metadata.user_id da assinatura', async () => {
+  const end = Math.floor(Date.now() / 1000) + 10 * 86400;
+  const sub = { id: 'sub_9', customer: 'cus_unknown', status: 'active', current_period_end: end, metadata: { user_id: 'u1' }, items: { data: [] } };
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: null }],
+    stripe: { 'GET subscriptions/sub_9': sub }
+  });
+  const res = await runWebhook({ id: 'evt_meta', type: 'customer.subscription.updated', data: { object: sub } });
+  assert.equal(res.status, 200);
+  assert.equal(db.profiles[0].plan, 'pro');
+});
+
+test('cliente desconhecido: acha o perfil pelo user_id gravado no cliente do Stripe', async () => {
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: iso(Date.now() + 40 * DAY), stripe_customer_id: 'cus_other' }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_1', metadata: {} }],
+    stripe: { 'GET customers/cus_1': { id: 'cus_1', metadata: { user_id: 'u1' } } }
+  });
+  await runWebhook({ id: 'evt_cus', type: 'charge.refunded', data: { object: { id: 'ch_1', customer: 'cus_1', payment_intent: 'pi_1', refunded: true } } });
+  assert.equal(db.subscriptions[0].status, 'refunded');
+});
+
+test('manage-subscription: assinatura sumida com modo diferente não é encerrada localmente', async () => {
+  const backend = withAuth(fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(Date.now() + 10 * DAY) }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_test', metadata: { livemode: false } }]
+  }));
+  Object.assign(process.env, { BT8_SUPABASE_URL: 'http://supabase.test', BT8_SUPABASE_SERVICE_ROLE_KEY: 'service-test', BT8_STRIPE_SECRET_KEY: ['sk', 'live', 'testonly'].join('_') });
+  const { handler } = require('../netlify/functions/manage-subscription');
+  const res = await handler({ httpMethod: 'POST', headers: { authorization: 'Bearer user-jwt' }, body: JSON.stringify({ action: 'cancel_recurring' }) });
+  assert.equal(res.statusCode, 409);
+  assert.equal(backend.db.subscriptions[0].status, 'active');
+  assert.equal(backend.db.profiles[0].plan, 'pro');
 });

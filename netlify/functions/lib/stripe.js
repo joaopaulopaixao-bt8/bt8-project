@@ -35,6 +35,7 @@ const stripeRequest = async (secretKey, path, options = {}) => {
 
 // A test-mode customer/subscription id does not exist in live mode (F0-08).
 const isResourceMissing = (error) => error?.code === 'resource_missing';
+const isLiveKey = (secretKey) => /^(sk|rk)_live_/.test(String(secretKey || ''));
 
 // F0-03: only these payment states mean the money is in.
 const isCheckoutPaid = (session) => ['paid', 'no_payment_required'].includes(session?.payment_status);
@@ -48,17 +49,35 @@ const toTime = (value) => {
   return Number.isFinite(time) ? time : null;
 };
 
-// F0-04: a 30-day pass stacks on top of whatever Pro time is left.
-const extendOneTimeProUntil = (currentProUntil, now = new Date()) => {
-  const base = Math.max(toTime(currentProUntil) || 0, now.getTime());
-  return new Date(base + ONE_TIME_DAYS * DAY_MS).toISOString();
+const laterIso = (...values) => {
+  const times = values.map(toTime).filter(Boolean);
+  return times.length ? new Date(Math.max(...times)).toISOString() : null;
 };
 
-// F0-06: refunding one 30-day pass takes back those 30 days only; null means no Pro left.
-const revokeOneTimeProUntil = (currentProUntil, now = new Date()) => {
+// F0-04: a 30-day pass stacks on top of whatever Pro time is left. The interval is kept
+// on the subscription row so a refund can take back exactly what this pass added.
+const oneTimeGrant = (currentProUntil, now = new Date()) => {
+  const start = Math.max(toTime(currentProUntil) || 0, now.getTime());
+  return {
+    start: new Date(start).toISOString(),
+    end: new Date(start + ONE_TIME_DAYS * DAY_MS).toISOString()
+  };
+};
+
+// Days of this pass not used yet: max(0, end - max(start, now)). Rows written before the
+// interval was stored count as a full 30 days.
+const unusedGrantMs = (grant, now = new Date()) => {
+  const start = toTime(grant?.start);
+  const end = toTime(grant?.end);
+  if (!start || !end) return ONE_TIME_DAYS * DAY_MS;
+  return Math.max(0, end - Math.max(start, now.getTime()));
+};
+
+// F0-06: refunding one 30-day pass removes only what is left of that pass; null = no Pro left.
+const revokeOneTimeProUntil = (currentProUntil, grant, now = new Date()) => {
   const current = toTime(currentProUntil);
   if (!current) return null;
-  const next = current - ONE_TIME_DAYS * DAY_MS;
+  const next = current - unusedGrantMs(grant, now);
   return next > now.getTime() ? new Date(next).toISOString() : null;
 };
 
@@ -68,6 +87,20 @@ const subscriptionPeriodEnd = (subscription) => {
   if (!value) throw new Error(`Subscription ${subscription?.id || '?'} has no current_period_end.`);
   return new Date(value * 1000).toISOString();
 };
+
+// A renewal that failed leaves the subscription past_due with the new period already
+// open; keep Pro only for a short grace after the period started, not the whole month.
+const PAST_DUE_GRACE_DAYS = 3;
+const subscriptionProUntil = (subscription) => {
+  const end = subscriptionPeriodEnd(subscription);
+  const start = subscription?.current_period_start || subscription?.items?.data?.[0]?.current_period_start;
+  if (subscription?.status !== 'past_due' || !start) return end;
+  const graceEnd = start * 1000 + PAST_DUE_GRACE_DAYS * DAY_MS;
+  return new Date(Math.min(toTime(end), graceEnd)).toISOString();
+};
+
+// Row statuses that still give Pro until their current_period_end.
+const ENTITLED_ROW_STATUSES = ['active', 'trialing', 'past_due', 'cancel_at_period_end', 'paid'];
 
 // Blocks a second monthly plan and a 30-day pass on top of a live monthly plan (F0-04).
 const isRecurringActive = (row) => !!(
@@ -102,11 +135,17 @@ module.exports = {
   STRIPE_API_VERSION,
   stripeRequest,
   isResourceMissing,
+  isLiveKey,
   isCheckoutPaid,
   planForSubscriptionStatus,
-  extendOneTimeProUntil,
+  laterIso,
+  oneTimeGrant,
+  unusedGrantMs,
   revokeOneTimeProUntil,
   subscriptionPeriodEnd,
+  subscriptionProUntil,
+  ENTITLED_ROW_STATUSES,
+  PAST_DUE_GRACE_DAYS,
   isRecurringActive,
   allowedOrigins,
   resolveOrigin

@@ -4,9 +4,12 @@ const {
   isResourceMissing,
   isCheckoutPaid,
   planForSubscriptionStatus,
-  extendOneTimeProUntil,
+  laterIso,
+  oneTimeGrant,
+  unusedGrantMs,
   revokeOneTimeProUntil,
-  subscriptionPeriodEnd
+  subscriptionProUntil,
+  ENTITLED_ROW_STATUSES
 } = require('./lib/stripe');
 
 // Keep docs/STRIPE_PRODUCAO.md in sync: the Stripe endpoint must send exactly these.
@@ -73,8 +76,10 @@ const supabaseFetch = async (url, key, path, options = {}) => {
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
-    const message = data?.message || data?.hint || text || `Supabase ${res.status}`;
-    throw new Error(message);
+    const error = new Error(data?.message || data?.hint || text || `Supabase ${res.status}`);
+    error.status = res.status;
+    error.code = data?.code;
+    throw error;
   }
   return data;
 };
@@ -93,6 +98,9 @@ const createHandlers = (ctx) => {
   const db = (path, options) => supabaseFetch(ctx.supabaseUrl, ctx.serviceKey, path, options);
   const stripe = (path, options) => stripeRequest(ctx.stripeKey, path, options);
   const eq = (value) => `eq.${encodeURIComponent(value)}`;
+  const idOf = (value) => (typeof value === 'string' ? value : value?.id) || null;
+  let livemode = null;
+  const timeOf = (iso) => (iso ? new Date(iso).getTime() : 0);
 
   const trackEvent = (event) => db('app_events', {
     method: 'POST',
@@ -100,29 +108,86 @@ const createHandlers = (ctx) => {
     body: JSON.stringify(event)
   }).catch(() => {});
 
-  // F0-04: idempotency without a new table, using app_events as the processed-events log.
+  // F0-04: app_events doubles as the processed-events log. The event is reserved BEFORE
+  // processing; with the unique index (see docs/STRIPE_PRODUCAO.md) a concurrent second
+  // delivery gets a conflict and stops. The pre-check covers databases without the index.
   const alreadyProcessed = async (eventId) => {
     const rows = await db(`app_events?select=id&event_type=eq.stripe_event_processed&metadata->>event_id=${eq(eventId)}&limit=1`);
     return !!rows?.length;
   };
-  const markProcessed = (stripeEvent) => trackEvent({
-    event_type: 'stripe_event_processed',
-    metadata: { event_id: stripeEvent.id, type: stripeEvent.type }
-  });
+  const reserveEvent = async (stripeEvent) => {
+    const rows = await db('app_events?select=id', {
+      method: 'POST',
+      headers: { prefer: 'return=representation' },
+      body: JSON.stringify({
+        event_type: 'stripe_event_processed',
+        metadata: { event_id: stripeEvent.id, type: stripeEvent.type }
+      })
+    });
+    return rows?.[0]?.id;
+  };
+  const releaseEvent = (reservationId) => (reservationId
+    ? db(`app_events?id=${eq(reservationId)}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } }).catch(() => {})
+    : Promise.resolve());
 
+  const PROFILE_FIELDS = 'id,role,pro_until';
   const getProfileById = async (userId) => (
-    await db(`profiles?select=id,role,pro_until&id=${eq(userId)}&limit=1`)
-  )?.[0] || null;
-
+    userId ? (await db(`profiles?select=${PROFILE_FIELDS}&id=${eq(userId)}&limit=1`))?.[0] || null : null
+  );
   const getProfileByCustomer = async (customerId) => (
-    customerId ? (await db(`profiles?select=id,role,pro_until&stripe_customer_id=${eq(customerId)}&limit=1`))?.[0] || null : null
+    customerId ? (await db(`profiles?select=${PROFILE_FIELDS}&stripe_customer_id=${eq(customerId)}&limit=1`))?.[0] || null : null
   );
 
-  const updateProfilePlan = (userId, payload) => db(`profiles?id=${eq(userId)}`, {
-    method: 'PATCH',
-    headers: { prefer: 'return=minimal' },
-    body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() })
-  });
+  // Profile by Stripe customer, then by metadata.user_id on the object, then by the
+  // user_id create-checkout stores on the Stripe customer.
+  const resolveProfile = async ({ customerId, userId }) => {
+    const byCustomer = await getProfileByCustomer(customerId);
+    if (byCustomer) return byCustomer;
+    const byMetadata = await getProfileById(userId);
+    if (byMetadata) return byMetadata;
+    if (!customerId) return null;
+    const customer = await stripe(`customers/${customerId}`).catch((e) => {
+      if (isResourceMissing(e)) return null;
+      throw e;
+    });
+    return getProfileById(customer?.metadata?.user_id);
+  };
+
+  // F0-06 review: a PATCH that matches no row must fail (500 + Stripe retry), not pass as 200.
+  const updateProfilePlan = async (userId, payload) => {
+    const rows = await db(`profiles?id=${eq(userId)}&select=id`, {
+      method: 'PATCH',
+      headers: { prefer: 'return=representation' },
+      body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() })
+    });
+    if (!rows?.length) throw new Error(`Profile ${userId} not found.`);
+  };
+
+  // Latest end among the user's other rows that still give Pro.
+  const entitlementFloor = async (userId, excludeRowId) => {
+    const statuses = ENTITLED_ROW_STATUSES.join(',');
+    const rows = await db(`subscriptions?select=id,status,current_period_end&user_id=${eq(userId)}&status=in.(${statuses})&current_period_end=gt.${encodeURIComponent(new Date().toISOString())}`);
+    return (rows || [])
+      .filter(row => row.id !== excludeRowId)
+      .reduce((best, row) => (!best || timeOf(row.current_period_end) > timeOf(best.end)
+        ? { end: row.current_period_end, status: row.status }
+        : best), null);
+  };
+
+  // Review item 1: an event about one subscription/pass never cuts Pro that another paid
+  // row still guarantees. pro_until = max(this row's end, the other entitled rows' ends).
+  const applyPlan = async (userId, candidateUntil, rowId, status, extra = {}) => {
+    const floor = await entitlementFloor(userId, rowId);
+    const until = laterIso(candidateUntil, floor?.end);
+    const isPro = !!until && new Date(until).getTime() > Date.now();
+    const floorWins = !!floor && timeOf(floor.end) > timeOf(candidateUntil);
+    await updateProfilePlan(userId, {
+      ...extra,
+      plan: isPro ? 'pro' : 'free',
+      pro_until: isPro ? until : null,
+      subscription_status: floorWins ? floor.status : status
+    });
+  };
 
   // F0-07: the row create-checkout wrote as checkout_started is found by its session id.
   const findSubscriptionRow = async ({ subscriptionId, paymentIntentId, checkoutSessionId }) => {
@@ -132,30 +197,30 @@ const createHandlers = (ctx) => {
       checkoutSessionId && `metadata->>checkout_session_id=${eq(checkoutSessionId)}`
     ].filter(Boolean);
     for (const filter of filters) {
-      const rows = await db(`subscriptions?select=id,status,metadata&${filter}&order=created_at.desc&limit=1`);
+      const rows = await db(`subscriptions?select=id,status,metadata,current_period_end&${filter}&order=created_at.desc&limit=1`);
       if (rows?.[0]) return rows[0];
     }
     return null;
   };
 
+  // Returns the row id. livemode is recorded so manage-subscription can tell a test-mode
+  // leftover from a subscription that really disappeared (review item 5).
   const saveSubscription = async (payload, existing) => {
+    const metadata = { ...(existing?.metadata || {}), ...(payload.metadata || {}), ...(livemode === null ? {} : { livemode }) };
     if (existing?.id) {
-      await db(`subscriptions?id=eq.${existing.id}`, {
+      await db(`subscriptions?id=${eq(existing.id)}`, {
         method: 'PATCH',
         headers: { prefer: 'return=minimal' },
-        body: JSON.stringify({
-          ...payload,
-          metadata: { ...(existing.metadata || {}), ...(payload.metadata || {}) },
-          updated_at: new Date().toISOString()
-        })
+        body: JSON.stringify({ ...payload, metadata, updated_at: new Date().toISOString() })
       });
-      return;
+      return existing.id;
     }
-    await db('subscriptions', {
+    const rows = await db('subscriptions?select=id', {
       method: 'POST',
-      headers: { prefer: 'return=minimal' },
-      body: JSON.stringify(payload)
+      headers: { prefer: 'return=representation' },
+      body: JSON.stringify({ ...payload, metadata })
     });
+    return rows?.[0]?.id || null;
   };
 
   const sessionMatch = (session) => ({
@@ -181,7 +246,8 @@ const createHandlers = (ctx) => {
     if (!userId) throw new Error('Missing user_id on checkout session.');
     const planType = sessionPlanType(session);
     const profile = await getProfileById(userId);
-    if (profile?.role === 'admin') {
+    if (!profile) throw new Error(`Profile ${userId} not found.`);
+    if (profile.role === 'admin') {
       await trackEvent({
         user_id: userId,
         event_type: 'admin_checkout_ignored',
@@ -207,38 +273,33 @@ const createHandlers = (ctx) => {
     if (planType === 'one_time_30d') {
       // A second "paid" event for the same session must not stack another 30 days.
       if (existing?.metadata?.pro_granted_at) return { duplicate: 'already_granted' };
-      const proUntil = extendOneTimeProUntil(profile?.pro_until);
-      await updateProfilePlan(userId, {
-        plan: 'pro',
-        pro_until: proUntil,
-        stripe_customer_id: session.customer,
-        subscription_status: 'paid'
-      });
-      await saveSubscription({
+      const grant = oneTimeGrant(profile.pro_until);
+      const rowId = await saveSubscription({
         ...base,
         status: 'paid',
         price_id: session.metadata?.price_id || undefined,
-        current_period_end: proUntil,
-        metadata: { ...base.metadata, pro_granted_at: new Date().toISOString() }
+        current_period_end: grant.end,
+        metadata: {
+          ...base.metadata,
+          pro_granted_at: new Date().toISOString(),
+          granted_start: grant.start,
+          granted_end: grant.end
+        }
       }, existing);
+      await applyPlan(userId, grant.end, rowId, 'paid', { stripe_customer_id: session.customer });
     } else {
       if (!session.subscription) throw new Error('Missing subscription on recurring checkout session.');
       const subscription = await stripe(`subscriptions/${session.subscription}?expand[]=items.data.price`);
-      const proUntil = subscriptionPeriodEnd(subscription);
-      const plan = planForSubscriptionStatus(subscription.status);
-      await updateProfilePlan(userId, {
-        plan,
-        pro_until: plan === 'pro' ? proUntil : null,
-        stripe_customer_id: session.customer,
-        subscription_status: subscription.status
-      });
-      await saveSubscription({
+      const isPro = planForSubscriptionStatus(subscription.status) === 'pro';
+      const proUntil = isPro ? subscriptionProUntil(subscription) : null;
+      const rowId = await saveSubscription({
         ...base,
         status: subscription.status,
         price_id: subscription.items?.data?.[0]?.price?.id || null,
         current_period_end: proUntil,
         metadata: { ...subscriptionMetadata(subscription), ...base.metadata }
       }, existing);
+      await applyPlan(userId, proUntil, rowId, subscription.status, { stripe_customer_id: session.customer });
     }
 
     // If a subscription event created its own row first, the checkout_started row is left over.
@@ -278,7 +339,7 @@ const createHandlers = (ctx) => {
 
   // F0-05: the plan follows the subscription status.
   const subscriptionChanged = async (type, object, stripeEvent) => {
-    const profile = await getProfileByCustomer(object.customer);
+    const profile = await resolveProfile({ customerId: object.customer, userId: object.metadata?.user_id });
     if (!profile) return { ignored: 'unknown_customer' };
     const userId = profile.id;
     const existing = await findSubscriptionRow({ subscriptionId: object.id });
@@ -307,19 +368,14 @@ const createHandlers = (ctx) => {
 
     const isDeleted = type === 'customer.subscription.deleted';
     const subscription = isDeleted ? object : await stripe(`subscriptions/${object.id}?expand[]=items.data.price`);
-    const plan = isDeleted ? 'free' : planForSubscriptionStatus(subscription.status);
-    const proUntil = plan === 'pro' ? subscriptionPeriodEnd(subscription) : null;
+    const isPro = !isDeleted && planForSubscriptionStatus(subscription.status) === 'pro';
+    const proUntil = isPro ? subscriptionProUntil(subscription) : null;
     const cancelAtPeriodEnd = !!subscription.cancel_at_period_end;
     const nextStatus = isDeleted
       ? 'canceled'
-      : plan === 'pro' && cancelAtPeriodEnd ? 'cancel_at_period_end' : subscription.status;
+      : isPro && cancelAtPeriodEnd ? 'cancel_at_period_end' : subscription.status;
 
-    // incomplete* = first payment never went through: this subscription never gave Pro,
-    // so leave the profile alone (the user may still have a running 30-day pass).
-    if (!['incomplete', 'incomplete_expired'].includes(subscription.status)) {
-      await updateProfilePlan(userId, { plan, pro_until: proUntil, subscription_status: nextStatus });
-    }
-    await saveSubscription({
+    const rowId = await saveSubscription({
       user_id: userId,
       stripe_customer_id: subscription.customer,
       stripe_subscription_id: subscription.id,
@@ -329,6 +385,10 @@ const createHandlers = (ctx) => {
       current_period_end: proUntil,
       metadata: { ...subscriptionMetadata(subscription), event_id: stripeEvent.id }
     }, existing);
+    // incomplete* = first payment never went through: this subscription never gave Pro.
+    if (!['incomplete', 'incomplete_expired'].includes(subscription.status)) {
+      await applyPlan(userId, proUntil, rowId, nextStatus);
+    }
     await trackEvent({
       user_id: userId,
       event_type: isDeleted ? 'subscription_cancelled' : 'subscription_updated',
@@ -338,7 +398,10 @@ const createHandlers = (ctx) => {
   };
 
   const invoicePaymentFailed = async (invoice) => {
-    const profile = await getProfileByCustomer(invoice.customer);
+    const profile = await resolveProfile({
+      customerId: invoice.customer,
+      userId: invoice.subscription_details?.metadata?.user_id
+    });
     if (!profile) return { ignored: 'unknown_customer' };
     await updateProfilePlan(profile.id, { subscription_status: 'past_due' });
     await trackEvent({
@@ -349,13 +412,33 @@ const createHandlers = (ctx) => {
     return {};
   };
 
+  // Passes bought after the refunded one were stacked on top of it: pull them back by the
+  // removed time so their stored intervals keep matching the profile.
+  const shiftLaterPasses = async (userId, refundedGrant, removedMs) => {
+    if (!removedMs || !refundedGrant?.end) return;
+    const refundedEnd = new Date(refundedGrant.end).getTime();
+    const rows = await db(`subscriptions?select=id,metadata,current_period_end&user_id=${eq(userId)}&plan_type=eq.one_time_30d&status=eq.paid`);
+    const shift = (iso) => (iso ? new Date(new Date(iso).getTime() - removedMs).toISOString() : iso);
+    for (const row of rows || []) {
+      const start = new Date(row.metadata?.granted_start || 0).getTime();
+      if (!start || start < refundedEnd - 1000) continue;
+      await db(`subscriptions?id=${eq(row.id)}`, {
+        method: 'PATCH',
+        headers: { prefer: 'return=minimal' },
+        body: JSON.stringify({
+          current_period_end: shift(row.current_period_end),
+          metadata: { ...row.metadata, granted_start: shift(row.metadata.granted_start), granted_end: shift(row.metadata.granted_end) },
+          updated_at: new Date().toISOString()
+        })
+      });
+    }
+  };
+
   // F0-06: a full refund or a dispute takes the Pro back.
   const chargeReversed = async (type, object, stripeEvent) => {
     const reason = type === 'charge.refunded' ? 'refunded' : 'disputed';
-    const charge = type === 'charge.dispute.created'
-      ? await stripe(`charges/${typeof object.charge === 'string' ? object.charge : object.charge?.id}`)
-      : object;
-    const profile = await getProfileByCustomer(charge.customer);
+    const charge = type === 'charge.dispute.created' ? await stripe(`charges/${idOf(object.charge)}`) : object;
+    const profile = await resolveProfile({ customerId: idOf(charge.customer), userId: charge.metadata?.user_id });
     if (!profile) return { ignored: 'unknown_customer' };
     if (profile.role === 'admin') return { ignored: 'admin' };
 
@@ -371,9 +454,8 @@ const createHandlers = (ctx) => {
     const metadata = { revoked_reason: reason, revoked_charge_id: charge.id, revoked_event_id: stripeEvent.id };
 
     if (charge.invoice) {
-      const invoiceId = typeof charge.invoice === 'string' ? charge.invoice : charge.invoice.id;
-      const invoice = await stripe(`invoices/${invoiceId}`);
-      const subscriptionId = typeof invoice.subscription === 'string' ? invoice.subscription : invoice.subscription?.id;
+      const invoice = await stripe(`invoices/${idOf(charge.invoice)}`);
+      const subscriptionId = idOf(invoice.subscription);
       const existing = subscriptionId ? await findSubscriptionRow({ subscriptionId }) : null;
       if (REVOKED_STATUSES.includes(existing?.status)) return { duplicate: 'already_revoked' };
       if (subscriptionId) {
@@ -383,35 +465,36 @@ const createHandlers = (ctx) => {
           if (!isResourceMissing(e)) throw e;
         }
       }
-      await updateProfilePlan(profile.id, { plan: 'free', pro_until: null, subscription_status: reason });
-      if (subscriptionId) {
-        await saveSubscription({
-          user_id: profile.id,
-          stripe_customer_id: charge.customer,
-          stripe_subscription_id: subscriptionId,
-          plan_type: 'recurring',
-          status: reason,
-          current_period_end: null,
-          metadata
-        }, existing);
-      }
-    } else {
-      const existing = await findSubscriptionRow({ paymentIntentId: charge.payment_intent });
-      if (REVOKED_STATUSES.includes(existing?.status)) return { duplicate: 'already_revoked' };
-      const proUntil = revokeOneTimeProUntil(profile.pro_until);
-      await updateProfilePlan(profile.id, {
-        plan: proUntil ? 'pro' : 'free',
-        pro_until: proUntil,
-        subscription_status: reason
-      });
-      await saveSubscription({
+      const rowId = subscriptionId ? await saveSubscription({
         user_id: profile.id,
-        stripe_customer_id: charge.customer,
-        stripe_payment_intent_id: charge.payment_intent || null,
+        stripe_customer_id: idOf(charge.customer),
+        stripe_subscription_id: subscriptionId,
+        plan_type: 'recurring',
+        status: reason,
+        current_period_end: null,
+        metadata
+      }, existing) : null;
+      // Other paid rows (e.g. a 30-day pass) still count.
+      await applyPlan(profile.id, null, rowId, reason);
+    } else {
+      const existing = await findSubscriptionRow({ paymentIntentId: idOf(charge.payment_intent) });
+      if (REVOKED_STATUSES.includes(existing?.status)) return { duplicate: 'already_revoked' };
+      const grant = existing?.metadata?.granted_end
+        ? { start: existing.metadata.granted_start, end: existing.metadata.granted_end }
+        : null;
+      const removedMs = unusedGrantMs(grant);
+      const proUntil = revokeOneTimeProUntil(profile.pro_until, grant);
+      await shiftLaterPasses(profile.id, grant, removedMs);
+      const rowId = await saveSubscription({
+        user_id: profile.id,
+        stripe_customer_id: idOf(charge.customer),
+        stripe_payment_intent_id: idOf(charge.payment_intent),
         plan_type: 'one_time_30d',
         status: reason,
+        current_period_end: null,
         metadata
       }, existing);
+      await applyPlan(profile.id, proUntil, rowId, reason);
     }
 
     await trackEvent({
@@ -422,29 +505,35 @@ const createHandlers = (ctx) => {
     return {};
   };
 
+  const dispatch = (type, object, stripeEvent) => {
+    if (type === 'checkout.session.completed' || type === 'checkout.session.async_payment_succeeded') return checkoutPaid(object, stripeEvent);
+    if (type === 'checkout.session.async_payment_failed') return checkoutAsyncFailed(object, stripeEvent);
+    if (type === 'checkout.session.expired') return checkoutExpired(object, stripeEvent);
+    if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') return subscriptionChanged(type, object, stripeEvent);
+    if (type === 'invoice.payment_failed') return invoicePaymentFailed(object);
+    return chargeReversed(type, object, stripeEvent);
+  };
+
   const handle = async (stripeEvent) => {
     const type = stripeEvent.type;
-    const object = stripeEvent.data?.object || {};
     if (!HANDLED_EVENTS.includes(type)) return { ignored: 'unhandled_type' };
+    livemode = typeof stripeEvent.livemode === 'boolean' ? stripeEvent.livemode : null;
     if (await alreadyProcessed(stripeEvent.id)) return { duplicate: 'event_id' };
 
-    let result;
-    if (type === 'checkout.session.completed' || type === 'checkout.session.async_payment_succeeded') {
-      result = await checkoutPaid(object, stripeEvent);
-    } else if (type === 'checkout.session.async_payment_failed') {
-      result = await checkoutAsyncFailed(object, stripeEvent);
-    } else if (type === 'checkout.session.expired') {
-      result = await checkoutExpired(object, stripeEvent);
-    } else if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
-      result = await subscriptionChanged(type, object, stripeEvent);
-    } else if (type === 'invoice.payment_failed') {
-      result = await invoicePaymentFailed(object);
-    } else {
-      result = await chargeReversed(type, object, stripeEvent);
+    let reservationId;
+    try {
+      reservationId = await reserveEvent(stripeEvent);
+    } catch (e) {
+      if (e.status === 409 || e.code === '23505') return { duplicate: 'event_id' };
+      throw e;
     }
-    // Only after success: a failure returns 500 and Stripe retries the same event.
-    await markProcessed(stripeEvent);
-    return result;
+    try {
+      return await dispatch(type, stripeEvent.data?.object || {}, stripeEvent);
+    } catch (e) {
+      // Free the reservation so Stripe's retry can process the event again.
+      await releaseEvent(reservationId);
+      throw e;
+    }
   };
 
   return { handle };

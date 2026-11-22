@@ -22,7 +22,7 @@ Os IDs do modo teste não existem no modo real: é preciso criar tudo de novo.
 
 - [ ] **Desenvolvedores → Webhooks → Adicionar endpoint**
   - URL: `https://bt8.com.br/.netlify/functions/stripe-webhook`
-  - Versão da API: `2025-02-24.acacia` (a mesma fixada em `netlify/functions/lib/stripe.js`)
+  - Versão da API: `2025-02-24.acacia` (a mesma fixada em `netlify/functions/lib/stripe.js`). **Obrigatório nos dois endpoints, o de teste e o de produção**: o webhook lê `charge.invoice` e `invoice.subscription` para saber se um reembolso ou uma disputa é do mensal, e esses campos mudam de lugar em versões mais novas. Com outra versão, reembolso do mensal seria tratado como se fosse do 30 dias. Para conferir: Webhooks → endpoint → "Versão da API".
   - Eventos, exatamente estes 9 (é a lista `HANDLED_EVENTS` de `netlify/functions/stripe-webhook.js`; um teste garante que esta lista e o código batem):
     - `checkout.session.completed`
     - `checkout.session.async_payment_succeeded`
@@ -34,6 +34,11 @@ Os IDs do modo teste não existem no modo real: é preciso criar tudo de novo.
     - `charge.refunded`
     - `charge.dispute.created`
 - [ ] Copiar o **segredo de assinatura** (`whsec_...`) do endpoint novo.
+
+## 3b. Fim das retentativas de cobrança
+
+- [ ] Em **Configurações → Faturamento → Assinaturas e e-mails → Gerenciar pagamentos com falha** (recuperação de receita), em "Se todas as tentativas falharem", escolher **cancelar a assinatura** (ou, no mínimo, **marcar como não paga**). Nunca deixar "manter a assinatura como vencida" (`past_due`).
+  Enquanto a assinatura está `past_due`, o código mantém o Pro só por **3 dias** depois do início do período cuja cobrança falhou (`PAST_DUE_GRACE_DAYS` em `lib/stripe.js`). Mas, se ela ficar `past_due` para sempre, o Stripe continua tentando e o registro fica pendurado. Cancelada, chega o `customer.subscription.deleted` e tudo se resolve.
 
 ## 4. Variáveis no Netlify (contexto de produção)
 
@@ -102,18 +107,24 @@ Antes do `commit`, confira as contagens que o Supabase mostra. Se alguém recebe
 ## Como o código trata cada caso
 
 - **Só libera Pro com dinheiro confirmado**: `payment_status` precisa ser `paid` ou `no_payment_required`. Se não for, o registro fica `payment_pending` e o Pro sai em `checkout.session.async_payment_succeeded`. Por enquanto o checkout aceita só cartão (`payment_method_types[0]=card`); liberar boleto/Pix é tirar essa linha de `create-checkout.js` depois de testar o fluxo assíncrono.
-- **Evento repetido**: cada `event.id` processado fica gravado em `app_events` (`event_type = 'stripe_event_processed'`) e é ignorado na segunda vez.
-- **30 dias soma**: `pro_until = max(pro_until atual, agora) + 30 dias`. Com mensal ativo, a compra do 30 dias é recusada (409).
-- **Mensal**: o plano segue o status da assinatura (`active`, `trialing` e `past_due` = Pro).
-- **Reembolso total ou disputa**: no 30 dias, tira 30 dias do `pro_until`; no mensal, cancela a assinatura no Stripe e tira o Pro. Reembolso parcial só registra o evento.
+- **Evento repetido**: antes de processar, o webhook **reserva** o `event.id` gravando `stripe_event_processed` em `app_events`. Se a reserva bater no índice único (entrega simultânea), ele sai sem processar. Se o processamento falhar, a reserva é apagada e o webhook responde 500, para o Stripe reenviar.
+- **Nunca reduz Pro que outro pagamento garante**: toda mudança de plano calcula `pro_until = max(fim deste registro, maior fim entre os outros registros do usuário que ainda dão Pro)`. Contam os status `active`, `trialing`, `past_due`, `cancel_at_period_end` e `paid` com `current_period_end` no futuro. Exemplo: cancelou o mensal (fim em D) e comprou o 30 dias (fim em D+30); o `customer.subscription.deleted` em D mantém o Pro até D+30.
+- **30 dias soma**: o passe vai de `max(pro_until atual, agora)` até 30 dias depois, e esse intervalo fica no registro (`metadata.granted_start`/`granted_end`). Com mensal ativo, a compra do 30 dias é recusada (409). Com o mensal já com cancelamento agendado, a compra é aceita e soma depois do fim do mensal.
+- **Mensal**: o plano segue o status da assinatura (`active`, `trialing` e `past_due` = Pro; `past_due` só por 3 dias). O `current_period_end` gravado no registro é até quando aquela assinatura dá Pro (em `past_due`, o fim da carência).
+- **Reembolso total ou disputa**: no 30 dias, tira só o que sobrava daquele passe, `max(0, fim - max(início, agora))`, e puxa para trás os passes comprados depois dele. Um passe antigo já vencido não tira nada. No mensal, cancela a assinatura no Stripe e tira o Pro, exceto o que outro registro ainda garante. Reembolso parcial só registra o evento.
 - **Checkout abandonado**: `checkout.session.expired` marca o registro `checkout_started` como `expired`.
+- **Cliente desconhecido**: se o `customer` não estiver em nenhum perfil, o webhook procura pelo `metadata.user_id` do objeto e depois pelo `user_id` gravado no cliente do Stripe.
+- **Perfil não encontrado**: se a atualização do perfil não atinge nenhuma linha, o webhook responde 500 (e o Stripe reenvia) em vez de 200.
+- **Cancelar assinatura que sumiu do Stripe**: só é encerrada localmente quando o registro foi gravado no mesmo modo (teste/real) da chave atual (`metadata.livemode`). Se não bater, ou se o registro for antigo e não tiver `livemode`, o app devolve erro e registra `subscription_cancel_mode_mismatch`; a limpeza é a SQL do passo 5.
 
-## Pendente: índice para idempotência sob concorrência
+## Migração necessária: índice da reserva de eventos
 
-Hoje a checagem de `event.id` é "consulta e depois grava". Se o Stripe entregar o mesmo evento duas vezes **ao mesmo tempo** (raro), as duas podem passar. Para fechar isso de vez, a sessão que cuida das migrações pode criar este índice; nenhum código precisa mudar:
+A reserva do `event.id` não precisa de coluna nova (usa `app_events.metadata->>'event_id'`), mas só fica à prova de entregas simultâneas com este índice único. Sem ele, o código continua funcionando, com a consulta prévia como única proteção. Entra na migração 002:
 
 ```sql
 create unique index if not exists app_events_stripe_event_uidx
 on public.app_events ((metadata->>'event_id'))
 where event_type = 'stripe_event_processed';
 ```
+
+Com o índice, a segunda reserva recebe do PostgREST `409` (código `23505`), e o webhook trata isso como evento repetido.
