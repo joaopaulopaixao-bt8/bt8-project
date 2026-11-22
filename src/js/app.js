@@ -17,6 +17,7 @@ function buildUserMenu(user) {
     <div class="user-menu-item" onclick="openProfileModal()">${icon('user')} Meu Perfil</div>
     ${showPlanItem ? `<div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>` : ''}
     <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">${icon('ball')} Meus Torneios</div>
+    ${typeof isArenaMember === 'function' && isArenaMember() ? `<div class="user-menu-item" id="arena-menu-btn" onclick="openMinhaArena()">${icon('trophy')} Minha arena</div>` : ''}
     <div class="user-menu-item" id="admin-menu-btn" onclick="openAdminRoute()" style="${access?.isAdmin ? '' : 'display:none;'}">${icon('shield')} Admin</div>
     <div class="user-menu-item danger" onclick="logoutUser()">${icon('logout')} Sair</div>
   `;
@@ -772,3 +773,28 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
     document.body.appendChild(d);
   }, 2500);
 })();
+
+// ══ MÓDULO ARENA: rotas /scout, /telao/<slug>, /c/<slug>, /inscricao/<token> ══
+// Cada rota abre sua tela e chama a função de entrada do módulo, se ela já existir.
+const ARENA_ROUTES = {
+  scout: ['screen-scout', 'openScoutRoute'],
+  telao: ['screen-telao', 'openTelaoRoute'],
+  c: ['screen-publico', 'openPublicoRoute'],
+  inscricao: ['screen-inscricao', 'openInscricaoRoute'],
+};
+
+function arenaRoute() {
+  const m = window.location.pathname.replace(/\/+$/, '').match(/^\/(scout|telao|c|inscricao)(?:\/([^/]+))?$/);
+  if (!m || (m[1] === 'scout') === !!m[2]) return null; // /scout não leva parâmetro; as outras exigem slug ou token
+  return { name: m[1], param: m[2] || '' };
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const route = arenaRoute();
+  if (!route) return;
+  const [screenId, entry] = ARENA_ROUTES[route.name];
+  document.querySelectorAll('.screen.active').forEach(el => el.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  APP.history = [screenId];
+  if (typeof window[entry] === 'function') window[entry](route.param);
+});
