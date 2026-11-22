@@ -21,7 +21,7 @@ function openShare(){
   // Botões ficam desabilitados enquanto gera
   document.getElementById('btn-dl').disabled = true;
   document.getElementById('btn-share').disabled = true;
-  document.getElementById('btn-dl').textContent = '⏳ Gerando...';
+  document.getElementById('btn-dl').textContent = 'Gerando…';
   _canvasReady = generateShareCanvas().then(() => {
     document.getElementById('btn-dl').disabled = false;
     document.getElementById('btn-share').disabled = false;
@@ -127,11 +127,11 @@ async function generateShareCanvas(){
   // ordem visual: 2º, 1º, 3º
   const COLS=[
     {idx:1, barH:210, color:'#b0c8d4', glow:'rgba(176,200,212,0.22)',
-     fill:['rgba(176,200,212,0.22)','rgba(176,200,212,0.04)'], border:'rgba(176,200,212,0.5)', medal:'🥈', rank:'2º'},
+     fill:['rgba(176,200,212,0.22)','rgba(176,200,212,0.04)'], border:'rgba(176,200,212,0.5)', rank:'2º'},
     {idx:0, barH:300, color:'#ffd84d', glow:'rgba(244,192,38,0.32)',
-     fill:['rgba(244,192,38,0.32)','rgba(244,192,38,0.04)'], border:'rgba(244,192,38,0.75)', medal:'🥇', rank:'1º'},
+     fill:['rgba(244,192,38,0.32)','rgba(244,192,38,0.04)'], border:'rgba(244,192,38,0.75)', rank:'1º'},
     {idx:2, barH:140, color:'#c8955a', glow:'rgba(200,149,90,0.18)',
-     fill:['rgba(200,149,90,0.18)','rgba(200,149,90,0.03)'], border:'rgba(200,149,90,0.5)', medal:'🥉', rank:'3º'},
+     fill:['rgba(200,149,90,0.18)','rgba(200,149,90,0.03)'], border:'rgba(200,149,90,0.5)', rank:'3º'},
   ];
 
   COLS.forEach((cfg,ci)=>{
@@ -160,9 +160,6 @@ async function generateShareCanvas(){
     ctx.font=`bold ${cfg.idx===0?60:50}px sans-serif`;
     ctx.fillText(cfg.rank, bX+bW/2, bTop+cfg.barH*0.40+20);
 
-    // medal
-    ctx.font=`${cfg.idx===0?56:46}px sans-serif`;
-    ctx.fillText(cfg.medal, bX+bW/2, bTop+cfg.barH*0.78+14);
 
     // nome ACIMA da barra
     ctx.fillStyle=cfg.color;
@@ -215,7 +212,6 @@ async function generateShareCanvas(){
   }
 
   // linhas
-  const medals=['🥇','🥈','🥉'];
   const rowBorder=['rgba(255,212,77,0.6)','rgba(176,200,212,0.5)','rgba(200,149,90,0.5)'];
   const rowBg=['rgba(244,192,38,0.07)','rgba(176,200,212,0.05)','rgba(200,149,90,0.05)'];
   const nameCol=['#ffd84d','#c8d8e0','#c8955a','#d0e8f5'];
@@ -237,8 +233,9 @@ async function generateShareCanvas(){
     // medalha / posição
     ctx.textAlign='left';
     if(i<3){
-      ctx.font='38px sans-serif';
-      ctx.fillText(medals[i], PAD+12, ry+50);
+      ctx.fillStyle=nameCol[i];
+      ctx.font='bold 30px sans-serif';
+      ctx.fillText(`${i+1}º`, PAD+14, ry+48);
     } else {
       ctx.fillStyle='rgba(122,168,196,0.55)';
       ctx.font='bold 27px sans-serif';
@@ -330,7 +327,7 @@ async function getCanvasBlob() {
 
 async function downloadPNG(){
   const btn = document.getElementById('btn-dl');
-  btn.disabled = true; btn.textContent = '⏳...';
+  btn.disabled = true; btn.textContent = 'Gerando…';
   try {
     const dataURL = await getCanvasDataURL();
     const m=APP.mode;
@@ -346,19 +343,19 @@ async function downloadPNG(){
       players: (APP.players || []).filter(p => !p.isBye).length
     });
   } catch(e){ console.error(e); alert('Erro ao gerar PNG'); }
-  btn.disabled = false; btn.textContent = '⬇ Salvar PNG';
+  btn.disabled = false; btn.textContent = 'Salvar PNG';
 }
 
 async function nativeShare(){
   const btn = document.getElementById('btn-share');
-  btn.disabled = true; btn.textContent = '⏳...';
+  btn.disabled = true; btn.textContent = 'Gerando…';
   try {
     const blob = await getCanvasBlob();
     const m=APP.mode;
     const label=(MODE_INFO[m]?.label||'ranking').replace(/\s/g,'-');
     const file=new File([blob],`BT8-${label}-ranking.png`,{type:'image/png'});
     if(navigator.canShare&&navigator.canShare({files:[file]})){
-      await navigator.share({title:'BT8 — Ranking',text:`Resultado do torneio ${MODE_INFO[m]?.label||''} 🏖️`,files:[file]});
+      await navigator.share({title:'BT8 — Ranking',text:`Resultado do torneio ${MODE_INFO[m]?.label||''}`,files:[file]});
       trackEvent('ranking_shared', {
         format: APP.mode || '',
         players: (APP.players || []).filter(p => !p.isBye).length,

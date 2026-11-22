@@ -98,7 +98,7 @@
   border-radius: 8px;
   padding: 7px 16px;
   cursor: pointer;
-  transition: all .2s;
+  transition:color .2s, background-color .2s, border-color .2s, opacity .2s, transform .2s;
 }
 .lnav-btn:hover { color: var(--white); background: rgba(255,255,255,0.1); }
 
@@ -236,11 +236,10 @@
   border-radius: var(--radius);
   cursor: pointer;
   text-align: center;
-  transition: all .2s;
-  box-shadow: 0 4px 24px rgba(244,192,38,0.4);
+  transition:color .2s, background-color .2s, border-color .2s, opacity .2s, transform .2s;
 }
-.lcta:hover { background: var(--yellow-l); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(244,192,38,0.5); }
-.lcta:active { transform: translateY(0); }
+.lcta:hover { background: var(--yellow-l); }
+.lcta:active { transform: scale(.98); }
 
 /* ── SECTIONS ────────────────────────────── */
 .lsec {
@@ -387,7 +386,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  transition: all .2s;
+  transition:color .2s, background-color .2s, border-color .2s, opacity .2s, transform .2s;
 }
 .lstep:hover { border-color: var(--border2); transform: translateX(4px); }
 .lstep-num {
@@ -443,7 +442,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: all .22s;
+  transition:color .22s, background-color .22s, border-color .22s, opacity .22s, transform .22s;
   position: relative;
   overflow: hidden;
 }
@@ -455,7 +454,7 @@
   background: linear-gradient(135deg, rgba(26,127,196,0.1), rgba(45,156,190,0.05));
   transition: opacity .22s;
 }
-.lfeat-card:hover { border-color: var(--border2); transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+.lfeat-card:hover { border-color: var(--border2); }
 .lfeat-card:hover::before { opacity: 1; }
 .lfeat-icon {
   font-family: 'Barlow Condensed', sans-serif;
@@ -496,7 +495,7 @@
   border: 1px solid var(--border);
   border-left: 3px solid var(--blue);
   border-radius: var(--radius-sm);
-  transition: all .2s;
+  transition:color .2s, background-color .2s, border-color .2s, opacity .2s, transform .2s;
 }
 .lformat-item.dup { border-left-color: var(--yellow); }
 .lformat-item:hover { border-color: var(--border2); transform: translateX(3px); }
@@ -778,8 +777,7 @@
   border-radius: 12px;
   cursor: pointer;
   text-align: center;
-  box-shadow: 0 4px 20px rgba(244,192,38,0.35);
-  transition: all .2s;
+  transition:color .2s, background-color .2s, border-color .2s, opacity .2s, transform .2s;
   margin-bottom: 8px;
 }
 .lsticky-cta:hover { background: var(--yellow-l); }
@@ -974,7 +972,6 @@
 }
 .bt8-cta-primary {
   border:0; background:var(--yellow); color:#07111c;
-  box-shadow:0 12px 34px rgba(244,192,38,.28);
 }
 .bt8-cta-secondary {
   border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.08); color:var(--white);

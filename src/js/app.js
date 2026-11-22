@@ -9,16 +9,16 @@ function buildUserMenu(user) {
   const access = typeof currentAccess === 'function' ? currentAccess() : null;
   const planCard = typeof planCardHtml === 'function' ? planCardHtml(access, 'menu') : '';
   const showPlanItem = !access?.isAdmin;
-  const planItemLabel = access?.isPro ? '⭐ &nbsp;Meu plano Pro' : '⭐ &nbsp;Planos BT8 Pro';
+  const planItemLabel = access?.isPro ? icon('star') + ' Meu plano Pro' : icon('star') + ' Planos BT8 Pro';
   menu.innerHTML = `
     <div class="user-menu-name">${escapeHtml(name)}</div>
     <div class="user-menu-email">${escapeHtml(user.email)}</div>
     ${planCard}
-    <div class="user-menu-item" onclick="openProfileModal()">👤 &nbsp;Meu Perfil</div>
+    <div class="user-menu-item" onclick="openProfileModal()">${icon('user')} Meu Perfil</div>
     ${showPlanItem ? `<div class="user-menu-item" onclick="closeUserMenu();openPlansModal()">${planItemLabel}</div>` : ''}
-    <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">🎾 &nbsp;Meus Torneios</div>
-    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdminRoute()" style="${access?.isAdmin ? '' : 'display:none;'}">⚙️ &nbsp;Admin</div>
-    <div class="user-menu-item danger" onclick="logoutUser()">↩ &nbsp;Sair</div>
+    <div class="user-menu-item" onclick="closeUserMenu();openHistorico()">${icon('ball')} Meus Torneios</div>
+    <div class="user-menu-item" id="admin-menu-btn" onclick="openAdminRoute()" style="${access?.isAdmin ? '' : 'display:none;'}">${icon('shield')} Admin</div>
+    <div class="user-menu-item danger" onclick="logoutUser()">${icon('logout')} Sair</div>
   `;
 }
 
@@ -78,7 +78,7 @@ function showAdminRouteLogin() {
       <div class="password-wrap" style="margin-bottom:14px;">
         <input id="admin-login-password" class="password-input" type="password" autocomplete="current-password" onkeydown="if(event.key==='Enter')adminRouteLogin()"
           style="width:100%;box-sizing:border-box;background:#07111c;border:1px solid rgba(255,255,255,.14);border-radius:10px;color:#fff;padding:12px 48px 12px 12px;font-size:14px;outline:none;">
-        <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('admin-login-password', this)">👁</button>
+        <button class="password-toggle" type="button" aria-label="Mostrar senha" onclick="togglePasswordVisibility('admin-login-password', this)">${icon('eye')}</button>
       </div>
       <button onclick="adminRouteLogin()"
         style="width:100%;background:#ffd84d;border:none;border-radius:10px;color:#07111c;font-family:'Bebas Neue';font-size:18px;letter-spacing:1px;padding:12px;cursor:pointer;">ENTRAR COMO ADMIN</button>
@@ -394,11 +394,11 @@ async function saveProfile() {
     }
     if (error) throw error;
     if (typeof renderUserAvatar === 'function') renderUserAvatar(SUPA_USER);
-    msg.textContent = '✅ Perfil salvo com sucesso!';
+    msg.textContent = 'Perfil salvo com sucesso';
     msg.className = 'profile-msg ok';
     setTimeout(() => { msg.textContent = ''; }, 3000);
   } catch(e) {
-    msg.textContent = '⚠️ ' + (e.message || 'Erro ao salvar');
+    msg.textContent = (e.message || 'Erro ao salvar');
     msg.className = 'profile-msg err';
   }
   btn.disabled = false; btn.textContent = 'SALVAR PERFIL';
@@ -760,7 +760,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
       <div style="flex:1">
         <div style="font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;color:#ffd84d">INSTALAR BT8</div>
         <div style="font-size:11px;color:#7aa8c4;margin-top:2px;line-height:1.5">
-          Toque em <strong style="color:#fff">⬆ Compartilhar</strong> e depois <strong style="color:#fff">Adicionar à Tela de Início</strong>
+          Toque em <strong style="color:#fff">${icon('share')} Compartilhar</strong> e depois <strong style="color:#fff">Adicionar à Tela de Início</strong>
         </div>
       </div>
       <button onclick="document.getElementById('ios-banner').remove();localStorage.setItem('bt8-install-dismissed','1')"
