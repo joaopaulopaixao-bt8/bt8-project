@@ -35,6 +35,42 @@ scp -i ~/.ssh/bot_dizimo_vps supabase/migrations/00X_nome.sql root@212.47.66.152
 ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "/opt/bt8/backup.sh && cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f - < 00X_nome.sql"
 ```
 
+Desde a 002 o banco registra as migracoes aplicadas em `private.schema_migrations`, e `scripts/db-migrate.sh` aplica so as pendentes (cada uma numa transacao). Para usar no VPS, copie a pasta `supabase/migrations/` e o script para `/opt/bt8` e rode, depois do backup:
+
+```bash
+cd /opt/bt8 && ./backup.sh && PSQL='docker compose exec -T db psql -U postgres -d postgres' ./db-migrate.sh --dry-run
+```
+
+Sem `--dry-run`, aplica. Toda migracao nova termina com `insert into private.schema_migrations ... on conflict do nothing`, para ficar registrada tambem quando aplicada a mao.
+
+### Aplicar a 002 (seguranca e limites) em producao
+
+O que muda: o cliente nao cria nem altera `plan`/`role`/campos de cobranca do perfil (corrigidos em silencio, em INSERT e UPDATE); o Free salva ate 3 torneios por mes tambem no banco (erro `P0001`, hint `free_limit_reached`); limite de tamanho em `tournaments` e `app_events`; `app_events` so aceita os eventos conhecidos (o cliente so os do front); indice unico da idempotencia do webhook do Stripe; tabela `private.schema_migrations`.
+
+1. Backup e conferencia de duplicatas do webhook (o indice unico falha se houver):
+
+```bash
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "/opt/bt8/backup.sh && cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -c \"select metadata->>'event_id', count(*) from public.app_events where event_type = 'stripe_event_processed' group by 1 having count(*) > 1;\""
+```
+
+   Se aparecer linha, apagar as repetidas (mantendo a mais antiga) antes de seguir.
+
+2. Aplicar (numa transacao so: se der erro, nada muda):
+
+```bash
+scp -i ~/.ssh/bot_dizimo_vps supabase/migrations/002_seguranca_limites.sql root@212.47.66.152:/opt/bt8/
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 --single-transaction -f - < 002_seguranca_limites.sql"
+```
+
+3. Testar (roda tudo com ROLLBACK, nao deixa dados; tem que terminar em `TODOS OS TESTES DA 002 PASSARAM`):
+
+```bash
+scp -i ~/.ssh/bot_dizimo_vps supabase/tests/002_seguranca_limites_test.sql root@212.47.66.152:/opt/bt8/
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f - < 002_seguranca_limites_test.sql"
+```
+
+Ordem com os PRs: a 002 pode ir antes ou depois do deploy do PR #9 (o webhook ja trata a falta do indice). Evento novo gravado em `app_events` por qualquer codigo precisa entrar no CHECK `app_events_event_type_chk` numa migracao nova, senao o insert falha.
+
 Restaurar um backup:
 
 ```bash
