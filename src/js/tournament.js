@@ -483,6 +483,7 @@ async function gerarTorneio() {
     APP._savedTournamentId = null;
     APP._pendingSave = false;
     APP.tourneyUid = newTourneyUid();
+    APP.ownerId = SUPA_USER?.id || null;
     APP._trackedTournamentFinished = false;
     // Rascunhos de placar do torneio anterior não podem aparecer no novo (ids de jogo se repetem).
     Object.keys(TMPSCORES).forEach(k => delete TMPSCORES[k]);
@@ -1768,6 +1769,14 @@ const ACTIVE_TOURNEY_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 function saveActiveTournament() {
   if (!APP.mode || !APP.matches?.length) return;
   if (!APP.tourneyUid) APP.tourneyUid = newTourneyUid();
+  // Mexeu logado: o torneio passa a ser desta conta (visitante = null).
+  if (!APP.ownerId && SUPA_USER) APP.ownerId = SUPA_USER.id;
+  // Outra aba pode já ter salvo este torneio: não perder o id (senão a próxima gravação duplica).
+  const prev = readActiveTournament()?.state;
+  if (prev && prev.tourneyUid === APP.tourneyUid) {
+    if (!APP._savedTournamentId && prev._savedTournamentId) APP._savedTournamentId = prev._savedTournamentId;
+    if (prev._savedCurrentTournament) APP._savedCurrentTournament = true;
+  }
   const { history, isGuest, ...state } = APP;
   writeActiveTournament({ v: 1, savedAt: Date.now(), state, tmp: TMPSCORES });
 }
@@ -1861,12 +1870,30 @@ function offerResumeTournament() {
   document.body.appendChild(modal);
 }
 
+// Logout/exclusão de conta: o torneio desta conta sai do aparelho para não ser salvo na conta
+// de quem entrar depois. Retorna false se o usuário desistiu (torneio não salvo).
+function forgetUserTournament(userId, { ask = true } = {}) {
+  const data = readActiveTournament();
+  if (!userId || !data || data.state.ownerId !== userId) return true;
+  const st = data.state;
+  const unsaved = !isTournamentComplete(st.matches)
+    || (!st._savedTournamentId && !st._savedCurrentTournament) || st._pendingSave;
+  if (ask && unsaved && !confirm('Este torneio ainda não está salvo no seu histórico. Se sair agora, ele será apagado deste aparelho. Sair mesmo assim?')) return false;
+  clearActiveTournament();
+  if (APP.tourneyUid === st.tourneyUid || APP.ownerId === userId) {
+    Object.assign(APP, { mode:null, players:[], matches:[], tourneyClosed:false, tourneyUid:null, ownerId:null,
+      _savedTournamentId:null, _savedCurrentTournament:false, _pendingSave:false });
+  }
+  if (typeof renderPendingSaveNotice === 'function') renderPendingSaveNotice();
+  return true;
+}
+
 function _doNewTourney(){
   clearActiveTournament();
   APP.category=null; APP.mode=null; APP.players=[]; APP.matches=[];
   APP.fmt='rr'; APP.tourneyClosed=false;
   APP._savedCurrentTournament=false; APP._trackedTournamentFinished=false;
-  APP._savedTournamentId=null; APP._pendingSave=false; APP.tourneyUid=null;
+  APP._savedTournamentId=null; APP._pendingSave=false; APP.tourneyUid=null; APP.ownerId=null;
   APP.history=['screen-home'];
   if (typeof renderPendingSaveNotice === 'function') renderPendingSaveNotice();
   document.querySelectorAll('.screen').forEach(s=>{ s.classList.remove('active','leaving'); s.style.transform=''; });
@@ -1884,7 +1911,8 @@ function confirmNewTourney(){
   modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
 
   const finished = isTournamentComplete(APP.matches);
-  if (isLogado && (!APP._savedTournamentId || APP._pendingSave)) {
+  const saved = APP._savedTournamentId || APP._savedCurrentTournament; // snapshot antigo: só a flag
+  if (isLogado && (!saved || APP._pendingSave)) {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
       <div style="font-size:28px;text-align:center;margin-bottom:8px;color:var(--yellow-l)">${icon('alert')}</div>
       <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Sair deste torneio?</div>

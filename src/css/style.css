@@ -1041,3 +1041,6 @@ select.input-field option { background:#0d1a27; }
 }
 .pending-save-banner button:disabled { opacity:0.6; cursor:default; }
 .pending-save-banner .psb-close { background:transparent; color:var(--muted2); font-size:18px; line-height:1; padding:4px 6px; }
+.pending-save-banner { flex-wrap:wrap; }
+.pending-save-banner .psb-actions { flex-basis:100%; display:flex; flex-wrap:wrap; gap:6px; padding-left:26px; }
+.pending-save-banner .psb-secondary { background:rgba(255,255,255,0.06); color:var(--white); border:1px solid var(--border2); }

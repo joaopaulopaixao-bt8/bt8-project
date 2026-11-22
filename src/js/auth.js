@@ -594,6 +594,7 @@ async function doForgot() {
 
 async function logoutUser() {
   closeUserMenu();
+  if (typeof forgetUserTournament === 'function' && !forgetUserTournament(SUPA_USER?.id)) return;
   if (SUPA) await SUPA.auth.signOut();
   APP.isGuest = false;
   APP.history = ['screen-landing'];

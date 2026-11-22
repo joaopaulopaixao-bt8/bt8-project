@@ -87,7 +87,7 @@ test('torneio ativo: terminado e não salvo nunca expira; em andamento expira em
 });
 
 // Supabase falso: registra inserts/updates em `calls`.
-function fakeSupa(calls, { failInsert = false } = {}) {
+function fakeSupa(calls, { failInsert = false, noClientUid = false, updateRows = [{ id: 't1' }] } = {}) {
   const chain = result => {
     const p = Promise.resolve(result);
     const c = { select: () => c, eq: () => c, order: () => c, limit: () => c, single: () => p, then: (...a) => p.then(...a) };
@@ -96,7 +96,12 @@ function fakeSupa(calls, { failInsert = false } = {}) {
   return {
     from: () => ({
       insert: row => { calls.push(['insert', row]); return chain(failInsert ? { error: { code: '500', message: 'falhou' } } : { data: { id: 't1' } }); },
-      update: row => { calls.push(['update', row]); return chain({ data: [{ id: 't1' }] }); },
+      upsert: (row, opts) => {
+        calls.push(['upsert', row, opts]);
+        if (noClientUid) return chain({ error: { code: 'PGRST204', message: "Could not find the 'client_uid' column" } });
+        return chain(failInsert ? { error: { code: '500', message: 'falhou' } } : { data: { id: 't1' } });
+      },
+      update: row => { calls.push(['update', row]); return chain({ data: updateRows }); },
       select: () => chain({ data: [] }),
     }),
   };
@@ -126,8 +131,11 @@ test('visitante termina o torneio: fica pendente no aparelho e salva depois do l
   ctx.SUPA = fakeSupa(calls); ctx.SUPA_USER = { id: 'u1' };
   get('APP.matches = []'); // app reaberto: o torneio só existe no aparelho
   assert.equal(await get('savePendingTournament()'), true);
-  assert.equal(calls.filter(c => c[0] === 'insert').length, 1);
+  assert.deepEqual(calls.map(c => c[0]), ['upsert']);
   assert.equal(calls[0][1].user_id, 'u1');
+  assert.equal(calls[0][1].client_uid, ctx.APP.tourneyUid || get('readActiveTournament()').state.tourneyUid);
+  assert.equal(calls[0][2].onConflict, 'user_id,client_uid');
+  assert.equal(get('readActiveTournament()').state.ownerId, 'u1');
   assert.equal(get('pendingTournament()'), null);
   assert.equal(get('readActiveTournament()').state._savedTournamentId, 't1');
 });
@@ -142,7 +150,7 @@ test('correção de placar depois de salvo faz UPDATE do mesmo registro', async 
   finalOf(ctx).sA = 6; finalOf(ctx).sB = 5;
   ctx.APP._pendingSave = true;
   await get('saveTournament()');
-  assert.deepEqual(calls.map(c => c[0]), ['insert', 'update']);
+  assert.deepEqual(calls.map(c => c[0]), ['upsert', 'update']);
   assert.equal(calls[1][1].state.matches.find(m => m.phase === 'final').sB, 5);
   assert.equal(get('pendingTournament()'), null);
 });
@@ -169,4 +177,79 @@ test('erro ao salvar: continua pendente e registra o erro', async () => {
   assert.ok(get('pendingTournament()'));
   assert.equal(logged[0][0], '[bt8] tournament_save_failed');
   assert.equal(logged[0][1].stage, 'insert');
+});
+
+const silenciar = async fn => {
+  const orig = console.error; console.error = () => {};
+  try { return await fn(); } finally { console.error = orig; }
+};
+
+test('sem a coluna client_uid (migração 002 ausente): cai no insert simples', async () => {
+  const { ctx, get } = torneioTerminado();
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls, { noClientUid: true }); ctx.SUPA_USER = { id: 'u1' };
+  assert.equal(await get('saveTournament()'), true);
+  assert.deepEqual(calls.map(c => c[0]), ['upsert', 'insert']);
+  assert.equal(calls[1][1].client_uid, undefined);
+});
+
+test('torneio pendente de outra conta nunca é salvo na conta de quem entrou', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'uA' };
+  get('saveActiveTournament()'); // A mexeu logado: dono = A
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls); ctx.SUPA_USER = { id: 'uB' };
+  assert.equal(get('pendingTournament()'), null);
+  await get('savePendingTournament()');
+  assert.equal(calls.length, 0);
+});
+
+test('logout apaga do aparelho o torneio do dono e o id salvo', () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'uA' };
+  ctx.APP._savedTournamentId = 't9';
+  get('saveActiveTournament()');
+  assert.equal(get("forgetUserTournament('uB', { ask: false })"), true);
+  assert.ok(get('readActiveTournament()'), 'torneio de A continua para outro usuário que não é o dono');
+  assert.equal(get("forgetUserTournament('uA', { ask: false })"), true);
+  assert.equal(get('readActiveTournament()'), null);
+  assert.equal(ctx.APP._savedTournamentId, null);
+  assert.equal(ctx.APP.matches.length, 0);
+});
+
+test('UPDATE sem linhas (RLS ou apagado) não vira insert de cópia', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  ctx.APP._savedTournamentId = 'outro';
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls, { updateRows: [] });
+  assert.equal(await silenciar(() => get('saveTournament()')), false);
+  assert.deepEqual(calls.map(c => c[0]), ['update']);
+  assert.equal(get('PENDING_SAVE_REASON'), 'error');
+});
+
+test('várias abas: snapshot já salvo por outra aba mantém o id e a correção vira UPDATE', async () => {
+  const { ctx, get, store } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  get('saveActiveTournament()');
+  // Outra aba salvou: o snapshot ganhou o id, mas o APP desta aba não sabe.
+  const d = JSON.parse(store.get('bt8_active_tournament'));
+  Object.assign(d.state, { _savedTournamentId: 't1', _savedCurrentTournament: true, _pendingSave: false });
+  store.set('bt8_active_tournament', JSON.stringify(d));
+  finalOf(ctx).sB = 5; ctx.APP._pendingSave = true;
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls);
+  await get('saveTournament()');
+  assert.deepEqual(calls.map(c => c[0]), ['update']);
+});
+
+test('snapshot antigo já salvo (sem id) não gera novo insert numa correção', async () => {
+  const { ctx, get } = torneioTerminado();
+  ctx.SUPA_USER = { id: 'u1' };
+  Object.assign(ctx.APP, { _savedCurrentTournament: true, _savedTournamentId: undefined, _pendingSave: true });
+  const calls = [];
+  ctx.SUPA = fakeSupa(calls);
+  await get('saveTournament()');
+  assert.equal(calls.length, 0);
+  assert.equal(get('pendingTournament()'), null);
 });
