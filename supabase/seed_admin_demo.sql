@@ -146,6 +146,13 @@ from generate_series(1, 9) i;
 insert into public.app_events (event_type, metadata, created_at)
 values ('guest_limit_reached', '{"source":"frontend"}', now() - interval '2 hours');
 
+-- Visitantes sem login (guest_usage, normalmente escrita só pela Function guest-usage).
+delete from public.guest_usage where guest_id like 'demo-%';
+insert into public.guest_usage (guest_id, month_key, tournaments_created, first_seen_at, last_seen_at)
+select 'demo-' || i, to_char(now() at time zone 'America/Sao_Paulo', 'YYYY-MM'), case when i <= 5 then 1 else 0 end,
+       now() - (i || ' days')::interval, now() - (i || ' days')::interval
+from generate_series(1, 7) i;
+
 -- Marca os eventos inseridos nesta transação (xmin = id da transação) para a limpeza da próxima execução.
 update public.app_events set metadata = metadata || '{"demo":true}'
 where xmin::text::bigint = txid_current() % 4294967296;

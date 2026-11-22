@@ -15,7 +15,9 @@ Fuso de "dia" e "mês": `America/Sao_Paulo`. Admins ficam fora de todas as conta
 | Cobrança recusada | `profiles.subscription_status = 'past_due'` (gravado pelo webhook em `invoice.payment_failed`). |
 | Erro novo | Mensagem de `client_error` que apareceu nas últimas 24 h e não apareceu nos 30 dias anteriores. |
 | Novos x cancelados | Pessoas distintas com pagamento confirmado no período x pessoas distintas com `subscription_cancelled` no período. |
-| Bloqueio de visitante | Só o `guest_limit_reached` gravado pela Function `guest-usage` (tem `month_key`); o do front (`source = 'frontend'`) é o mesmo bloqueio e não conta. |
+| Visitantes no limite (semana) | Linhas de `guest_usage` (escrita só pela Function `guest-usage`) com o torneio grátis usado e atividade nos últimos 7 dias. Não usa `app_events`, que o cliente pode inflar. |
+| Cobrança recusada "desde" | Data do último `invoice_payment_failed`/`checkout_payment_failed` confiável do cliente. |
+| Último evento do webhook | Último `stripe_event_processed` concluído (a reserva `status = 'processing'` do webhook não conta). |
 | Variação | Período atual contra o mesmo trecho do período anterior (mês: dia 1 até hoje contra dia 1 até o mesmo dia do mês anterior). |
 
 ## Confiança nos eventos
@@ -61,6 +63,8 @@ npm run dev:local
 Entrar em http://localhost:8888/admin com `admin@bt8.test` / `bt8-local-123`. O seed só roda com `-v ambiente=local`, para no primeiro erro (`ON_ERROR_STOP`, tudo numa transação) e recusa o banco se não achar o `admin@bt8.test` do seed local ou se achar qualquer e-mail fora de `.test`. As contas demo não têm senha: não dá para entrar com elas em lugar nenhum.
 
 ## Ordem de deploy em produção
+
+A 003 se registra em `private.schema_migrations` (tabela criada pela 002).
 
 A 003 só acrescenta (funções e índices), então vai **antes** do merge, depois da 002:
 

@@ -261,9 +261,15 @@ begin
           and not exists (select 1 from recurring_live r where r.user_id = p.id and r.status <> 'cancel_at_period_end')
       ), '[]'::jsonb),
       'declined', coalesce((
-        select jsonb_agg(jsonb_build_object('id', p.id, 'nome', p.nome, 'email', p.email, 'since', p.updated_at)
-                         order by p.updated_at desc)
+        -- "desde" = última falha de cobrança registrada pelo webhook (não profiles.updated_at).
+        select jsonb_agg(jsonb_build_object('id', p.id, 'nome', p.nome, 'email', p.email, 'since', f.failed_at)
+                         order by f.failed_at desc nulls last)
         from public.profiles p
+        left join lateral (
+          select max(e.created_at) as failed_at from public.app_events e
+          where e.user_id = p.id and e.event_type in ('invoice_payment_failed', 'checkout_payment_failed')
+            and private.admin_event_trusted(e.event_type, e.user_id, e.metadata)
+        ) f on true
         where p.role <> 'admin' and p.subscription_status = 'past_due'
       ), '[]'::jsonb),
       'new_errors', coalesce((
@@ -285,11 +291,11 @@ begin
       'active_users', (
         select count(distinct user_id) from public.tournaments where created_at >= v_now - interval '7 days'
       ),
-      'guest_limit_blocks', (
-        -- Só o evento da Function guest-usage (o front grava outro com source = 'frontend' no mesmo bloqueio).
-        select count(*) from public.app_events
-        where event_type = 'guest_limit_reached' and created_at >= v_now - interval '7 days'
-          and metadata ? 'month_key'
+      'guests_at_limit', (
+        -- guest_usage só é escrita pela Function guest-usage (o cliente não infla).
+        -- shortcut: limite de 1 torneio por visitante copiado de guest-usage.js; se o limite mudar, mudar aqui.
+        select count(*) from public.guest_usage
+        where tournaments_created >= 1 and last_seen_at >= v_now - interval '7 days'
       ),
       'free_limit_blocks', (
         select count(*) from public.app_events
@@ -363,6 +369,7 @@ begin
       'webhook_last_processed', (
         select max(e.created_at) from public.app_events e
         where e.event_type = 'stripe_event_processed' and e.created_at >= v_now - interval '30 days'
+          and coalesce(e.metadata->>'status', 'done') <> 'processing' -- reserva do PR #9 ainda em andamento
           and private.admin_event_trusted(e.event_type, e.user_id, e.metadata)
       )
     )
@@ -460,3 +467,6 @@ revoke all on function public.admin_customer(uuid) from public, anon, authentica
 grant execute on function public.admin_dashboard(text) to service_role;
 grant execute on function public.admin_customers(text, integer) to service_role;
 grant execute on function public.admin_customer(uuid) to service_role;
+
+insert into private.schema_migrations (version, name) values ('003', '003_admin_dashboard.sql')
+on conflict (version) do nothing;

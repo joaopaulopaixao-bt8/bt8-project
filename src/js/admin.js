@@ -97,7 +97,7 @@ async function adminRouteLogin() {
   if (error) {
     if (msg) {
       msg.style.color = '#f87171';
-      msg.textContent = error.message || 'Login inválido.';
+      msg.textContent = typeof translateAuthError === 'function' ? translateAuthError(error.message) : 'E-mail ou senha incorretos';
     }
     return;
   }
@@ -323,7 +323,7 @@ function renderAdminOverview(target, d) {
     { label: 'Torneios criados', value: u.tournaments || 0 },
     ...(u.by_mode || []).map(m => ({ label: `· ${MODE_INFO[m.mode]?.label || m.mode}`, value: m.count })),
     { label: 'Usuários com torneio', value: u.active_users || 0 },
-    { label: 'Bloqueios de visitante', value: u.guest_limit_blocks || 0 },
+    { label: 'Visitantes que bateram o limite', value: u.guests_at_limit || 0 },
     { label: 'Bloqueios do Free', value: u.free_limit_blocks || 0 }
   ];
   target.innerHTML = `
