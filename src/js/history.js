@@ -10,7 +10,7 @@
 // Dono: `state.ownerId` é o id de quem criou/mexeu logado (null = visitante). Só o dono
 // (ou qualquer conta, para torneio de visitante) salva; no logout o snapshot do dono é apagado.
 let SAVE_IN_FLIGHT = null;
-let PENDING_SAVE_REASON = null;   // 'guest' | 'error' | 'limit' | null
+let PENDING_SAVE_REASON = null;   // 'guest' | 'error' | 'limit' | 'missing' | null
 let PENDING_SAVE_READY = false;   // só depois de saber se há usuário logado
 const PENDING_NOTICE_CLOSED_KEY = 'bt8_pending_notice_closed';
 
@@ -48,6 +48,15 @@ function withTournamentState(state, fn) {
   try { return fn(); } finally { keys.forEach(k => { APP[k] = backup[k]; }); }
 }
 
+function patchActiveTournament(uid, patch) {
+  const cur = readActiveTournament();
+  if (!cur || cur.state.tourneyUid !== uid) return null;
+  Object.assign(cur.state, patch);
+  writeActiveTournament(cur);
+  if (APP.tourneyUid === uid) Object.assign(APP, patch);
+  return cur;
+}
+
 function markTournamentSaved(savedState, id) {
   const cur = readActiveTournament();
   if (!cur || cur.state.tourneyUid !== savedState.tourneyUid) return;
@@ -55,9 +64,7 @@ function markTournamentSaved(savedState, id) {
   const unchanged = JSON.stringify(cur.state.matches) === JSON.stringify(savedState.matches);
   const patch = { _savedTournamentId: id, _savedCurrentTournament: true, ownerId: SUPA_USER.id };
   if (unchanged) patch._pendingSave = false;
-  Object.assign(cur.state, patch);
-  writeActiveTournament(cur);
-  if (APP.tourneyUid === savedState.tourneyUid) Object.assign(APP, patch);
+  patchActiveTournament(savedState.tourneyUid, patch);
 }
 
 // Grava o torneio atual: chamado ao abrir o resultado final.
@@ -80,18 +87,8 @@ function isMissingClientUid(error) {
   return ['PGRST204', '42703', '42P10'].includes(error?.code) || /client_uid/.test(error?.message || '');
 }
 
-async function insertTournament(row) {
-  const payload = { user_id: SUPA_USER.id, ...row };
-  if (row.client_uid) {
-    // Idempotente: se a resposta do insert se perdeu, reenviar não duplica.
-    const res = await SUPA.from('tournaments')
-      .upsert(payload, { onConflict: 'user_id,client_uid' })
-      .select('id')
-      .single();
-    if (!res.error || !isMissingClientUid(res.error)) return res;
-    delete payload.client_uid;
-  }
-  return SUPA.from('tournaments').insert(payload).select('id').single();
+function isFreeLimitError(error) {
+  return error?.hint === 'free_limit_reached';
 }
 
 async function doSavePendingTournament(opts) {
@@ -99,6 +96,10 @@ async function doSavePendingTournament(opts) {
   if (!data) { PENDING_SAVE_REASON = null; return true; }
   if (!SUPA || !SUPA_USER) { PENDING_SAVE_REASON = 'guest'; return false; }
   const st = data.state;
+  // Usuário logado tentou salvar: o torneio passa a ser dele (mesmo que falhe), para o logout apagá-lo.
+  if (!st.ownerId) { st.ownerId = SUPA_USER.id; patchActiveTournament(st.tourneyUid, { ownerId: st.ownerId }); }
+  // Registro salvo sumiu da conta: só tenta de novo quando o usuário escolher "Salvar como novo".
+  if (st._saveMissing) { PENDING_SAVE_REASON = 'missing'; return false; }
   let stage = 'prepare';
   try {
     const standings = withTournamentState(st, getStandings);
@@ -120,24 +121,41 @@ async function doSavePendingTournament(opts) {
       if (error) throw error;
       // 0 linhas: registro apagado ou de outra conta (RLS). Nunca vira insert de cópia.
       if (!rows?.length) {
-        PENDING_SAVE_REASON = 'error';
+        PENDING_SAVE_REASON = 'missing';
+        patchActiveTournament(st.tourneyUid, { _saveMissing: true });
         logSaveError('update_not_found', { message: 'nenhuma linha atualizada' }, { mode: st.mode, id });
         return false;
       }
     } else {
-      stage = 'limit';
-      const limitInfo = await validateFreeSaveLimit();
-      if (!limitInfo.allowed) {
-        PENDING_SAVE_REASON = 'limit';
-        // Tentativas automáticas só mostram o aviso fixo, sem abrir modal por cima de outra tela.
-        if (opts.fromUser) showFreeLimitReached(limitInfo);
-        return false;
-      }
-      stage = 'insert';
       const title = MODE_INFO[st.mode].label + ' · ' + new Date(data.savedAt || Date.now()).toLocaleDateString('pt-BR');
-      const { data: inserted, error } = await insertTournament({ title, client_uid: st.tourneyUid || undefined, ...row });
-      if (error) throw error;
-      id = inserted.id;
+      const payload = { user_id: SUPA_USER.id, title, ...row };
+      // Tentativas automáticas só mostram o aviso fixo, sem abrir modal por cima de outra tela.
+      const limitReached = info => {
+        PENDING_SAVE_REASON = 'limit';
+        if (opts.fromUser) showFreeLimitReached(info);
+        return false;
+      };
+      let res = null;
+      if (st.tourneyUid) {
+        // Upsert primeiro: se a resposta de um salvamento anterior se perdeu, o banco não conta
+        // o mesmo torneio como novo (o limite do Free é checado no banco só para torneio novo).
+        stage = 'upsert';
+        res = await SUPA.from('tournaments')
+          .upsert({ ...payload, client_uid: st.tourneyUid }, { onConflict: 'user_id,client_uid' })
+          .select('id')
+          .single();
+        if (isFreeLimitError(res.error)) return limitReached({});
+        if (isMissingClientUid(res.error)) res = null; // banco sem a migração 002
+      }
+      if (!res) {
+        stage = 'limit';
+        const limitInfo = await validateFreeSaveLimit();
+        if (!limitInfo.allowed) return limitReached(limitInfo);
+        stage = 'insert';
+        res = await SUPA.from('tournaments').insert(payload).select('id').single();
+      }
+      if (res.error) throw res.error;
+      id = res.data.id;
       const access = typeof currentAccess === 'function' ? currentAccess() : null;
       trackEvent(access?.isPro ? 'pro_tournament_saved' : 'free_tournament_saved', {
         format: st.mode || '',
@@ -160,6 +178,15 @@ function retryPendingSave() {
   PENDING_SAVE_READY = true;
   if (pendingTournament()) savePendingTournament();
   else { PENDING_SAVE_REASON = null; renderPendingSaveNotice(); }
+}
+
+// "Salvar como novo": o registro antigo não existe mais nesta conta; grava outro.
+function saveMissingAsNew() {
+  const data = pendingTournament();
+  if (!data) return;
+  patchActiveTournament(data.state.tourneyUid,
+    { _saveMissing: false, _savedTournamentId: null, _savedCurrentTournament: false, _pendingSave: true });
+  savePendingTournament({ fromUser: true });
 }
 
 function closedNoticeKey() {
@@ -198,7 +225,8 @@ function renderPendingSaveNotice() {
   const msg = {
     guest: [`<b>${label} terminado e não salvo.</b> Crie uma conta grátis para guardar no histórico.`, 'Criar conta', "openAuthModal('signup')"],
     error: [`<b>${label} ainda não foi salvo.</b> Vamos tentar de novo quando a conexão voltar.`, 'Tentar agora', 'savePendingTournament({fromUser:true})'],
-    limit: [`<b>${label} não foi salvo:</b> limite do plano Free atingido. Com o Pro ele é salvo na hora.`, 'Ver Pro', 'openPlansModal()']
+    limit: [`<b>${label} não foi salvo:</b> limite do plano Free atingido. Com o Pro ele é salvo na hora.`, 'Ver Pro', 'openPlansModal()'],
+    missing: [`<b>${label}:</b> o torneio salvo não foi encontrado na sua conta, então a correção não foi gravada.`, 'Salvar como novo', 'saveMissingAsNew()']
   }[reason];
   const el = old || document.createElement('div');
   el.id = 'pending-save-banner';
