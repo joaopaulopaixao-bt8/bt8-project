@@ -53,6 +53,7 @@ docker exec -i supabase-db pg_restore -U supabase_admin -d postgres --clean --if
 - Modelos em portugues: gerados por `npm run emails` (`scripts/build-emails.js`) em `public/email/*.html` e publicados em `https://bt8.com.br/email/<nome>.html`. O auth le cada modelo dessa URL; os assuntos ficam em `public/email/subjects.json`.
 - No VPS, `docker-compose.bt8.yml` passa ao servico `auth` as variaveis `GOTRUE_MAILER_TEMPLATES_<NOME>` (URL do modelo, `${BT8_EMAIL_BASE}/<nome>.html`; `BT8_EMAIL_BASE=https://bt8.com.br/email` no `.env`; o auth recarrega os modelos sozinho), `GOTRUE_MAILER_SUBJECTS_<NOME>` (assunto) e `GOTRUE_MAILER_NOTIFICATIONS_<AVISO>_ENABLED` (avisos de senha/e-mail alterado e login vinculado/removido).
 - Para mudar um texto: editar `scripts/build-emails.js`, rodar `npm run emails`, testar no staging local (Mailpit em `http://127.0.0.1:55324`), mesclar na `main` e, se mudou assunto, atualizar o compose do VPS e rodar `docker compose up -d auth`.
+- Suporte: `suporte@bt8.com.br` (rodape do site, paginas legais e e-mails). Nao e uma caixa: o Email Routing do Cloudflare encaminha para o e-mail do responsavel. Isso troca o MX do dominio principal (antes era o recebimento do Resend, que nao era usado); os registros de envio do Resend (`send.bt8.com.br` e `resend._domainkey`) ficam como estao.
 - Cadastro por e-mail ainda entra sem confirmacao (`ENABLE_EMAIL_AUTOCONFIRM=true`).
 
 ## Pendencias desta migracao

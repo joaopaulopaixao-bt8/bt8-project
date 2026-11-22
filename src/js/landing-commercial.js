@@ -249,6 +249,7 @@ function renderCommercialLanding() {
         <a href="/direitos-do-sistema">Direitos do sistema</a>
         <a href="/termos-de-uso">Termos de uso</a>
         <a href="/politica-de-privacidade">Política de privacidade</a>
+        <a href="mailto:suporte@bt8.com.br">Suporte: suporte@bt8.com.br</a>
       </div>
       <div class="legal-footer-cnpj">BT8 é uma marca vinculada ao CNPJ 53.243.248/0001-40.</div>
     </div>
