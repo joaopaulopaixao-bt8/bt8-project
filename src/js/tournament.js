@@ -63,7 +63,9 @@ function renderConfigScreen() {
 
   // Formato options
   let fmtOptions = '';
-  if(!isDupla) {
+  if(isMista) {
+    fmtOptions = ''; // Super Mista não gera final (buildMistaRotativa ignora APP.fmt)
+  } else if(!isDupla) {
     fmtOptions = `
     <div class="section-label">Formato</div>
     <div class="fmt-row">
@@ -83,10 +85,6 @@ function renderConfigScreen() {
       <div class="fmt-opt ${APP.fmt==='rr'?'active':''}" onclick="setFmt('rr',this)">
         <div class="fmt-opt-name">Round Robin</div>
         <div class="fmt-opt-desc">Ranking por vitórias</div>
-      </div>
-      <div class="fmt-opt ${APP.fmt==='semi'?'active':''}" onclick="setFmt('semi',this)">
-        <div class="fmt-opt-name">+ Semis/Final</div>
-        <div class="fmt-opt-desc">Top 4 → Semis → Final</div>
       </div>
     </div>
     <div class="fmt-row" style="margin-top:6px">
@@ -337,7 +335,7 @@ function renderPlayerList() {
   }
 
   // Re-renderizar o bloco de status (bye/par) no hint
-  const hintEl = document.querySelector('#config-content .section-label + div');
+  const hintEl = document.querySelector('#config-content .section-label + div:not(.fmt-row)');
   if(hintEl && IS_DUPLA_FIXA[m] && !isAleatorio) {
     const nD = APP.players.length;
     hintEl.innerHTML = (isMistaDupla
@@ -454,6 +452,11 @@ async function gerarTorneio() {
     gerarBtn.textContent = 'Validando...';
   }
   try {
+    // O torneio anterior terminou e não está no histórico: tenta salvar antes de sobrescrever.
+    if (typeof pendingTournament === 'function' && pendingTournament()) {
+      if (SUPA_USER) await savePendingTournament();
+      if (pendingTournament() && !confirm('O torneio anterior terminou mas ainda não foi salvo no histórico. Se criar outro agora, ele será perdido. Criar mesmo assim?')) return;
+    }
     if (typeof validateGuestTournamentLimit === 'function') {
       const guestLimit = await validateGuestTournamentLimit();
       if (!guestLimit.allowed) {
@@ -477,6 +480,10 @@ async function gerarTorneio() {
 
     // Etapa 3: rastrear criação de torneio
     APP._savedCurrentTournament = false;
+    APP._savedTournamentId = null;
+    APP._pendingSave = false;
+    APP.tourneyUid = newTourneyUid();
+    APP.ownerId = SUPA_USER?.id || null;
     APP._trackedTournamentFinished = false;
     // Rascunhos de placar do torneio anterior não podem aparecer no novo (ids de jogo se repetem).
     Object.keys(TMPSCORES).forEach(k => delete TMPSCORES[k]);
@@ -904,11 +911,7 @@ function renderRotativoRounds() {
   }
 
   if(final){
-    const ps = APP.players.map(p=>p.name);
-    const allRounds = APP.matches.filter(x=>x.phase==='round');
-    const stand = calcIndivStandings(ps,allRounds);
-    if(stand.length>=2){ final.teamA=stand[0].name; final.teamB=stand[1].name;
-      final.pA0=stand[0].name; final.pA1=''; final.pB0=stand[1].name; final.pB1=''; }
+    setFinalists(final);
     html+=`<div class="round-block" style="border-color:rgba(244,192,38,0.25)">
       <div class="round-header"><span class="round-tag" style="color:var(--yellow-l)">Final</span></div>
       ${finalCard(final)}
@@ -917,6 +920,18 @@ function renderRotativoRounds() {
 
   document.getElementById('rounds-area').innerHTML = html;
   requestAnimationFrame(() => applyRoundLock());
+}
+
+// Final dos rotativos: 1º x 2º do ranking das rodadas (jogo individual).
+// Os finalistas só são definidos com todas as rodadas concluídas e ficam congelados
+// depois que a final tem placar, para uma correção de rodada não trocar quem jogou a final.
+function setFinalists(final) {
+  if (final.sA !== null && final.teamA) return;
+  const rounds = APP.matches.filter(x=>x.phase==='round');
+  const ready = rounds.length > 0 && rounds.every(x=>x.sA!==null);
+  const stand = ready ? rankRounds() : [];
+  const a = stand[0]?.name || '', b = stand[1]?.name || '';
+  Object.assign(final, { teamA:a, teamB:b, pA0:a, pA1:'', pB0:b, pB1:'' });
 }
 
 function renderDuplaFixaRounds() {
@@ -1180,50 +1195,63 @@ function tmpScore(id,idx,val){
   saveActiveTournament();
 }
 
-// Habilita o ✓ só quando os dois campos têm valor E não é empate
+// Validação única do placar: inteiros de 0 a SCORE_MAX e sem empate.
+const SCORE_MAX = 99;
+function validateScore(v0, v1) {
+  const raw = [v0, v1].map(v => String(v ?? '').trim());
+  if (raw.some(v => v === '')) return { error: 'Informe os dois placares.', incomplete: true };
+  if (raw.some(v => !/^\d+$/.test(v))) return { error: 'Use só números inteiros, sem vírgula nem sinal.' };
+  const [sA, sB] = raw.map(Number);
+  if (sA > SCORE_MAX || sB > SCORE_MAX) return { error: `O placar vai até ${SCORE_MAX}.` };
+  if (sA === sB) return { error: 'Empate não permitido — alguém precisa vencer.' };
+  return { sA, sB };
+}
+
+function scoreInputs(id) {
+  const card = document.getElementById('mc-' + id);
+  return card ? [...card.querySelectorAll('input[type=number]')] : [];
+}
+
+function showScoreError(id, msg) {
+  const card = document.getElementById('mc-' + id);
+  if (!card) return;
+  let warn = card.querySelector('.score-warn');
+  if (!msg) { warn?.remove(); return; }
+  if (!warn) {
+    warn = document.createElement('div');
+    warn.className = 'score-warn';
+    warn.setAttribute('role', 'alert');
+    card.querySelector('.score-row')?.after(warn);
+  }
+  warn.textContent = msg;
+}
+
+// Habilita o ✓ só com placar válido; mostra o motivo na tela quando não é.
 function checkConfirmBtn(id) {
   const btn = document.getElementById('cbtn-' + id);
   if (!btn) return;
-  const card = document.getElementById('mc-' + id);
-  if (!card) return;
-  const inputs = card.querySelectorAll('input[type=number]');
-  const v0 = inputs[0]?.value;
-  const v1 = inputs[1]?.value;
-  const bothFilled = v0 !== '' && v1 !== '';
-  const isEmpate = bothFilled && parseInt(v0) === parseInt(v1);
-
-  btn.disabled = !bothFilled || isEmpate;
-
-  // Mensagem de empate inline
-  let warn = card.querySelector('.empate-warn');
-  if(isEmpate) {
-    if(!warn) {
-      warn = document.createElement('div');
-      warn.className = 'empate-warn';
-      warn.style.cssText = 'color:#f87171;font-size:11px;text-align:center;margin-top:4px;font-weight:500';
-      warn.textContent = 'Empate não permitido — alguém precisa vencer';
-      card.querySelector('.score-row')?.after(warn);
-    }
-  } else {
-    warn?.remove();
-  }
+  const [i0, i1] = scoreInputs(id);
+  const r = validateScore(i0?.value, i1?.value);
+  btn.disabled = !!r.error;
+  showScoreError(id, r.incomplete ? '' : r.error);
 
   // Cor dinâmica do botão final (amarelo)
   if (btn.style.background) {
-    const ok = bothFilled && !isEmpate;
-    btn.style.background = ok ? 'var(--yellow)' : 'rgba(255,255,255,0.08)';
-    btn.style.color = ok ? '#080f18' : 'rgba(255,255,255,0.2)';
+    btn.style.background = r.error ? 'rgba(255,255,255,0.08)' : 'var(--yellow)';
+    btn.style.color = r.error ? 'rgba(255,255,255,0.2)' : '#080f18';
   }
 }
 
 function confirmScore(id){
-  const card=document.getElementById('mc-'+id);
-  const inputs=card.querySelectorAll('input');
-  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares');return;}
-  const sA=parseInt(inputs[0].value), sB=parseInt(inputs[1].value);
-  if(sA===sB){alert('Empate não é permitido\nUm dos times precisa ter pelo menos 1 set a mais.');return;}
+  const [i0, i1] = scoreInputs(id);
+  const r = validateScore(i0?.value, i1?.value);
+  if (r.error) { showScoreError(id, r.error); return; }
   const mx=APP.matches.find(x=>x.id===id);
-  mx.sA=sA; mx.sB=sB;
+  if (!mx) return;
+  mx.sA=r.sA; mx.sB=r.sB;
+  delete TMPSCORES[id];
+  // Placar mudou: o histórico precisa ser gravado de novo (insert ou update).
+  APP._pendingSave = true;
   // Propagar resultado no bracket (eliminatória)
   if(IS_ELIMINATORIO[APP.mode]) propagateBracket(id);
   // Marcar que veio de uma confirmação → auto-navega se for a última
@@ -1233,16 +1261,7 @@ function confirmScore(id){
 }
 
 function confirmDupla(id){
-  const card=document.getElementById('mc-'+id);
-  const inputs=card.querySelectorAll('input');
-  if(inputs[0].value===''||inputs[1].value===''){alert('Informe os dois placares');return;}
-  const sA=parseInt(inputs[0].value), sB=parseInt(inputs[1].value);
-  if(sA===sB){alert('Empate não é permitido\nUma das duplas precisa ter pelo menos 1 set a mais.');return;}
-  const mx=APP.matches.find(x=>x.id===id);
-  mx.sA=sA; mx.sB=sB;
-  APP._autoNavigateResult = true;
-  renderTorneioScreen();
-  checkTourneyComplete();
+  confirmScore(id);
 }
 
 function confirmFinal(id){
@@ -1527,7 +1546,6 @@ function calcDuplaStandings(names,matches){
 function getStandings(){
   const m=APP.mode;
   const isDupla=IS_DUPLA_FIXA[m];
-  const isSoma=IS_SOMA[m];
   const isElim=IS_ELIMINATORIO[m];
 
   // Eliminatória: ranking por resultado no bracket
@@ -1566,9 +1584,23 @@ function getStandings(){
       };
     });
   }
+  const stand=rankRounds();
+  // "+ Final": o campeão da final é o 1º e o vice o 2º, seja qual for a pontuação das rodadas.
+  const fn=APP.matches.find(x=>x.phase==='final');
+  const champ=simWinner(fn);
+  if(champ){
+    const vice=champ===fn.teamA?fn.teamB:fn.teamA;
+    const top=[champ,vice].map(n=>stand.find(p=>p.name===n)).filter(Boolean);
+    return [...top, ...stand.filter(p=>!top.includes(p))];
+  }
+  return stand;
+}
+
+// Ranking só das rodadas dos rotativos (sem a final).
+function rankRounds(){
   const ps=APP.players.map(p=>p.name);
   const rounds=APP.matches.filter(x=>x.phase==='round');
-  if(isSoma) return calcSomaStandings(ps,rounds).map(p=>({
+  if(IS_SOMA[APP.mode]) return calcSomaStandings(ps,rounds).map(p=>({
     ...p,
     scoreLabel: p.games+' games',
     scoreVal: p.games,
@@ -1678,7 +1710,7 @@ function verResultadoFinal(isAutoOpen) {
     ${champ?`<div class="info-card" style="text-align:center;background:linear-gradient(135deg,rgba(244,192,38,0.15),rgba(13,74,107,0.3));border-color:rgba(244,192,38,0.4)">
       <div style="font-size:36px;margin-bottom:6px;color:var(--yellow-l)">${icon('trophy')}</div>
       <div style="font-family:'Bebas Neue';font-size:14px;color:var(--muted2);letter-spacing:2px">CAMPEÃO</div>
-      <div style="font-family:'Bebas Neue';font-size:28px;color:var(--yellow-l);letter-spacing:1px">${champ}</div>
+      <div style="font-family:'Bebas Neue';font-size:28px;color:var(--yellow-l);letter-spacing:1px">${escapeHtml(champ)}</div>
     </div>`:''}
     ${podiumHTML}
     <div class="accent-line"></div>
@@ -1736,10 +1768,29 @@ const ACTIVE_TOURNEY_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 
 function saveActiveTournament() {
   if (!APP.mode || !APP.matches?.length) return;
+  if (!APP.tourneyUid) APP.tourneyUid = newTourneyUid();
+  // Mexeu logado: o torneio passa a ser desta conta (visitante = null).
+  if (!APP.ownerId && SUPA_USER) APP.ownerId = SUPA_USER.id;
+  // Outra aba pode já ter salvo este torneio: não perder o id (senão a próxima gravação duplica).
+  const prev = readActiveTournament()?.state;
+  if (prev && prev.tourneyUid === APP.tourneyUid) {
+    if (!APP._savedTournamentId && prev._savedTournamentId) APP._savedTournamentId = prev._savedTournamentId;
+    if (prev._savedCurrentTournament) APP._savedCurrentTournament = true;
+  }
+  const { history, isGuest, ...state } = APP;
+  writeActiveTournament({ v: 1, savedAt: Date.now(), state, tmp: TMPSCORES });
+}
+
+function writeActiveTournament(data) {
   try {
-    const { history, isGuest, ...state } = APP;
-    localStorage.setItem(ACTIVE_TOURNEY_KEY, JSON.stringify({ v: 1, savedAt: Date.now(), state, tmp: TMPSCORES }));
-  } catch (e) {}
+    localStorage.setItem(ACTIVE_TOURNEY_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('[bt8] active_tournament_write_failed', { message: e?.message || String(e) });
+  }
+}
+
+function newTourneyUid() {
+  return window.crypto?.randomUUID?.() || `t_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 function clearActiveTournament() {
@@ -1750,9 +1801,18 @@ function readActiveTournament() {
   try {
     const data = JSON.parse(localStorage.getItem(ACTIVE_TOURNEY_KEY) || 'null');
     if (data?.v !== 1 || !data.state?.mode || !data.state.matches?.length) return null;
-    if (Date.now() - data.savedAt > ACTIVE_TOURNEY_MAX_AGE) { clearActiveTournament(); return null; }
+    // Torneio terminado e ainda não salvo nunca expira: só sai daqui salvo ou descartado pelo usuário.
+    const pendingSave = isTournamentComplete(data.state.matches)
+      && (data.state._pendingSave ?? !data.state._savedCurrentTournament);
+    if (!pendingSave && Date.now() - data.savedAt > ACTIVE_TOURNEY_MAX_AGE) { clearActiveTournament(); return null; }
     return data;
   } catch (e) { return null; }
+}
+
+function isTournamentComplete(matches) {
+  const real = (matches || []).filter(x =>
+    ['round', 'rr', 'elim', 'final'].includes(x.phase) && !x.isBye);
+  return real.length > 0 && real.every(x => x.sA !== null && x.sB !== null);
 }
 
 function countPlayedMatches(matches) {
@@ -1810,12 +1870,32 @@ function offerResumeTournament() {
   document.body.appendChild(modal);
 }
 
+// Logout/exclusão de conta: o torneio desta conta sai do aparelho para não ser salvo na conta
+// de quem entrar depois. Retorna false se o usuário desistiu (torneio não salvo).
+function forgetUserTournament(userId, { ask = true } = {}) {
+  const data = readActiveTournament();
+  if (!userId || !data || data.state.ownerId !== userId) return true;
+  const st = data.state;
+  const unsaved = !isTournamentComplete(st.matches)
+    || (!st._savedTournamentId && !st._savedCurrentTournament) || st._pendingSave;
+  if (ask && unsaved && !confirm('Este torneio ainda não está salvo no seu histórico. Se sair agora, ele será apagado deste aparelho. Sair mesmo assim?')) return false;
+  clearActiveTournament();
+  if (APP.tourneyUid === st.tourneyUid || APP.ownerId === userId) {
+    Object.assign(APP, { mode:null, players:[], matches:[], tourneyClosed:false, tourneyUid:null, ownerId:null,
+      _savedTournamentId:null, _savedCurrentTournament:false, _pendingSave:false });
+  }
+  if (typeof renderPendingSaveNotice === 'function') renderPendingSaveNotice();
+  return true;
+}
+
 function _doNewTourney(){
   clearActiveTournament();
   APP.category=null; APP.mode=null; APP.players=[]; APP.matches=[];
   APP.fmt='rr'; APP.tourneyClosed=false;
   APP._savedCurrentTournament=false; APP._trackedTournamentFinished=false;
+  APP._savedTournamentId=null; APP._pendingSave=false; APP.tourneyUid=null; APP.ownerId=null;
   APP.history=['screen-home'];
+  if (typeof renderPendingSaveNotice === 'function') renderPendingSaveNotice();
   document.querySelectorAll('.screen').forEach(s=>{ s.classList.remove('active','leaving'); s.style.transform=''; });
   document.getElementById('screen-home').classList.add('active');
 }
@@ -1830,11 +1910,13 @@ function confirmNewTourney(){
   modal.id = 'new-tourney-modal';
   modal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.75);display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)';
 
-  if (isLogado && !APP._savedCurrentTournament) {
+  const finished = isTournamentComplete(APP.matches);
+  const saved = APP._savedTournamentId || APP._savedCurrentTournament; // snapshot antigo: só a flag
+  if (isLogado && (!saved || APP._pendingSave)) {
     modal.innerHTML = `<div style="background:var(--surface);border:1px solid var(--border2);border-radius:var(--radius);padding:28px 24px;max-width:340px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5)">
       <div style="font-size:28px;text-align:center;margin-bottom:8px;color:var(--yellow-l)">${icon('alert')}</div>
       <div style="font-family:'Bebas Neue';font-size:20px;color:var(--white);text-align:center;letter-spacing:1px;margin-bottom:8px">Sair deste torneio?</div>
-      <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">Este torneio ainda não terminou e não está no seu histórico. Ao começar outro, ele será descartado.</div>
+      <div style="font-size:13px;color:var(--muted2);text-align:center;line-height:1.5;margin-bottom:20px">${finished ? 'Este torneio ainda não foi salvo no seu histórico (ou tem correção não salva).' : 'Este torneio ainda não terminou e não está no seu histórico.'} Ao começar outro, ele será descartado.</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button onclick="document.getElementById('new-tourney-modal').remove()" style="background:var(--blue);color:var(--white);border:none;border-radius:var(--radius-sm);padding:12px;font-family:'Bebas Neue';font-size:16px;letter-spacing:1px;cursor:pointer">CONTINUAR TORNEIO</button>
         <button onclick="document.getElementById('new-tourney-modal').remove();_doNewTourney()" style="background:transparent;color:var(--muted2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;font-family:inherit;font-size:13px;cursor:pointer">Descartar e começar outro</button>

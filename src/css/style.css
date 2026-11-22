@@ -1021,3 +1021,26 @@ select.input-field option { background:#0d1a27; }
   .profile-state-field { flex:1; }
 }
 
+
+/* ═══════════════ PLACAR INVÁLIDO / TORNEIO PENDENTE DE SALVAR ═══════════════ */
+.score-warn { color:#f87171; font-size:11px; text-align:center; margin-top:4px; font-weight:500; }
+.pending-save-banner {
+  position:fixed; left:12px; right:12px; top:calc(env(safe-area-inset-top, 0px) + 10px);
+  z-index:1500; max-width:480px; margin:0 auto;
+  display:flex; align-items:center; gap:10px;
+  background:var(--dark2); border:1px solid rgba(244,192,38,0.45); border-radius:var(--radius-sm);
+  padding:10px 12px; box-shadow:0 10px 30px rgba(0,0,0,0.45);
+  font-size:12px; line-height:1.4; color:var(--muted2);
+}
+.pending-save-banner .psb-icon { color:var(--yellow-l); flex:none; display:flex; }
+.pending-save-banner .psb-text { flex:1; min-width:0; }
+.pending-save-banner .psb-text b { color:var(--white); font-weight:600; }
+.pending-save-banner button {
+  flex:none; border:0; border-radius:8px; background:var(--yellow); color:#07111c;
+  font-family:inherit; font-weight:700; font-size:12px; padding:8px 10px; cursor:pointer;
+}
+.pending-save-banner button:disabled { opacity:0.6; cursor:default; }
+.pending-save-banner .psb-close { background:transparent; color:var(--muted2); font-size:18px; line-height:1; padding:4px 6px; }
+.pending-save-banner { flex-wrap:wrap; }
+.pending-save-banner .psb-actions { flex-basis:100%; display:flex; flex-wrap:wrap; gap:6px; padding-left:26px; }
+.pending-save-banner .psb-secondary { background:rgba(255,255,255,0.06); color:var(--white); border:1px solid var(--border2); }

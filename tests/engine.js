@@ -6,18 +6,31 @@ const vm = require('vm');
 
 const root = path.resolve(__dirname, '..');
 
-function loadEngine() {
+// withHistory: carrega também history.js, com localStorage em memória e sem Supabase.
+function loadEngine({ withHistory = false } = {}) {
+  const store = new Map();
+  const noop = () => {};
   const ctx = vm.createContext({
     console,
     APP: { players: [], matches: [], mode: null, fmt: 'rr', idaVolta: false },
-    document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [] },
-    window: {},
+    document: { getElementById: () => null, querySelector: () => null, querySelectorAll: () => [], addEventListener: noop },
+    window: { addEventListener: noop },
+    navigator: { onLine: true },
+    localStorage: {
+      getItem: k => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: k => store.delete(k),
+    },
+    SUPA: null,
+    SUPA_USER: null,
   });
-  for (const file of ['src/js/config.js', 'src/js/tournament.js']) {
+  const files = ['src/js/config.js', 'src/js/tournament.js'];
+  if (withHistory) files.push('src/js/history.js');
+  for (const file of files) {
     vm.runInContext(fs.readFileSync(path.join(root, file), 'utf8'), ctx, { filename: file });
   }
   // `const` de nível superior não vira propriedade do contexto; expõe via expressão.
-  return { ctx, get: expr => vm.runInContext(expr, ctx) };
+  return { ctx, store, get: expr => vm.runInContext(expr, ctx) };
 }
 
 const pairKey = (a, b) => [a, b].sort().join('|');

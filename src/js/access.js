@@ -278,6 +278,8 @@ async function handleCheckoutReturn() {
         if (typeof renderPlanSurfaces === 'function') renderPlanSurfaces(access);
         if (SUPA_USER && typeof buildUserMenu === 'function') buildUserMenu(SUPA_USER);
         if (typeof loadHomeHistory === 'function') loadHomeHistory();
+        // Pagou no fim do torneio: o torneio que bateu no limite do Free é salvo agora.
+        if (typeof retryPendingSave === 'function') retryPendingSave();
         return;
       }
       await new Promise(resolve => setTimeout(resolve, 1800));
