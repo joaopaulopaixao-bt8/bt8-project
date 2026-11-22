@@ -16,7 +16,10 @@ PWA (Progressive Web App) de gerenciamento de torneios de beach tennis, com plan
 | Camada | Tecnologia |
 |--------|-----------|
 | Frontend | `src/index.html` + `src/css/*` + `src/js/*` + `src/img/*` |
-| PWA | `public/manifest.json` + `public/sw.js` (Service Worker) |
+| PWA | `public/manifest.json` + `public/sw.js` (Service Worker: precache do shell, cache por versão do deploy, offline) |
+| Versão/cache | `scripts/build-netlify.js` põe `?v=<COMMIT_REF>` nos js/css e a mesma versão no cache do SW; `index.html` sem cache (`public/_headers`) |
+| supabase-js | versão fixa servida do próprio domínio: `public/vendor/supabase-js-2.119.0.js` (atualizar = trocar o arquivo e a tag no `index.html`) |
+| Erros | `src/js/monitor.js` manda `client_error` para `app_events` (máx. 5 por sessão, sem dados pessoais); Functions usam `logError` de `netlify/functions/lib/_log.js` |
 | Build | `npm run build` → `scripts/build-netlify.js` (gera `dist/` e `dist/js/env.js`) |
 | Hosting | Netlify conectado ao GitHub (`netlify.toml`, publish `dist`) |
 | Backend | Netlify Functions em `netlify/functions/` |

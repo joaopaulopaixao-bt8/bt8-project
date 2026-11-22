@@ -1,6 +1,10 @@
 [build]
-  command = "npm run build"
+  command = "npm test && npm run build"
   publish = "dist"
+
+[build.environment]
+  # npm test usa glob em node --test, que exige Node 21+.
+  NODE_VERSION = "22"
 
 [functions]
   directory = "netlify/functions"

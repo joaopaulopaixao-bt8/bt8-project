@@ -391,6 +391,7 @@ async function deleteAccount() {
       msg.className = 'delete-account-msg ok';
       msg.textContent = 'Conta excluida. Redirecionando...';
     }
+    if (typeof forgetUserTournament === 'function') forgetUserTournament(SUPA_USER?.id, { ask: false });
     await SUPA.auth.signOut().catch(() => {});
     localStorage.removeItem(CHECKOUT_INTENT_KEY);
     sessionStorage.clear();

@@ -168,6 +168,8 @@ function handleAuthStateChange(user) {
         setTimeout(() => continuePendingCheckout(params.get('auth') === 'confirmed' ? 'email_confirmed' : 'login_completed'), 700);
       }
       if (typeof handleCheckoutReturn === 'function') handleCheckoutReturn();
+      // Torneio terminado como visitante ou que falhou ao salvar: grava agora que sabemos quem é o usuário.
+      if (typeof retryPendingSave === 'function') retryPendingSave();
     });
   }
 
@@ -592,6 +594,7 @@ async function doForgot() {
 
 async function logoutUser() {
   closeUserMenu();
+  if (typeof forgetUserTournament === 'function' && !forgetUserTournament(SUPA_USER?.id)) return;
   if (SUPA) await SUPA.auth.signOut();
   APP.isGuest = false;
   APP.history = ['screen-landing'];
