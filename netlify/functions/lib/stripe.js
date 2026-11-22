@@ -131,7 +131,23 @@ const resolveOrigin = (requested, allowed = allowedOrigins()) => {
   return allowed.includes(origin) ? origin : null;
 };
 
+// Structured log, one JSON line per error. Same shape as netlify/functions/_log.js from the
+// build branch (claude/f0-build-*); point this at that file once both are merged.
+// Never pass personal data in `extra`.
+const logError = (context, error, extra) => {
+  console.error(JSON.stringify({
+    level: 'error',
+    context,
+    message: error?.message || String(error),
+    code: error?.code || error?.status || undefined,
+    stack: error?.stack ? String(error.stack).split('\n').slice(0, 6).join('\n') : undefined,
+    ...(extra || {}),
+    time: new Date().toISOString()
+  }));
+};
+
 module.exports = {
+  logError,
   STRIPE_API_VERSION,
   stripeRequest,
   isResourceMissing,

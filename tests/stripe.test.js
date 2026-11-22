@@ -86,7 +86,9 @@ const signedEvent = (payload) => {
 };
 
 // Minimal fake: profiles/subscriptions/app_events tables plus canned Stripe objects.
-const fakeBackend = ({ profiles = [], subscriptions = [], events = [], stripe = {} }) => {
+// `fail({ method, path, body })` returning true makes that request answer 500 (to simulate
+// the database or Stripe failing in the middle of a webhook).
+const fakeBackend = ({ profiles = [], subscriptions = [], events = [], stripe = {}, fail = null }) => {
   const calls = [];
   let seq = 0;
   const db = { profiles, subscriptions, app_events: events };
@@ -105,6 +107,9 @@ const fakeBackend = ({ profiles = [], subscriptions = [], events = [], stripe = 
     const method = init.method || 'GET';
     calls.push({ method, url: u.pathname + u.search, body: init.body ? String(init.body) : null });
     const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data, text: async () => (data == null ? '' : JSON.stringify(data)) });
+    if (fail && fail({ method, path: decodeURIComponent(u.pathname + u.search), body: init.body ? String(init.body) : '' })) {
+      return reply({ message: 'simulated failure' }, 500);
+    }
     if (u.hostname === 'api.stripe.com') {
       const key = `${method} ${u.pathname.replace('/v1/', '')}`;
       return key in stripe ? reply(stripe[key]) : reply({ error: { message: 'No such object', code: 'resource_missing' } }, 404);
@@ -237,6 +242,7 @@ test('webhook: disputa no mensal cancela a assinatura no Stripe e tira o Pro', a
     stripe: {
       'GET charges/ch_2': { id: 'ch_2', customer: 'cus_1', invoice: 'in_1' },
       'GET invoices/in_1': { id: 'in_1', subscription: 'sub_1' },
+      'GET subscriptions/sub_1': { id: 'sub_1', status: 'active' },
       'DELETE subscriptions/sub_1': { id: 'sub_1', status: 'canceled' }
     }
   });
@@ -412,8 +418,10 @@ test('cenário 2: duas entregas simultâneas do mesmo evento somam 30 dias uma v
   const { db } = fakeBackend({ profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }] });
   const payload = { id: 'evt_race', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
   const [a, b] = await Promise.all([runWebhook(payload), runWebhook(payload)]);
-  assert.deepEqual([a.status, b.status], [200, 200]);
-  assert.equal([a.body, b.body].filter(r => r.duplicate === 'event_id').length, 1);
+  // One processes; the other is either "already done" (200) or "in progress" (409, Stripe retries).
+  const processed = [a, b].filter(r => r.status === 200 && !r.body.duplicate);
+  assert.equal(processed.length, 1);
+  assert.ok([a, b].every(r => r.status === 200 || r.status === 409));
   const until = new Date(db.profiles[0].pro_until).getTime();
   assert.ok(Math.abs(until - (Date.now() + 30 * DAY)) < 60 * 1000, 'somou mais de 30 dias');
   assert.equal(db.app_events.filter(e => e.event_type === 'stripe_event_processed').length, 1);
@@ -437,7 +445,7 @@ test('cenário 3: reembolso do passe em uso tira só o que falta dele e puxa o p
     profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(t + 40 * DAY), stripe_customer_id: 'cus_1' }],
     subscriptions: [
       { id: 's_a', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_a', current_period_end: iso(t + 10 * DAY), metadata: { granted_start: iso(t - 20 * DAY), granted_end: iso(t + 10 * DAY) } },
-      { id: 's_b', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_b', current_period_end: iso(t + 40 * DAY), metadata: { granted_start: iso(t + 10 * DAY), granted_end: iso(t + 40 * DAY) } }
+      { id: 's_b', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_b', current_period_end: iso(t + 40 * DAY), metadata: { granted_start: iso(t + 10 * DAY), granted_end: iso(t + 40 * DAY), stacked_on: 's_a' } }
     ]
   });
   await runWebhook({ id: 'evt_ra', type: 'charge.refunded', data: { object: { id: 'ch_a', customer: 'cus_1', payment_intent: 'pi_a', refunded: true } } });
@@ -495,4 +503,160 @@ test('manage-subscription: assinatura sumida com modo diferente não é encerrad
   assert.equal(res.statusCode, 409);
   assert.equal(backend.db.subscriptions[0].status, 'active');
   assert.equal(backend.db.profiles[0].plan, 'pro');
+});
+
+// ---- segunda revisão: falha no meio do processamento ----
+
+const once = (predicate) => {
+  let used = false;
+  return (req) => (!used && predicate(req) ? (used = true) : false);
+};
+const isProfilePatch = (req) => req.method === 'PATCH' && req.path.startsWith('/rest/v1/profiles');
+const near = (actual, expected) => Math.abs(new Date(actual).getTime() - expected) < 60 * 1000;
+const processedEvents = (db) => db.app_events.filter(e => e.event_type === 'stripe_event_processed');
+
+test('falha no meio do 30 dias: perfil falha, reenvio libera o Pro uma vez só', async () => {
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }],
+    fail: once(isProfilePatch)
+  });
+  const payload = { id: 'evt_g1', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
+  assert.equal((await runWebhook(payload)).status, 500);
+  assert.equal(db.profiles[0].plan, undefined);
+  assert.equal(db.subscriptions[0].metadata.pro_granted_at, undefined);
+  assert.equal(processedEvents(db).length, 0);
+
+  assert.equal((await runWebhook(payload)).status, 200);
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.ok(near(db.profiles[0].pro_until, Date.now() + 30 * DAY));
+  assert.ok(db.subscriptions[0].metadata.pro_granted_at);
+  assert.equal(processedEvents(db)[0].metadata.status, 'done');
+});
+
+test('falha no meio do 30 dias: marca final falha, reenvio não soma de novo', async () => {
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }],
+    fail: once(req => req.method === 'PATCH' && req.path.startsWith('/rest/v1/subscriptions') && req.body.includes('pro_granted_at'))
+  });
+  const payload = { id: 'evt_g2', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
+  assert.equal((await runWebhook(payload)).status, 500);
+  const afterFirst = db.profiles[0].pro_until;
+  assert.equal(db.profiles[0].plan, 'pro');
+
+  assert.equal((await runWebhook(payload)).status, 200);
+  assert.equal(db.profiles[0].pro_until, afterFirst);
+  assert.ok(db.subscriptions[0].metadata.pro_granted_at);
+});
+
+const stackedPasses = (t) => [
+  { id: 's_a', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_a', current_period_end: iso(t + 10 * DAY), metadata: { granted_start: iso(t - 20 * DAY), granted_end: iso(t + 10 * DAY) } },
+  { id: 's_b', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_b', current_period_end: iso(t + 40 * DAY), metadata: { granted_start: iso(t + 10 * DAY), granted_end: iso(t + 40 * DAY), stacked_on: 's_a' } }
+];
+const refundA = { id: 'evt_rf', type: 'charge.refunded', data: { object: { id: 'ch_a', customer: 'cus_1', payment_intent: 'pi_a', refunded: true } } };
+
+for (const [label, predicate] of [
+  ['perfil', isProfilePatch],
+  ['status final', req => req.method === 'PATCH' && req.path.startsWith('/rest/v1/subscriptions?id=eq.s_a') && req.body.includes('"status":"refunded"')],
+  ['deslocamento do passe seguinte', req => req.method === 'PATCH' && req.path.startsWith('/rest/v1/subscriptions?id=eq.s_b')]
+]) {
+  test(`falha no meio do reembolso (${label}): reenvio termina sem puxar o passe duas vezes`, async () => {
+    const t = Date.now();
+    const { db } = fakeBackend({
+      profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(t + 40 * DAY), stripe_customer_id: 'cus_1' }],
+      subscriptions: stackedPasses(t),
+      fail: once(predicate)
+    });
+    assert.equal((await runWebhook(refundA)).status, 500);
+    assert.notEqual(db.subscriptions[0].status, 'refunded');
+
+    assert.equal((await runWebhook(refundA)).status, 200);
+    assert.equal(db.subscriptions[0].status, 'refunded');
+    assert.ok(near(db.subscriptions[1].current_period_end, t + 30 * DAY), `passe B: ${db.subscriptions[1].current_period_end}`);
+    assert.ok(near(db.profiles[0].pro_until, t + 30 * DAY), `perfil: ${db.profiles[0].pro_until}`);
+    assert.deepEqual(db.subscriptions[1].metadata.shifted_by_refund_of, ['s_a']);
+  });
+}
+
+test('falha no meio da disputa do mensal: reenvio não cancela de novo e termina', async () => {
+  const stripe = {
+    'GET charges/ch_2': { id: 'ch_2', customer: 'cus_1', invoice: 'in_1' },
+    'GET invoices/in_1': { id: 'in_1', subscription: 'sub_1' },
+    'GET subscriptions/sub_1': { id: 'sub_1', status: 'active' },
+    'DELETE subscriptions/sub_1': { id: 'sub_1', status: 'canceled' }
+  };
+  const { db, calls } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(Date.now() + 20 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_1', current_period_end: iso(Date.now() + 20 * DAY), metadata: {} }],
+    stripe,
+    fail: once(isProfilePatch)
+  });
+  const payload = { id: 'evt_dm2', type: 'charge.dispute.created', data: { object: { id: 'dp_2', charge: 'ch_2' } } };
+  assert.equal((await runWebhook(payload)).status, 500);
+  assert.equal(db.subscriptions[0].status, 'active');
+  stripe['GET subscriptions/sub_1'] = { id: 'sub_1', status: 'canceled' };
+
+  assert.equal((await runWebhook(payload)).status, 200);
+  assert.equal(calls.filter(c => c.method === 'DELETE' && c.url.includes('/v1/subscriptions/sub_1')).length, 1);
+  assert.equal(db.profiles[0].plan, 'free');
+  assert.equal(db.subscriptions[0].status, 'disputed');
+});
+
+test('reembolso do passe A não puxa o passe B que começou no fim do mensal', async () => {
+  const t = Date.now();
+  const M = t + 15 * DAY;
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(M + 30 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [
+      { id: 's_a', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_a', current_period_end: iso(t + 10 * DAY), metadata: { granted_start: iso(t - 20 * DAY), granted_end: iso(t + 10 * DAY) } },
+      { id: 's_m', user_id: 'u1', plan_type: 'recurring', status: 'cancel_at_period_end', stripe_subscription_id: 'sub_m', current_period_end: iso(M), metadata: {} },
+      { id: 's_b', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_b', current_period_end: iso(M + 30 * DAY), metadata: { granted_start: iso(M), granted_end: iso(M + 30 * DAY), stacked_on: null } }
+    ]
+  });
+  await runWebhook(refundA);
+  assert.equal(db.subscriptions[2].current_period_end, iso(M + 30 * DAY));
+  assert.equal(new Date(db.profiles[0].pro_until).getTime(), M + 30 * DAY);
+});
+
+test('compra empilhada grava em qual passe ela começou', async () => {
+  const t = Date.now();
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', plan: 'pro', pro_until: iso(t + 10 * DAY), stripe_customer_id: 'cus_1' }],
+    subscriptions: [stackedPasses(t)[0]]
+  });
+  await runWebhook({ id: 'evt_st', type: 'checkout.session.completed', data: { object: session({ id: 'cs_2', payment_intent: 'pi_new', payment_status: 'paid' }) } });
+  const created = db.subscriptions.find(r => r.stripe_payment_intent_id === 'pi_new');
+  assert.equal(created.metadata.stacked_on, 's_a');
+  assert.equal(created.metadata.granted_start, iso(t + 10 * DAY));
+});
+
+test('reserva presa há mais de 5 minutos é liberada; reserva recente responde 409', async () => {
+  const old = { id: 'ev_old', event_type: 'stripe_event_processed', created_at: iso(Date.now() - 10 * 60 * 1000), metadata: { event_id: 'evt_stuck', status: 'processing', reserved_at: iso(Date.now() - 10 * 60 * 1000) } };
+  const { db } = fakeBackend({ profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }], events: [old] });
+  const payload = { id: 'evt_stuck', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } };
+  assert.equal((await runWebhook(payload)).status, 200);
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.equal(processedEvents(db).length, 1);
+  assert.equal(processedEvents(db)[0].metadata.status, 'done');
+
+  const fresh = { id: 'ev_new', event_type: 'stripe_event_processed', created_at: iso(Date.now() - 60 * 1000), metadata: { event_id: 'evt_busy', status: 'processing', reserved_at: iso(Date.now() - 60 * 1000) } };
+  fakeBackend({ profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }], events: [fresh] });
+  assert.equal((await runWebhook({ ...payload, id: 'evt_busy' })).status, 409);
+});
+
+test('falha ao liberar a reserva vira log estruturado', async () => {
+  const logged = [];
+  const original = console.error;
+  console.error = (line) => logged.push(line);
+  try {
+    fakeBackend({
+      profiles: [],
+      fail: (req) => req.method === 'DELETE' && req.path.startsWith('/rest/v1/app_events')
+    });
+    const res = await runWebhook({ id: 'evt_rel', type: 'checkout.session.completed', data: { object: session({ payment_status: 'paid' }) } });
+    assert.equal(res.status, 500);
+  } finally {
+    console.error = original;
+  }
+  const entries = logged.filter(l => typeof l === 'string' && l.startsWith('{')).map(l => JSON.parse(l));
+  assert.ok(entries.some(e => e.level === 'error' && e.context === 'stripe-webhook' && e.step === 'release_reservation' && e.event_id === 'evt_rel'));
 });
