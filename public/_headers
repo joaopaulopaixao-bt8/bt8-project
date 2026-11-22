@@ -1,6 +1,28 @@
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), usb=(), payment=()
+  Content-Security-Policy-Report-Only: default-src 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.bt8.com.br wss://api.bt8.com.br https://api.stripe.com; frame-src https://js.stripe.com https://checkout.stripe.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+
+# HTML e rotas do app nunca em cache: os js/css já levam ?v=<versão do deploy>.
+/
+  Cache-Control: no-cache, no-store, must-revalidate
 /index.html
   Cache-Control: no-cache, no-store, must-revalidate
   Pragma: no-cache
+/admin
+  Cache-Control: no-cache, no-store, must-revalidate
+/bt8
+  Cache-Control: no-cache, no-store, must-revalidate
+/reset-password
+  Cache-Control: no-cache, no-store, must-revalidate
+/direitos-do-sistema
+  Cache-Control: no-cache, no-store, must-revalidate
+/termos-de-uso
+  Cache-Control: no-cache, no-store, must-revalidate
+/politica-de-privacidade
+  Cache-Control: no-cache, no-store, must-revalidate
 
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
