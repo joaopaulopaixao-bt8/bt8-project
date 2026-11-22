@@ -11,8 +11,9 @@
   function scrub(text, max) {
     return String(text || '')
       .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[email]')
-      .replace(/\d{6,}/g, '[num]')
       .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '[token]')
+      .replace(/\d[\d.\-\s()]{7,}\d/g, '[num]') // telefone e CPF com máscara
+      .replace(/\d{6,}/g, '[num]')
       .slice(0, max);
   }
 
