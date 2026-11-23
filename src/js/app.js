@@ -479,7 +479,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
   }, 2500);
 })();
 
-// ══ MÓDULO ARENA: rotas /arena, /scout, /telao/<slug>, /c/<slug>, /inscricao/<token> ══
+// ══ MÓDULO ARENA: rotas /arena, /scout, /telao/<slug>, /c/<slug>, /inscricao/<token>, /acompanhar/<token> ══
 // Cada rota abre sua tela e chama a função de entrada do módulo, se ela já existir.
 const ARENA_ROUTES = {
   arena: ['screen-arena', 'openArenaRoute'],
@@ -487,11 +487,12 @@ const ARENA_ROUTES = {
   telao: ['screen-telao', 'openTelaoRoute'],
   c: ['screen-publico', 'openPublicoRoute'],
   inscricao: ['screen-inscricao', 'openInscricaoRoute'],
+  acompanhar: ['screen-acompanhar', 'openAcompanharRoute'],
 };
 
 function arenaRoute() {
-  const m = window.location.pathname.replace(/\/+$/, '').match(/^\/(arena|scout|telao|c|inscricao)(?:\/([^/]+))?$/);
-  if (!m || (!m[2] && !['arena', 'scout'].includes(m[1]))) return null; // telão, público e inscrição exigem slug ou token
+  const m = window.location.pathname.replace(/\/+$/, '').match(/^\/(arena|scout|telao|c|inscricao|acompanhar)(?:\/([^/]+))?$/);
+  if (!m || (!m[2] && !['arena', 'scout'].includes(m[1]))) return null; // telão, público, inscrição e acompanhamento exigem slug ou token
   return { name: m[1], param: m[2] || '' };
 }
 

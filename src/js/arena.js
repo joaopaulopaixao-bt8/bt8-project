@@ -103,9 +103,29 @@ function arErro(e) {
   return err;
 }
 
+// Netlify Function com o login do gestor (Authorization: Bearer).
+async function arFuncao(nome, payload) {
+  const { data } = await SUPA.auth.getSession();
+  const r = await fetch(`/.netlify/functions/${nome}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data?.session?.access_token || ''}` },
+    body: JSON.stringify(payload),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Erro ${r.status}`);
+  return j;
+}
+
+// teams: colunas explícitas, porque o select de teams não tem acompanhamento_token (grant por coluna, 006).
+const AR_COLUNAS = {
+  teams: 'id,category_id,athlete1_id,athlete2_id,status,pagamento,pago_em,seed,origem,presente1,presente2,desistente_em,' +
+    'observacao,created_at,updated_at,comprovante_path,comprovante_enviado_em,comprovante_status,comprovante_motivo,comprovante_envios,tabela_email_em',
+};
+const arColunas = tabela => AR_COLUNAS[tabela] || '*';
+
 const ARENA_REAL = {
   async select(tabela, filtro = {}, ordem, signal) {
-    let q = SUPA.from(tabela).select('*');
+    let q = SUPA.from(tabela).select(arColunas(tabela));
     for (const [k, v] of Object.entries(filtro)) q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v);
     if (ordem) q = q.order(ordem);
     if (signal) q = q.abortSignal(signal);
@@ -114,12 +134,12 @@ const ARENA_REAL = {
     return data || [];
   },
   async insert(tabela, linha) {
-    const { data, error } = await SUPA.from(tabela).insert(linha).select().single();
+    const { data, error } = await SUPA.from(tabela).insert(linha).select(arColunas(tabela)).single();
     if (error) throw arErro(error);
     return data;
   },
   async update(tabela, id, patch) {
-    const { data, error } = await SUPA.from(tabela).update(patch).eq('id', id).select().single();
+    const { data, error } = await SUPA.from(tabela).update(patch).eq('id', id).select(arColunas(tabela)).single();
     if (error) throw arErro(error);
     return data;
   },
@@ -132,17 +152,9 @@ const ARENA_REAL = {
     if (error) throw arErro(error);
     return data;
   },
-  async membro(payload) {
-    const { data } = await SUPA.auth.getSession();
-    const r = await fetch('/.netlify/functions/arena-member', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data?.session?.access_token || ''}` },
-      body: JSON.stringify(payload),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.error || `Erro ${r.status} ao salvar a equipe`);
-    return j;
-  },
+  membro(payload) { return arFuncao('arena-member', payload); },
+  pagamento(payload) { return arFuncao('arena-pagamento', payload); },
+  notificar(payload) { return arFuncao('arena-notificar', payload); },
   async minhasArenas() {
     const uid = SUPA_USER?.id;
     if (!uid) return [];
@@ -923,6 +935,7 @@ function arenaRenderInscritos() {
     ${g ? `<div class="ar-botoes">
       <button class="btn btn-yellow btn-sm" onclick="arenaInscreverDupla()">${icon('plus')} Inscrever dupla</button>
       <button class="btn btn-ghost btn-sm" onclick="arenaColarLista()">Colar lista</button>
+      ${ARENA.c.groups.some(x => x.category_id === cat.id) ? `<button class="btn btn-ghost btn-sm" onclick="arenaAvisarDuplas('${cat.id}')">Avisar duplas por e-mail</button>` : ''}
     </div>` : ''}
     <label class="ar-check ar-filtro"><input type="checkbox" ${ARENA.verCanceladas ? 'checked' : ''} onchange="ARENA.verCanceladas=this.checked;arenaRenderInscritos()"> <span>Mostrar canceladas (${n('cancelada')})</span></label>
     <div class="ar-list">${lista || '<div class="ar-vazio">Nenhuma dupla nesta categoria.</div>'}</div>`);
@@ -941,7 +954,9 @@ function arenaDuplaHtml(t, g) {
       <button class="btn btn-ghost btn-sm" onclick="arenaEditarDupla('${t.id}')">${icon('pencil')} Editar</button>
       <button class="btn btn-ghost btn-sm" onclick="arenaTrocarAtleta('${t.id}')">${icon('repeat')} Trocar atleta</button>
       ${!noGrupo && ARENA.c.cats.length > 1 ? `<button class="btn btn-ghost btn-sm" onclick="arenaMudarCat('${t.id}')">Mudar de categoria</button>` : ''}
-      ${t.pagamento !== 'nao_se_aplica' || arRegras().pix?.chave ? `<button class="btn btn-ghost btn-sm" onclick="arenaPago('${t.id}')">${icon('check')} ${t.pagamento === 'pago' ? 'Desmarcar pago' : 'Marcar pago'}</button>` : ''}
+      ${arBotoesPagamento(t)}
+      <button class="btn btn-ghost btn-sm" onclick="arenaLinkDupla('${t.id}')">${icon('share')} Link da dupla</button>
+      <button class="btn btn-ghost btn-sm" onclick="arenaLinkDupla('${t.id}', true)">${icon('refresh')} Gerar link novo</button>
       ${t.status === 'espera' ? `<button class="btn btn-ghost btn-sm" onclick="arenaConfirmarVaga('${t.id}')">Confirmar vaga</button>` : ''}
       ${noGrupo
         ? (!t.desistente_em ? `<button class="btn btn-ghost btn-sm" onclick="mesaSubstituir('${t.id}')">Substituir dupla</button>
@@ -954,6 +969,8 @@ function arenaDuplaHtml(t, g) {
           <small>${t.seed ? `cabeça ${t.seed} · ` : ''}${arEsc({ link: 'pelo link', importacao: 'lista colada', manual: 'cadastro manual' }[t.origem] || '')}${t.observacao ? ' · ' + arEsc(t.observacao) : ''}</small></span>
         ${arChip(AR_STATUS_DUPLA[t.status] || t.status, tipo)}
         ${t.pagamento === 'pago' ? arChip('Pago', 'ok') : ''}
+        ${t.pagamento !== 'pago' && t.comprovante_status === 'enviado' ? arChip('Comprovante enviado', 'warn') : ''}
+        ${t.pagamento !== 'pago' && t.comprovante_status === 'recusado' ? arChip('Comprovante recusado', 'err') : ''}
         ${t.desistente_em ? arChip('Desistente', 'err') : ''}
       </summary>
       <div class="ar-item-corpo">
@@ -1133,16 +1150,63 @@ async function arenaMudarCat(id) {
   }, 'Dupla movida.');
 }
 
-async function arenaPago(id) {
+// Pagamento pela Function arena-pagamento (confere o papel, guarda o comprovante e avisa os atletas por e-mail).
+function arBotoesPagamento(t) {
+  if (t.pagamento === 'nao_se_aplica' && !arRegras().pix?.chave) return '';
+  const b = (acao, rotulo, ic = '') => `<button class="btn btn-ghost btn-sm" onclick="arenaPagamento('${t.id}', '${acao}')">${ic}${rotulo}</button>`;
+  return [
+    t.comprovante_path ? b('ver', 'Ver comprovante', icon('download') + ' ') : '',
+    t.pagamento !== 'pago' ? b('confirmar', 'Confirmar pagamento', icon('check') + ' ') : '',
+    t.pagamento !== 'pago' && t.comprovante_status === 'enviado' ? b('recusar', 'Recusar comprovante') : '',
+    t.pagamento === 'pago' || t.comprovante_status === 'recusado' ? b('desfazer', t.pagamento === 'pago' ? 'Desfazer pagamento' : 'Desfazer recusa') : '',
+  ].join('');
+}
+
+async function arenaPagamento(id, acao) {
   const t = arTeam(id);
-  const pix = !!arRegras().pix?.chave;
-  const patch = t.pagamento === 'pago'
-    ? { pagamento: 'pendente', pago_em: null, status: t.status === 'confirmada' && pix ? 'pendente' : t.status }
-    : { pagamento: 'pago', pago_em: new Date().toISOString(), status: t.status === 'pendente' ? 'confirmada' : t.status };
+  if (acao === 'ver') {
+    // Abre a aba já no clique (senão o navegador bloqueia o pop-up) e troca o endereço quando a URL assinada chega.
+    const aba = window.open('', '_blank');
+    return arAcao(async () => {
+      try {
+        const r = await arenaDb().pagamento({ team_id: id, acao });
+        if (aba) aba.location.href = r.url; else location.href = r.url;
+      } catch (e) { aba?.close(); throw e; }
+    });
+  }
+  let motivo;
+  if (acao === 'recusar') {
+    const v = await arForm({ titulo: 'Recusar comprovante', texto: 'A dupla vê o motivo na página de acompanhamento e recebe por e-mail (se informou).',
+      campos: [{ nome: 'motivo', rotulo: 'Motivo', placeholder: 'Ex.: valor diferente da inscrição', extra: 'maxlength="280" required' }], ok: 'Recusar', perigo: true });
+    if (!v) return;
+    motivo = v.motivo;
+  } else if (acao === 'desfazer' && !(await arConfirm('Desfazer', t.pagamento === 'pago'
+    ? 'O pagamento volta para pendente e a dupla para "Aguardando Pix".' : 'A recusa é desfeita e o comprovante volta para conferência.', 'Desfazer'))) return;
   await arAcao(async () => {
-    Object.assign(t, await arenaDb().update('teams', id, patch));
+    const r = await arenaDb().pagamento({ team_id: id, acao, motivo });
+    Object.assign(t, r.team);
+    if (!r.team.tem_comprovante) t.comprovante_path = null;
     arenaRenderInscritos();
-  }, patch.pagamento === 'pago' ? 'Pagamento registrado.' : 'Pagamento desmarcado.');
+  }, { confirmar: 'Pagamento confirmado.', recusar: 'Comprovante recusado.', desfazer: 'Desfeito.' }[acao]);
+}
+
+// Link /acompanhar/<token> da dupla (RPC arena_team_link: só dono/gestor). "novo" troca o token: o antigo para na hora.
+async function arenaLinkDupla(id, novo = false) {
+  if (novo && !(await arConfirm('Gerar link novo', 'O link atual da dupla para de funcionar na hora. Use se ele foi parar com quem não devia e mande o novo para a dupla.', 'Gerar link novo', true))) return;
+  await arAcao(async () => {
+    const r = await arenaDb().rpc('arena_team_link', { p_team: id, p_novo: novo });
+    await arenaCopiar(arLink('/acompanhar/' + r.token));
+  });
+}
+
+// Depois do sorteio publicado: e-mail "tabela publicada" para as duplas da categoria (cada uma recebe uma vez).
+async function arenaAvisarDuplas(catId) {
+  const cat = ARENA.c.cats.find(c => c.id === catId);
+  if (!(await arConfirm('Avisar duplas por e-mail', `Enviar o grupo e o primeiro jogo para as duplas de <b>${arEsc(cat?.nome)}</b> que informaram e-mail? Quem já foi avisado não recebe de novo.`, 'Enviar'))) return;
+  await arAcao(async () => {
+    const r = await arenaDb().notificar({ category_id: catId });
+    arToast(r.mensagem || 'Duplas avisadas.');
+  });
 }
 
 async function arenaConfirmarVaga(id) {
@@ -1338,6 +1402,7 @@ async function arenaPublicar() {
     delete ARENA.draft[cat.id];
     await arenaRecarregar(arenaRenderSorteio);
   }, 'Sorteio publicado.');
+  if (ARENA.c.groups.some(g => g.category_id === cat.id)) await arenaAvisarDuplas(cat.id);
 }
 
 // ══ GRUPOS E CHAVE ═══════════════════════════════════════
@@ -1566,7 +1631,7 @@ function arDemoSeed() {
         athletes.push(a);
         return a.id;
       });
-      teams.push({ id: id(), category_id: cat.id, athlete1_id: par[0], athlete2_id: par[1], status: i % 5 === 4 ? 'pendente' : 'confirmada', pagamento: 'nao_se_aplica', pago_em: null, seed: i < 2 ? i + 1 : null, origem: i % 2 ? 'link' : 'importacao', presente1: false, presente2: false, desistente_em: null, observacao: null });
+      teams.push({ id: id(), category_id: cat.id, athlete1_id: par[0], athlete2_id: par[1], status: i % 5 === 4 ? 'pendente' : 'confirmada', pagamento: i % 5 === 4 ? 'pendente' : 'nao_se_aplica', pago_em: null, acompanhamento_token: arUid(), comprovante_status: i % 10 === 4 ? 'enviado' : 'nenhum', comprovante_path: i % 10 === 4 ? 'demo' : null, seed: i < 2 ? i + 1 : null, origem: i % 2 ? 'link' : 'importacao', presente1: false, presente2: false, desistente_em: null, observacao: null });
     }
   };
   criar(cats[0], H, 14);
@@ -1650,6 +1715,25 @@ const ARENA_DEMO = {
   async minhasArenas() {
     return arClone(arDemoDb().arenas.map(arena => ({ arena, papel: 'dono' })));
   },
+  // Mesmas regras da Function arena-pagamento (transicaoPagamento em netlify/functions/lib/arena.js), sem e-mail.
+  async pagamento({ team_id, acao, motivo }) {
+    const db = arDemoDb();
+    const t = db.teams.find(x => x.id === team_id);
+    if (acao === 'ver') throw new Error('Na demonstração não há arquivo de comprovante para abrir.');
+    const tem = !!t.comprovante_path;
+    if (acao === 'confirmar') Object.assign(t, { pagamento: 'pago', pago_em: new Date().toISOString(), status: t.status === 'pendente' ? 'confirmada' : t.status, comprovante_status: tem ? 'aceito' : t.comprovante_status, comprovante_motivo: null });
+    else if (acao === 'recusar') {
+      if (String(motivo || '').trim().length < 3) throw new Error('Informe o motivo da recusa.');
+      Object.assign(t, { comprovante_status: 'recusado', comprovante_motivo: motivo.trim() });
+    } else if (acao === 'desfazer' && t.pagamento === 'pago') Object.assign(t, { pagamento: 'pendente', pago_em: null, status: t.status === 'confirmada' ? 'pendente' : t.status, comprovante_status: tem ? 'enviado' : 'nenhum' });
+    else if (acao === 'desfazer') Object.assign(t, { comprovante_status: 'enviado', comprovante_motivo: null });
+    arDemoSalvar();
+    return { ok: true, team: { ...arClone(t), tem_comprovante: tem } };
+  },
+  async notificar({ category_id }) {
+    const n = arDemoDb().teams.filter(t => t.category_id === category_id && arAtiva(t)).length;
+    return { ok: true, mensagem: `Demonstração: ${n} dupla(s) seriam avisadas por e-mail.` };
+  },
 };
 
 function arDemoErro(msg, hint) {
@@ -1659,6 +1743,11 @@ function arDemoErro(msg, hint) {
 }
 
 const AR_DEMO_RPC = {
+  arena_team_link(db, { p_team, p_novo }) {
+    const t = db.teams.find(x => x.id === p_team);
+    if (p_novo || !t.acompanhamento_token) t.acompanhamento_token = arUid();
+    return { ok: true, token: t.acompanhamento_token };
+  },
   category_publish_draw(db, { p_category, p_payload }) {
     const cat = db.categories.find(c => c.id === p_category);
     const doCat = db.matches.filter(m => m.category_id === p_category);

@@ -3,7 +3,7 @@ const BT8_LEGAL_CNPJ = '53.243.248/0001-40';
 const BT8_SUPPORT_EMAIL = 'suporte@bt8.com.br';
 // Versão do aceite da inscrição em campeonato de arena. Mudou o texto abaixo: mudar a versão
 // (e a de netlify/functions/lib/arena.js, que o teste confere).
-const BT8_ARENA_LGPD_VERSAO = '2026-11-22';
+const BT8_ARENA_LGPD_VERSAO = '2026-11-22b';
 
 function legalRouteKey() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -18,9 +18,10 @@ function arenaLgpdHtml(nomeArena) {
   const arena = escapeHtml(nomeArena || 'a arena organizadora');
   return `
     <p><strong>Uso dos dados da inscrição</strong> (versão ${BT8_ARENA_LGPD_VERSAO})</p>
-    <p>Ao inscrever a dupla, você informa o nome e o WhatsApp dos dois atletas. ${arena} é a organizadora do campeonato e decide como esses dados são usados; o BT8 opera o sistema em nome dela.</p>
-    <p>Os dados servem para organizar o campeonato: montar grupos e jogos, chamar a dupla para a quadra e falar com os atletas sobre jogos e pagamento da inscrição.</p>
-    <p>Os <strong>nomes</strong> e os resultados aparecem na página pública do campeonato e no telão. O <strong>WhatsApp nunca é publicado</strong>: só a equipe da arena tem acesso.</p>
+    <p>Ao inscrever a dupla, você informa o nome e o WhatsApp dos dois atletas e, se quiser, o e-mail de cada um. ${arena} é a organizadora do campeonato e decide como esses dados são usados; o BT8 opera o sistema em nome dela.</p>
+    <p>Os dados servem para organizar o campeonato: montar grupos e jogos, chamar a dupla para a quadra e falar com os atletas sobre jogos e pagamento da inscrição. O e-mail, quando informado, recebe só avisos deste campeonato (inscrição, pagamento e tabela).</p>
+    <p>O <strong>comprovante de pagamento</strong> enviado pela página de acompanhamento fica guardado de forma privada: só a equipe da arena consegue abrir.</p>
+    <p>Os <strong>nomes</strong> e os resultados aparecem na página pública do campeonato e no telão. O <strong>WhatsApp e o e-mail nunca são publicados</strong>: só a equipe da arena tem acesso.</p>
     <p>Os dados ficam guardados enquanto forem necessários para o campeonato e o histórico de resultados. Para pedir acesso, correção ou exclusão, fale com a arena ou com <a href="mailto:${BT8_SUPPORT_EMAIL}">${BT8_SUPPORT_EMAIL}</a>.</p>
     <p>Ao aceitar, você confirma que o seu parceiro de dupla autorizou a inscrição com os dados dele.</p>`;
 }
