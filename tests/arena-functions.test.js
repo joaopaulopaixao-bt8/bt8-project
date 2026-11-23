@@ -118,6 +118,16 @@ test('respostaDeErro: só repassa mensagem própria ou recusa de negócio', () =
   }
 });
 
+test('hojeSaoPaulo usa o dia de Brasília, não UTC', () => {
+  assert.equal(A.hojeSaoPaulo(new Date('2026-12-01T02:30:00Z')), '2026-11-30'); // 23h30 do dia 30 em SP
+  assert.equal(A.hojeSaoPaulo(new Date('2026-12-01T03:30:00Z')), '2026-12-01');
+});
+
+test('validarNovaSenha: regras da tela de troca obrigatória', () => {
+  assert.equal(A.validarNovaSenha('senha123').senha, 'senha123');
+  for (const ruim of ['curta1', 'somenteletras', '12345678', 'a1'.repeat(40), null]) assert.ok(A.validarNovaSenha(ruim).erro, String(ruim));
+});
+
 test('hashIp não expõe o IP e depende do segredo', () => {
   const h = A.hashIp('s1', '1.2.3.4');
   assert.match(h, /^[0-9a-f]{64}$/);

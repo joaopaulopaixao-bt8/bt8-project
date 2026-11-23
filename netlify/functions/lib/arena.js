@@ -215,7 +215,10 @@ async function obterOuCriarUsuario(env, { nome, email, senha }) {
   if (existente) return { userId: existente, criada: false };
   const user = await sbFetch(env, 'auth/v1/admin/users', {
     method: 'POST',
-    body: JSON.stringify({ email, password: senha, email_confirm: true, user_metadata: { full_name: nome } })
+    // Senha escolhida pelo gestor/admin: a pessoa troca no primeiro login (arena-trocar-senha). Sem isso,
+    // se o e-mail for de outra pessoa que depois entra com Google, quem criou continuaria sabendo a senha.
+    body: JSON.stringify({ email, password: senha, email_confirm: true, user_metadata: { full_name: nome },
+      app_metadata: { trocar_senha: true } })
   });
   return { userId: user.id, criada: true };
 }
@@ -225,14 +228,27 @@ const apagarUsuario = (env, userId) => sbFetch(env, `auth/v1/admin/users/${encod
   .catch(e => logError('arena-apagar-usuario', e));
 
 // Arena ativa e dentro do prazo do plano?
+// Data de hoje (AAAA-MM-DD) em São Paulo: ativo_ate vale até o fim do dia no horário da arena.
+const hojeSaoPaulo = (agora = new Date()) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(agora);
+
+// Nova senha da troca obrigatória: mesmas regras da tela (8+, 1 letra e 1 número; GoTrue aceita até 72).
+function validarNovaSenha(v) {
+  const senha = String(v ?? '');
+  if (senha.length < 8 || senha.length > 72 || !/[a-zA-Z]/.test(senha) || !/[0-9]/.test(senha)) {
+    return { erro: 'A senha precisa ter de 8 a 72 caracteres, com pelo menos 1 letra e 1 número.' };
+  }
+  return { senha };
+}
+
 async function arenaAtiva(env, arenaId) {
   const [a] = await sbFetch(env, `rest/v1/arenas?select=status,ativo_ate&id=eq.${encodeURIComponent(arenaId)}&limit=1`);
   if (!a) return false;
-  return a.status === 'ativa' && (!a.ativo_ate || a.ativo_ate >= new Date().toISOString().slice(0, 10));
+  return a.status === 'ativa' && (!a.ativo_ate || a.ativo_ate >= hojeSaoPaulo());
 }
 
 module.exports = {
-  ARENA_LGPD_VERSAO, PAPEIS_EQUIPE, json, dataValida, erroPublico, respostaDeErro, apagarUsuario, arenaAtiva, limparNome, normalizarTelefone, emailValido, uuidValido,
+  ARENA_LGPD_VERSAO, PAPEIS_EQUIPE, json, hojeSaoPaulo, validarNovaSenha, dataValida, erroPublico, respostaDeErro, apagarUsuario, arenaAtiva, limparNome, normalizarTelefone, emailValido, uuidValido,
   validarInscricao, statusDaRecusa, validarArena, validarPessoa, validarMembro, hashIp, clientIp,
   supabaseEnv, sbFetch, usuarioDoToken, ehAdmin, obterOuCriarUsuario
 };
