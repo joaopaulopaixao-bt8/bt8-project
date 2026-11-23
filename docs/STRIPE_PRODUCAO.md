@@ -22,7 +22,11 @@ Os IDs do modo teste não existem no modo real: é preciso criar tudo de novo.
 
 - [ ] **Desenvolvedores → Webhooks → Adicionar endpoint**
   - URL: `https://bt8.com.br/.netlify/functions/stripe-webhook`
-  - Versão da API: `2025-02-24.acacia` (a mesma fixada em `netlify/functions/lib/stripe.js`). **Obrigatório nos dois endpoints, o de teste e o de produção**: o webhook lê `charge.invoice` e `invoice.subscription` para saber se um reembolso ou uma disputa é do mensal, e esses campos mudam de lugar em versões mais novas. Com outra versão, reembolso do mensal seria tratado como se fosse do 30 dias. Para conferir: Webhooks → endpoint → "Versão da API".
+  - Versão da API: **qualquer uma** de `2025-02-24.acacia` em diante (o endpoint de produção que já existe está em `2026-03-25.dahlia`, e o Stripe não deixa trocar a versão de um endpoint existente, então não precisa recriá-lo). O webhook lê os dois formatos:
+    - assinatura de um reembolso ou disputa: `charge.invoice` (acacia) ou, quando o campo não vem (basil em diante), a fatura do `payment_intent`; depois `invoice.subscription` (acacia) ou `invoice.parent.subscription_details.subscription` (basil em diante);
+    - `invoice.payment_failed`: `invoice.subscription_details` ou `invoice.parent.subscription_details`;
+    - fim do período: `current_period_end` na assinatura (acacia) ou em `items.data[0]` (basil em diante).
+    As chamadas que as Functions fazem à API continuam fixas em `2025-02-24.acacia` (`netlify/functions/lib/stripe.js`); só o formato dos eventos recebidos segue a versão do endpoint.
   - Eventos, exatamente estes 9 (é a lista `HANDLED_EVENTS` de `netlify/functions/stripe-webhook.js`; um teste garante que esta lista e o código batem):
     - `checkout.session.completed`
     - `checkout.session.async_payment_succeeded`
@@ -121,6 +125,7 @@ Antes do `commit`, confira as contagens que o Supabase mostra. Se alguém recebe
 - **30 dias soma**: o passe vai de `max(pro_until atual, agora)` até 30 dias depois, e esse intervalo fica no registro (`metadata.granted_start`/`granted_end`). Com mensal ativo, a compra do 30 dias é recusada (409). Com o mensal já com cancelamento agendado, a compra é aceita e soma depois do fim do mensal.
 - **Mensal**: o plano segue o status da assinatura (`active`, `trialing` e `past_due` = Pro; `past_due` só por 3 dias). O `current_period_end` gravado no registro é até quando aquela assinatura dá Pro (em `past_due`, o fim da carência).
 - **Reembolso total ou disputa**: no 30 dias, puxa para trás, em `max(0, fim - max(início, agora))`, só os passes que foram **empilhados nele**. Cada passe guarda em `metadata.stacked_on` o passe em cujo fim ele começou (vazio se começou no fim de um mensal ou de agora); o deslocamento segue essa cadeia. Depois, o perfil passa a valer até o maior fim entre os registros que restam. Um passe antigo já vencido não tira nada. Registros de antes dessa mudança, sem intervalo gravado, tiram 30 dias do perfil. No mensal, cancela a assinatura no Stripe e tira o Pro, exceto o que outro registro ainda garante. Reembolso parcial só registra o evento.
+- **Versão dos eventos**: o endpoint pode estar em acacia ou numa versão nova (basil, clover, dahlia); os campos que mudaram de lugar são lidos nos dois formatos (passo 3). Um teste cobre cada caso com os dois formatos.
 - **Checkout abandonado**: `checkout.session.expired` marca o registro `checkout_started` como `expired`.
 - **Cliente desconhecido**: se o `customer` não estiver em nenhum perfil, o webhook procura pelo `metadata.user_id` do objeto e depois pelo `user_id` gravado no cliente do Stripe.
 - **Perfil não encontrado**: se a atualização do perfil não atinge nenhuma linha, o webhook responde 500 (e o Stripe reenvia) em vez de 200.

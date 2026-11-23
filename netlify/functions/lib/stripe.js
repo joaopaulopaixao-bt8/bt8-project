@@ -1,8 +1,9 @@
 // Shared Stripe helpers for the Netlify Functions. Lives in a subfolder so Netlify
 // does not deploy it as a function of its own.
 
-// One API version for every Function (F0-09). Changing it changes payload shapes
-// (e.g. current_period_end moved to items in 2025-03-31.basil), so bump it on purpose.
+// One API version for every API call the Functions make (F0-09). Changing it changes
+// response shapes (e.g. current_period_end moved to items in 2025-03-31.basil), so bump
+// it on purpose. Webhook events are NOT covered: they use the endpoint's version.
 const STRIPE_API_VERSION = '2025-02-24.acacia';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -99,6 +100,17 @@ const subscriptionProUntil = (subscription) => {
   return new Date(Math.min(toTime(end), graceEnd)).toISOString();
 };
 
+// Webhook payloads follow the ENDPOINT's API version, not STRIPE_API_VERSION. The live
+// endpoint is on 2026-03-25.dahlia (can't be changed), so read both shapes:
+// acacia: invoice.subscription / invoice.subscription_details
+// basil+: invoice.parent.subscription_details.{subscription,metadata}
+const idOf = (value) => (typeof value === 'string' ? value : value?.id) || null;
+const invoiceSubscriptionId = (invoice) => idOf(invoice?.subscription)
+  || idOf(invoice?.parent?.subscription_details?.subscription);
+const invoiceSubscriptionMetadata = (invoice) => invoice?.subscription_details?.metadata
+  || invoice?.parent?.subscription_details?.metadata
+  || null;
+
 // Row statuses that still give Pro until their current_period_end.
 const ENTITLED_ROW_STATUSES = ['active', 'trialing', 'past_due', 'cancel_at_period_end', 'paid'];
 
@@ -160,6 +172,8 @@ module.exports = {
   revokeOneTimeProUntil,
   subscriptionPeriodEnd,
   subscriptionProUntil,
+  invoiceSubscriptionId,
+  invoiceSubscriptionMetadata,
   ENTITLED_ROW_STATUSES,
   PAST_DUE_GRACE_DAYS,
   isRecurringActive,

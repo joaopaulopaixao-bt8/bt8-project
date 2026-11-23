@@ -660,3 +660,88 @@ test('falha ao liberar a reserva vira log estruturado', async () => {
   const entries = logged.filter(l => typeof l === 'string' && l.startsWith('{')).map(l => JSON.parse(l));
   assert.ok(entries.some(e => e.level === 'error' && e.context === 'stripe-webhook' && e.step === 'release_reservation' && e.event_id === 'evt_rel'));
 });
+
+// Webhook payloads follow the endpoint's API version. The live endpoint is on
+// 2026-03-25.dahlia; these use the basil+ shapes next to the acacia ones above.
+test('fatura: lê a assinatura e o metadata nas duas versões (acacia e basil+)', () => {
+  const acacia = { subscription: 'sub_1', subscription_details: { metadata: { user_id: 'u1' } } };
+  const dahlia = { parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_1', metadata: { user_id: 'u1' } } } };
+  for (const invoice of [acacia, dahlia]) {
+    assert.equal(lib.invoiceSubscriptionId(invoice), 'sub_1');
+    assert.equal(lib.invoiceSubscriptionMetadata(invoice).user_id, 'u1');
+  }
+  assert.equal(lib.invoiceSubscriptionId({ parent: null }), null);
+});
+
+test('assinatura: current_period_end no topo (acacia) ou em items (basil+)', () => {
+  const end = 1800000000;
+  assert.equal(lib.subscriptionPeriodEnd({ current_period_end: end }), new Date(end * 1000).toISOString());
+  assert.equal(lib.subscriptionPeriodEnd({ items: { data: [{ current_period_end: end }] } }), new Date(end * 1000).toISOString());
+});
+
+test('dahlia: subscription.updated com o período só em items libera o Pro', async () => {
+  const end = Math.floor(Date.now() / 1000) + 10 * 86400;
+  const sub = { id: 'sub_1', customer: 'cus_1', status: 'active', items: { data: [{ current_period_start: end - 30 * 86400, current_period_end: end }] } };
+  const { db } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: 'cus_1' }],
+    stripe: { 'GET subscriptions/sub_1': sub }
+  });
+  const res = await runWebhook({ id: 'evt_dh1', type: 'customer.subscription.updated', data: { object: sub } });
+  assert.equal(res.status, 200);
+  assert.equal(db.profiles[0].plan, 'pro');
+  assert.equal(db.profiles[0].pro_until, new Date(end * 1000).toISOString());
+});
+
+test('dahlia: reembolso da fatura do mensal sem charge.invoice acha a assinatura pelo payment_intent', async () => {
+  const { db, calls } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: iso(Date.now() + 20 * DAY), stripe_customer_id: 'cus_1', plan: 'pro' }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'recurring', status: 'active', stripe_subscription_id: 'sub_1', metadata: {} }],
+    stripe: {
+      'GET payment_intents/pi_m': { id: 'pi_m', invoice: 'in_m' },
+      'GET invoices/in_m': { id: 'in_m', parent: { subscription_details: { subscription: 'sub_1' } } },
+      'GET subscriptions/sub_1': { id: 'sub_1', status: 'active' },
+      'DELETE subscriptions/sub_1': { id: 'sub_1', status: 'canceled' }
+    }
+  });
+  // basil+ charge: no `invoice` key at all.
+  const charge = { id: 'ch_m', customer: 'cus_1', payment_intent: 'pi_m', refunded: true, amount: 1990, amount_refunded: 1990 };
+  const res = await runWebhook({ id: 'evt_dh2', type: 'charge.refunded', data: { object: charge } });
+  assert.equal(res.status, 200);
+  assert.ok(calls.some(c => c.method === 'DELETE' && c.url.includes('/v1/subscriptions/sub_1')));
+  assert.equal(db.subscriptions[0].status, 'refunded');
+  assert.equal(db.profiles[0].plan, 'free');
+});
+
+test('dahlia: reembolso do 30 dias sem charge.invoice segue como pagamento único', async () => {
+  const t = Date.now();
+  const { db, calls } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: iso(t + 20 * DAY), stripe_customer_id: 'cus_1', plan: 'pro' }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_1',
+      current_period_end: iso(t + 20 * DAY), metadata: { granted_start: iso(t - 10 * DAY), granted_end: iso(t + 20 * DAY) } }],
+    stripe: { 'GET payment_intents/pi_1': { id: 'pi_1', invoice: null } }
+  });
+  const res = await runWebhook({ id: 'evt_dh3', type: 'charge.refunded', data: { object: { id: 'ch_1', customer: 'cus_1', payment_intent: 'pi_1', refunded: true } } });
+  assert.equal(res.status, 200);
+  assert.ok(!calls.some(c => c.url.includes('/v1/invoices/')));
+  assert.equal(db.subscriptions[0].status, 'refunded');
+  assert.equal(db.profiles[0].plan, 'free');
+});
+
+test('acacia: reembolso com charge.invoice null não consulta o payment_intent', async () => {
+  const { calls } = fakeBackend({
+    profiles: [{ id: 'u1', role: 'user', pro_until: iso(Date.now() + 20 * DAY), stripe_customer_id: 'cus_1', plan: 'pro' }],
+    subscriptions: [{ id: 's1', user_id: 'u1', plan_type: 'one_time_30d', status: 'paid', stripe_payment_intent_id: 'pi_1', metadata: {} }]
+  });
+  await runWebhook({ id: 'evt_ac1', type: 'charge.refunded', data: { object: { id: 'ch_1', customer: 'cus_1', payment_intent: 'pi_1', invoice: null, refunded: true } } });
+  assert.ok(!calls.some(c => c.url.includes('/v1/payment_intents/')));
+});
+
+test('dahlia: invoice.payment_failed acha o perfil pelo metadata em parent.subscription_details', async () => {
+  const { db } = fakeBackend({ profiles: [{ id: 'u1', role: 'user', pro_until: null, stripe_customer_id: null }] });
+  const invoice = { id: 'in_f', customer: 'cus_unknown', parent: { subscription_details: { subscription: 'sub_1', metadata: { user_id: 'u1' } } } };
+  const res = await runWebhook({ id: 'evt_dh4', type: 'invoice.payment_failed', data: { object: invoice } });
+  assert.equal(res.status, 200);
+  assert.equal(db.profiles[0].subscription_status, 'past_due');
+  const tracked = db.app_events.find(e => e.event_type === 'invoice_payment_failed');
+  assert.equal(tracked.metadata.subscription_id, 'sub_1');
+});

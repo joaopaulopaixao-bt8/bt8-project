@@ -9,6 +9,8 @@ const {
   unusedGrantMs,
   revokeOneTimeProUntil,
   subscriptionProUntil,
+  invoiceSubscriptionId,
+  invoiceSubscriptionMetadata,
   ENTITLED_ROW_STATUSES,
   logError
 } = require('./lib/stripe');
@@ -460,14 +462,14 @@ const createHandlers = (ctx) => {
   const invoicePaymentFailed = async (invoice) => {
     const profile = await resolveProfile({
       customerId: invoice.customer,
-      userId: invoice.subscription_details?.metadata?.user_id
+      userId: invoiceSubscriptionMetadata(invoice)?.user_id
     });
     if (!profile) return { ignored: 'unknown_customer' };
     await updateProfilePlan(profile.id, { subscription_status: 'past_due' });
     await trackEvent({
       user_id: profile.id,
       event_type: 'invoice_payment_failed',
-      metadata: { invoice_id: invoice.id }
+      metadata: { invoice_id: invoice.id, subscription_id: invoiceSubscriptionId(invoice) }
     });
     return {};
   };
@@ -528,9 +530,20 @@ const createHandlers = (ctx) => {
 
     const metadata = { revoked_reason: reason, revoked_charge_id: charge.id, revoked_event_id: stripeEvent.id };
 
-    if (charge.invoice) {
-      const invoice = await stripe(`invoices/${idOf(charge.invoice)}`);
-      const subscriptionId = idOf(invoice.subscription);
+    // charge.invoice only exists up to acacia; on a basil+ endpoint the refunded charge
+    // comes without it, so ask the payment intent (read with our pinned acacia version).
+    let invoiceId = idOf(charge.invoice);
+    if (!invoiceId && !('invoice' in charge) && charge.payment_intent) {
+      const intent = await stripe(`payment_intents/${idOf(charge.payment_intent)}`).catch((e) => {
+        if (isResourceMissing(e)) return null;
+        throw e;
+      });
+      invoiceId = idOf(intent?.invoice);
+    }
+
+    if (invoiceId) {
+      const invoice = await stripe(`invoices/${invoiceId}`);
+      const subscriptionId = invoiceSubscriptionId(invoice);
       const existing = subscriptionId ? await findSubscriptionRow({ subscriptionId }) : null;
       if (REVOKED_STATUSES.includes(existing?.status)) return { duplicate: 'already_revoked' };
       if (subscriptionId) {
