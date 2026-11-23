@@ -1,0 +1,192 @@
+/* ═══════════════ ADMIN 360 ═══════════════ */
+/* Rota /admin: login (shell) e painel em tela cheia. Usa as variáveis de style.css. */
+
+#admin-route-shell {
+  position:fixed; inset:0; z-index:1450; background:var(--dark);
+  display:flex; align-items:center; justify-content:center; padding:20px; overflow:auto;
+}
+.adm-card {
+  width:100%; max-width:420px; background:var(--dark2); border:1px solid var(--border2);
+  border-radius:18px; padding:26px 22px;
+}
+.adm-card-brand { font-family:'Bebas Neue'; font-size:30px; letter-spacing:2px; color:var(--white); text-align:center; }
+.adm-card-sub { font-size:12px; color:var(--muted2); text-align:center; margin:6px 0 22px; }
+.adm-card-title { font-family:'Bebas Neue'; font-size:20px; letter-spacing:1px; color:var(--yellow-l); margin-bottom:10px; }
+.adm-card-body { font-size:13px; line-height:1.55; color:#cfe8f5; margin-bottom:18px; }
+.adm-label { display:block; font-size:11px; color:var(--muted2); margin-bottom:6px; text-transform:uppercase; letter-spacing:.8px; }
+.adm-input {
+  width:100%; background:var(--dark); border:1px solid var(--border2); border-radius:10px;
+  color:var(--white); padding:12px; margin-bottom:12px; font:inherit; font-size:14px;
+}
+.adm-btn-primary {
+  width:100%; background:var(--yellow-l); border:none; border-radius:10px; color:#07111c;
+  font-family:'Bebas Neue'; font-size:18px; letter-spacing:1px; padding:12px; cursor:pointer;
+}
+.adm-btn-link { width:100%; margin-top:8px; background:none; border:none; color:var(--muted2); font-size:12px; cursor:pointer; padding:8px; }
+.adm-msg { min-height:18px; margin-top:12px; font-size:12px; color:#f87171; text-align:center; }
+
+#admin-panel {
+  position:fixed; inset:0; z-index:1500; background:var(--dark); overflow-y:auto;
+  color:var(--white); font-size:14px;
+}
+.adm-wrap { max-width:1120px; margin:0 auto; padding:16px 16px calc(32px + var(--safe-bottom)); }
+
+.adm-top { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.adm-brand { font-family:'Bebas Neue'; font-size:26px; letter-spacing:2px; margin-right:auto; }
+.adm-brand span { color:var(--muted2); }
+.adm-period { display:flex; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:3px; }
+.adm-period button {
+  background:none; border:none; color:var(--muted2); font:600 12px 'Barlow'; padding:7px 10px;
+  border-radius:7px; cursor:pointer; white-space:nowrap;
+}
+.adm-period button.on { background:var(--surface2); color:var(--white); }
+.adm-icon-btn {
+  width:36px; height:36px; flex-shrink:0; display:grid; place-items:center; cursor:pointer;
+  background:var(--surface); border:1px solid var(--border); border-radius:10px; color:var(--muted2);
+}
+.adm-icon-btn:hover { color:var(--white); }
+#admin-panel .ic { width:16px; height:16px; flex-shrink:0; }
+
+.adm-tabs { display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid var(--border); margin-bottom:18px; scrollbar-width:none; }
+.adm-tabs button {
+  display:flex; align-items:center; gap:7px; background:none; border:none; border-bottom:2px solid transparent;
+  color:var(--muted2); font:600 13px 'Barlow'; padding:10px 12px; cursor:pointer; white-space:nowrap;
+}
+.adm-tabs button[aria-selected="true"] { color:var(--white); border-bottom-color:var(--yellow-l); }
+
+.adm-alert, .adm-note {
+  display:flex; gap:10px; align-items:flex-start; padding:11px 14px; border-radius:var(--radius-sm);
+  margin-bottom:14px; font-size:13px; line-height:1.45;
+}
+.adm-alert { background:rgba(224,92,58,.12); border:1px solid rgba(224,92,58,.45); color:#ffd2c6; }
+.adm-alert .ic { color:var(--coral); margin-top:1px; }
+.adm-note { background:var(--surface); border:1px solid var(--border); color:#cfe8f5; }
+.adm-note .ic { color:var(--muted2); margin-top:1px; }
+
+.adm-kpis { display:grid; grid-template-columns:repeat(4, 1fr); gap:10px; margin-bottom:8px; }
+.adm-kpi { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; min-width:0; }
+.adm-kpi-label { font-size:11px; text-transform:uppercase; letter-spacing:.9px; color:var(--muted2); display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.adm-kpi-value { font-family:'Bebas Neue'; font-size:36px; letter-spacing:1px; line-height:1.1; margin:6px 0 4px; color:var(--white); }
+.adm-kpi:first-child .adm-kpi-value { color:var(--yellow-l); }
+.adm-kpi-value small { font-size:20px; color:var(--muted2); }
+.adm-kpi-foot { font-size:12px; color:var(--muted2); }
+.adm-delta.up { color:#5fd39a; }
+.adm-delta.down { color:#f58a73; }
+.adm-tag {
+  display:inline-block; font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+  color:var(--yellow-l); border:1px solid rgba(255,216,77,.4); border-radius:5px; padding:1px 5px;
+}
+.adm-period-note { font-size:12px; color:var(--muted); margin:0 0 16px; }
+
+.adm-section { background:var(--dark2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; margin-bottom:14px; min-width:0; }
+.adm-section-head { display:flex; align-items:center; gap:8px; margin-bottom:10px; }
+.adm-section-head h3 { font:700 13px 'Barlow Condensed'; letter-spacing:1px; text-transform:uppercase; color:var(--muted2); margin-right:auto; }
+.adm-cols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.adm-cols > .adm-section, .adm-cols > .adm-off { margin-bottom:14px; }
+.adm-empty { color:var(--muted2); font-size:13px; padding:10px 0; }
+.adm-error { color:#f87171; font-size:13px; padding:10px 0; }
+.adm-muted { color:var(--muted); font-weight:400; }
+.adm-small { font-size:12px; color:var(--muted2); line-height:1.5; margin-top:10px; }
+.adm-small code, .adm-mono { font-family:ui-monospace, Consolas, monospace; font-size:12px; }
+
+.adm-legend { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted2); margin-bottom:6px; flex-wrap:wrap; }
+.adm-legend span { width:14px; height:2px; display:inline-block; margin-left:6px; }
+.adm-legend span:first-child { margin-left:0; }
+.adm-legend .cur { background:var(--yellow-l); }
+.adm-legend .prev { background:var(--muted); }
+.adm-legend em { font-style:normal; color:var(--muted); margin-left:auto; }
+.adm-chart { width:100%; height:auto; display:block; }
+.adm-chart .axis { stroke:var(--border2); }
+.adm-chart .cur { fill:none; stroke:var(--yellow-l); stroke-width:2.2; stroke-linejoin:round; }
+.adm-chart .prev { fill:none; stroke:var(--muted); stroke-width:1.6; stroke-dasharray:4 4; stroke-linejoin:round; }
+.adm-chart .dot { fill:var(--yellow-l); }
+.adm-chart text { fill:var(--muted2); font:11px 'Barlow'; }
+
+.adm-list { list-style:none; }
+.adm-list li + li { border-top:1px solid var(--border); }
+.adm-row {
+  width:100%; display:flex; align-items:center; gap:10px; padding:10px 0; background:none; border:none;
+  color:inherit; font:inherit; text-align:left; cursor:pointer;
+}
+.adm-row.static { cursor:default; }
+button.adm-row:hover strong { color:var(--yellow-l); }
+.adm-row-main { display:flex; flex-direction:column; min-width:0; flex:1; }
+.adm-row-main strong { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.adm-row-main strong.adm-mono { white-space:normal; overflow-wrap:anywhere; }
+.adm-row-main small { font-size:12px; color:var(--muted2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.adm-row-num { font-family:'Bebas Neue'; font-size:18px; letter-spacing:.5px; white-space:nowrap; }
+.adm-pill {
+  flex-shrink:0; font-size:11px; font-weight:600; padding:3px 8px; border-radius:6px;
+  background:var(--surface2); color:#cfe8f5; white-space:nowrap;
+}
+.adm-pill.neg { background:rgba(224,92,58,.16); color:#ffb6a4; }
+.adm-count { flex-shrink:0; min-width:38px; font-family:'Bebas Neue'; font-size:20px; color:var(--yellow-l); }
+
+.adm-bars { list-style:none; display:grid; grid-template-columns:1fr auto; column-gap:10px; }
+.adm-bars li { display:contents; }
+.adm-bar-label { font-size:13px; color:#cfe8f5; padding-top:8px; }
+.adm-bar-value { font-family:'Bebas Neue'; font-size:17px; text-align:right; padding-top:6px; }
+.adm-bar-track { grid-column:1 / -1; height:3px; background:var(--surface2); border-radius:2px; margin-top:4px; }
+.adm-bar-track span { display:block; height:100%; background:var(--blue-l); border-radius:2px; }
+
+.adm-foot {
+  display:flex; flex-wrap:wrap; gap:6px 18px; font-size:12px; color:var(--muted);
+  border-top:1px solid var(--border); padding-top:12px; margin-top:4px;
+}
+
+.adm-table-wrap { overflow-x:auto; }
+.adm-table { width:100%; border-collapse:collapse; font-size:13px; }
+.adm-table th { text-align:left; font-weight:600; font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); padding:8px 10px 8px 0; border-bottom:1px solid var(--border); }
+.adm-table td { padding:10px 10px 10px 0; border-bottom:1px solid var(--border); vertical-align:top; }
+.adm-table tr:last-child td { border-bottom:none; }
+.adm-table td small { display:block; color:var(--muted2); font-size:12px; }
+.adm-customers tbody tr { cursor:pointer; }
+.adm-customers tbody tr:hover td strong, .adm-customers tbody tr:focus td strong { color:var(--yellow-l); }
+.adm-customers tbody tr:focus { outline:1px solid var(--blue-l); outline-offset:-1px; }
+.adm-plan { font-size:12px; font-weight:600; color:#cfe8f5; }
+.adm-plan.recurring, .adm-plan.one_time_30d, .adm-plan.pro { color:var(--yellow-l); }
+.adm-plan.admin { color:var(--blue-l); }
+.adm-warn { color:#f58a73 !important; }
+
+.adm-search {
+  display:flex; align-items:center; gap:8px; background:var(--surface); border:1px solid var(--border2);
+  border-radius:10px; padding:0 12px; margin-bottom:14px; color:var(--muted2);
+}
+.adm-search input { flex:1; background:none; border:none; outline:none; color:var(--white); font:inherit; padding:12px 0; min-width:0; }
+
+.adm-back { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--muted2); font:600 13px 'Barlow'; cursor:pointer; padding:4px 0 12px; }
+.adm-back:hover { color:var(--white); }
+.adm-profile-head { display:flex; align-items:baseline; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.adm-profile-head h2 { font-family:'Bebas Neue'; font-size:30px; letter-spacing:1px; font-weight:400; }
+.adm-fields { display:grid; grid-template-columns:repeat(4, 1fr); gap:12px 16px; }
+.adm-fields dt { font-size:11px; letter-spacing:.8px; text-transform:uppercase; color:var(--muted); }
+.adm-fields dd { font-size:13px; margin-top:2px; overflow-wrap:anywhere; }
+
+.adm-off { background:var(--dark2); border:1px dashed var(--border2); border-radius:var(--radius-sm); padding:14px; }
+.adm-off strong { font:700 13px 'Barlow Condensed'; letter-spacing:1px; text-transform:uppercase; color:var(--muted2); margin-right:8px; }
+.adm-off p { font-size:12px; color:var(--muted2); line-height:1.5; margin-top:8px; }
+
+@media (max-width: 860px) {
+  .adm-kpis { grid-template-columns:1fr 1fr; }
+  .adm-cols { grid-template-columns:1fr; gap:0; }
+  .adm-fields { grid-template-columns:1fr 1fr; }
+}
+
+@media (max-width: 560px) {
+  .adm-top { flex-wrap:wrap; }
+  .adm-period { order:3; width:100%; }
+  .adm-period button { flex:1; }
+  .adm-kpi { padding:12px; }
+  .adm-kpi-value { font-size:30px; }
+  .adm-tabs { gap:0; }
+  .adm-tabs button { padding:10px 8px; font-size:13px; }
+  #admin-panel .adm-tabs .ic { display:none; }
+  /* Clientes vira cartão no celular. */
+  .adm-customers thead { display:none; }
+  .adm-customers, .adm-customers tbody, .adm-customers tr, .adm-customers td { display:block; }
+  .adm-customers tr { padding:10px 0; border-bottom:1px solid var(--border); display:grid; grid-template-columns:1fr 1fr; gap:4px 10px; }
+  .adm-customers td { border:none; padding:0; font-size:12px; }
+  .adm-customers td:first-child { grid-column:1 / -1; font-size:14px; }
+  .adm-customers td[data-label]::before { content:attr(data-label) ': '; color:var(--muted); }
+  .adm-customers td[data-label] small { display:inline; margin-left:4px; }
+}
