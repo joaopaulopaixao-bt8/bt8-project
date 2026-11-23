@@ -190,3 +190,9 @@ button.adm-row:hover strong { color:var(--yellow-l); }
   .adm-customers td[data-label]::before { content:attr(data-label) ': '; color:var(--muted); }
   .adm-customers td[data-label] small { display:inline; margin-left:4px; }
 }
+
+/* Arenas: formulário de criação */
+.adm-arena-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px 14px; }
+.adm-arena-campo .adm-input { margin-bottom:0; }
+.adm-arena-form .adm-btn-primary, .adm-arena-acoes { max-width:320px; }
+.adm-btn-primary:disabled { opacity:.5; cursor:wait; }
