@@ -14,7 +14,7 @@ Desde 2026-10-25 o banco e a autenticacao do BT8 rodam num Supabase auto-hospeda
 
 ## Servicos
 
-So o que o app usa: `db`, `auth`, `rest`, `meta`, `studio` e o gateway `api-gw` (a partir da 006 tambem `storage`, para os comprovantes da Arena; ver abaixo). Realtime, Storage (ate a 006), imgproxy, Edge Functions e o pooler ficam desligados em `docker-compose.bt8.yml`, que tambem limita a memoria de cada container e prende o gateway em `127.0.0.1:8100`. O Postgres nao fica exposto na internet.
+So o que o app usa: `db`, `auth`, `rest`, `meta`, `studio`, o gateway `api-gw` e `storage` (comprovantes da Arena, desde a 006; ver abaixo). Realtime, imgproxy, Edge Functions e o pooler ficam desligados em `docker-compose.bt8.yml`, que tambem limita a memoria de cada container e prende o gateway em `127.0.0.1:8100`. O Postgres nao fica exposto na internet.
 
 O painel (Studio) abre em `https://api.bt8.com.br` com usuario e senha `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` do `.env`.
 
@@ -77,7 +77,7 @@ O que muda: e-mail opcional por atleta; em `teams`, token de acompanhamento e co
 
 **Ordem:** aplicar a 006 **antes** do merge na `main` (o front novo chama `arena_inscricao_status` e as Functions usam as colunas novas; o front antigo continua funcionando com a 006).
 
-1. Ligar o Storage no VPS (hoje desligado em `docker-compose.bt8.yml`): tirar `storage` da lista de servicos desligados (`imgproxy` pode continuar desligado, com `ENABLE_IMAGE_TRANSFORMATION=false`), conferir no `.env` as variaveis do storage do compose oficial (backend `file`, volume `./volumes/storage`), limitar a memoria como os outros containers e subir:
+1. (Ja feito em 22/11/2026: Storage ligado, `storage.buckets` existe, `/storage/v1` responde, sem imgproxy, `FILE_SIZE_LIMIT` 10 MB, `backup.sh` com `-n storage` e o tar dos arquivos.) Para refazer do zero: ligar o Storage no VPS (antes desligado em `docker-compose.bt8.yml`): tirar `storage` da lista de servicos desligados (`imgproxy` pode continuar desligado, com `ENABLE_IMAGE_TRANSFORMATION=false`), conferir no `.env` as variaveis do storage do compose oficial (backend `file`, volume `./volumes/storage`), limitar a memoria como os outros containers e subir:
 
 ```bash
 ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose up -d storage && docker compose ps storage"

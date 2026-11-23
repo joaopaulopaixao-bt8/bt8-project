@@ -6,8 +6,7 @@
 const {
   json, supabaseEnv, sbFetch, usuarioDoToken, uuidValido, transicaoPagamento, contextoDupla, podeGerirArena, respostaDeErro
 } = require('./lib/arena');
-const { enviarModelo, emailsAtletas } = require('./lib/email');
-const { logError } = require('./lib/_log');
+const { enviarModelo, emailsAtletas, semAtrasar } = require('./lib/email');
 
 const COLUNAS = 'id,status,pagamento,pago_em,comprovante_status,comprovante_motivo,comprovante_path,comprovante_enviado_em';
 
@@ -42,19 +41,16 @@ exports.handler = async (event) => {
     const [team] = await sbFetch(env, `rest/v1/teams?select=${COLUNAS}&id=eq.${encodeURIComponent(ctx.team_id)}&limit=1`);
     const t = transicaoPagamento(team, body.acao, body.motivo);
     if (t.erro) return json(400, { error: t.erro });
-    const [novo] = await sbFetch(env, `rest/v1/teams?id=eq.${encodeURIComponent(ctx.team_id)}&select=${COLUNAS}`, {
+    // Condicional ao estado lido: dois cliques ou dois gestores ao mesmo tempo não aplicam (nem mandam e-mail) duas vezes.
+    const mesmoEstado = ['status', 'pagamento', 'comprovante_status'].map(c => `&${c}=eq.${encodeURIComponent(team[c])}`).join('');
+    const [novo] = await sbFetch(env, `rest/v1/teams?id=eq.${encodeURIComponent(ctx.team_id)}${mesmoEstado}&select=${COLUNAS}`, {
       method: 'PATCH', headers: { prefer: 'return=representation' }, body: JSON.stringify(t.patch)
     });
+    if (!novo) return json(409, { error: 'A dupla mudou enquanto você conferia. Recarregue e tente de novo.' });
 
     const modelo = { confirmar: 'pagamentoConfirmado', recusar: 'comprovanteRecusado' }[body.acao];
-    if (modelo) {
-      try {
-        await enviarModelo(modelo, { ...ctx, ...t.patch }, emailsAtletas(ctx), 'arena-pagamento-email');
-      } catch (e) {
-        logError('arena-pagamento-email', e);
-      }
-    }
-    const { comprovante_path, ...publico } = novo || {};
+    if (modelo) await semAtrasar(enviarModelo(modelo, { ...ctx, ...t.patch }, emailsAtletas(ctx), 'arena-pagamento-email'), 'arena-pagamento-email');
+    const { comprovante_path, ...publico } = novo;
     return json(200, { ok: true, team: { ...publico, tem_comprovante: !!comprovante_path } });
   } catch (e) {
     return respostaDeErro('arena-pagamento', e, 'Não foi possível atualizar o pagamento.');

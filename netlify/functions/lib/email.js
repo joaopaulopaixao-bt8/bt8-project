@@ -44,7 +44,7 @@ const modelos = {
   inscricaoRecebida(ctx) {
     const pendente = ctx.status === 'pendente';
     const sit = { confirmada: 'Inscrição confirmada.', pendente: 'Inscrição recebida: falta o pagamento.',
-      espera: 'A categoria lotou: vocês estão na lista de espera.' }[ctx.status] || 'Inscrição recebida.';
+      espera: 'Lista de espera: a categoria lotou. A arena avisa se abrir vaga; não pague ainda.' }[ctx.status] || 'Inscrição recebida.';
     return {
       subject: `Inscrição recebida: ${ctx.campeonato}`,
       html: layout('Inscrição recebida', cab(ctx) + p(esc(sit)) +
@@ -110,21 +110,26 @@ async function enviarEmail({ to, subject, html, replyTo = SUPORTE, contexto = 'a
     console.log(JSON.stringify({ level: 'info', context: contexto, message: 'RESEND_API_KEY ausente: e-mail não enviado', qtd: lista.length }));
     return 0;
   }
-  let enviados = 0;
-  for (const destino of lista) {
-    try {
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${chave}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ from: REMETENTE, to: [destino], subject, html, reply_to: replyTo })
-      });
-      if (res.ok) enviados++;
-      else logError(contexto, new Error(`Resend ${res.status}`));
-    } catch (e) {
-      logError(contexto, e);
-    }
-  }
-  return enviados;
+  const envios = await Promise.allSettled(lista.map(async destino => {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${chave}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ from: REMETENTE, to: [destino], subject, html, reply_to: replyTo }),
+      signal: AbortSignal.timeout(3000)
+    });
+    if (!res.ok) throw new Error(`Resend ${res.status}`);
+  }));
+  envios.filter(r => r.status === 'rejected').forEach(r => logError(contexto, r.reason));
+  return envios.filter(r => r.status === 'fulfilled').length;
+}
+
+// Espera os e-mails por no máximo `ms`: a resposta ao usuário não fica presa no provedor (no pior caso só loga).
+async function semAtrasar(promessa, contexto, ms = 3000) {
+  let timer;
+  const limite = new Promise(resolve => { timer = setTimeout(() => resolve('tempo'), ms); });
+  const r = await Promise.race([Promise.resolve(promessa).catch(e => logError(contexto, e)), limite]);
+  clearTimeout(timer);
+  if (r === 'tempo') logError(contexto, new Error(`e-mails passaram de ${ms} ms; resposta enviada sem esperar`));
 }
 
 // Atalho: modelo + envio. Também nunca lança.
@@ -140,4 +145,4 @@ async function enviarModelo(nome, ctx, to, contexto) {
 
 const emailsAtletas = ctx => (ctx?.atletas || []).map(a => a.email).filter(Boolean);
 
-module.exports = { esc, modelos, destinatarios, enviarEmail, enviarModelo, emailsAtletas, linkAcompanhar, SUPORTE, REMETENTE };
+module.exports = { esc, modelos, destinatarios, enviarEmail, enviarModelo, semAtrasar, emailsAtletas, linkAcompanhar, SUPORTE, REMETENTE };

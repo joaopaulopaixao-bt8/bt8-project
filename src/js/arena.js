@@ -116,9 +116,16 @@ async function arFuncao(nome, payload) {
   return j;
 }
 
+// teams: colunas explícitas, porque o select de teams não tem acompanhamento_token (grant por coluna, 006).
+const AR_COLUNAS = {
+  teams: 'id,category_id,athlete1_id,athlete2_id,status,pagamento,pago_em,seed,origem,presente1,presente2,desistente_em,' +
+    'observacao,created_at,updated_at,comprovante_path,comprovante_enviado_em,comprovante_status,comprovante_motivo,comprovante_envios,tabela_email_em',
+};
+const arColunas = tabela => AR_COLUNAS[tabela] || '*';
+
 const ARENA_REAL = {
   async select(tabela, filtro = {}, ordem, signal) {
-    let q = SUPA.from(tabela).select('*');
+    let q = SUPA.from(tabela).select(arColunas(tabela));
     for (const [k, v] of Object.entries(filtro)) q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v);
     if (ordem) q = q.order(ordem);
     if (signal) q = q.abortSignal(signal);
@@ -127,12 +134,12 @@ const ARENA_REAL = {
     return data || [];
   },
   async insert(tabela, linha) {
-    const { data, error } = await SUPA.from(tabela).insert(linha).select().single();
+    const { data, error } = await SUPA.from(tabela).insert(linha).select(arColunas(tabela)).single();
     if (error) throw arErro(error);
     return data;
   },
   async update(tabela, id, patch) {
-    const { data, error } = await SUPA.from(tabela).update(patch).eq('id', id).select().single();
+    const { data, error } = await SUPA.from(tabela).update(patch).eq('id', id).select(arColunas(tabela)).single();
     if (error) throw arErro(error);
     return data;
   },
@@ -948,7 +955,8 @@ function arenaDuplaHtml(t, g) {
       <button class="btn btn-ghost btn-sm" onclick="arenaTrocarAtleta('${t.id}')">${icon('repeat')} Trocar atleta</button>
       ${!noGrupo && ARENA.c.cats.length > 1 ? `<button class="btn btn-ghost btn-sm" onclick="arenaMudarCat('${t.id}')">Mudar de categoria</button>` : ''}
       ${arBotoesPagamento(t)}
-      ${t.acompanhamento_token ? `<button class="btn btn-ghost btn-sm" onclick="arenaCopiar('${arEsc(arLink('/acompanhar/' + t.acompanhamento_token))}')">${icon('share')} Link da dupla</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="arenaLinkDupla('${t.id}')">${icon('share')} Link da dupla</button>
+      <button class="btn btn-ghost btn-sm" onclick="arenaLinkDupla('${t.id}', true)">${icon('refresh')} Gerar link novo</button>
       ${t.status === 'espera' ? `<button class="btn btn-ghost btn-sm" onclick="arenaConfirmarVaga('${t.id}')">Confirmar vaga</button>` : ''}
       ${noGrupo
         ? (!t.desistente_em ? `<button class="btn btn-ghost btn-sm" onclick="mesaSubstituir('${t.id}')">Substituir dupla</button>
@@ -1180,6 +1188,15 @@ async function arenaPagamento(id, acao) {
     if (!r.team.tem_comprovante) t.comprovante_path = null;
     arenaRenderInscritos();
   }, { confirmar: 'Pagamento confirmado.', recusar: 'Comprovante recusado.', desfazer: 'Desfeito.' }[acao]);
+}
+
+// Link /acompanhar/<token> da dupla (RPC arena_team_link: só dono/gestor). "novo" troca o token: o antigo para na hora.
+async function arenaLinkDupla(id, novo = false) {
+  if (novo && !(await arConfirm('Gerar link novo', 'O link atual da dupla para de funcionar na hora. Use se ele foi parar com quem não devia e mande o novo para a dupla.', 'Gerar link novo', true))) return;
+  await arAcao(async () => {
+    const r = await arenaDb().rpc('arena_team_link', { p_team: id, p_novo: novo });
+    await arenaCopiar(arLink('/acompanhar/' + r.token));
+  });
 }
 
 // Depois do sorteio publicado: e-mail "tabela publicada" para as duplas da categoria (cada uma recebe uma vez).
@@ -1726,6 +1743,11 @@ function arDemoErro(msg, hint) {
 }
 
 const AR_DEMO_RPC = {
+  arena_team_link(db, { p_team, p_novo }) {
+    const t = db.teams.find(x => x.id === p_team);
+    if (p_novo || !t.acompanhamento_token) t.acompanhamento_token = arUid();
+    return { ok: true, token: t.acompanhamento_token };
+  },
   category_publish_draw(db, { p_category, p_payload }) {
     const cat = db.categories.find(c => c.id === p_category);
     const doCat = db.matches.filter(m => m.category_id === p_category);

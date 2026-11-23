@@ -3,7 +3,7 @@
 // Contrato: docs/ARENA.md, seções 4.7 e 5. Não logar o corpo (nomes e telefones).
 const { logError } = require('./lib/_log');
 const { json, validarInscricao, statusDaRecusa, hashIp, clientIp, supabaseEnv, sbFetch, contextoDupla } = require('./lib/arena');
-const { enviarModelo, emailsAtletas } = require('./lib/email');
+const { enviarModelo, emailsAtletas, semAtrasar } = require('./lib/email');
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
@@ -30,7 +30,7 @@ exports.handler = async (event) => {
       })
     });
     if (!r?.ok) return json(statusDaRecusa(r?.erro), { error: r?.mensagem || 'Não foi possível concluir a inscrição.', erro: r?.erro });
-    await avisarInscricao(env, r.team_id);
+    await semAtrasar(avisarInscricao(env, r.team_id), 'arena-register-email');
     return json(200, r);
   } catch (e) {
     logError('arena-register', e);
@@ -38,14 +38,17 @@ exports.handler = async (event) => {
   }
 };
 
-// "Inscrição recebida" para os atletas com e-mail e "nova inscrição" para dono/gestores. Só depois de
-// uma inscrição gravada (já passou pelo limite por IP), então não vira disparador de e-mail. Nunca lança.
+// "Inscrição recebida" para os e-mails já cadastrados dos atletas e "nova inscrição" para dono/gestores.
+// Só depois de uma inscrição gravada (limites por IP e por campeonato na RPC). O e-mail digitado só vale se o
+// atleta não tinha e-mail (a RPC não sobrescreve), então quem sabe o telefone de alguém não recebe o link. Nunca lança.
 async function avisarInscricao(env, teamId) {
   try {
     const ctx = await contextoDupla(env, teamId);
     if (!ctx) return;
-    await enviarModelo('inscricaoRecebida', ctx, emailsAtletas(ctx), 'arena-register-email');
-    await enviarModelo('novaInscricao', ctx, ctx.gestores, 'arena-register-email');
+    await Promise.all([
+      enviarModelo('inscricaoRecebida', ctx, emailsAtletas(ctx), 'arena-register-email'),
+      enviarModelo('novaInscricao', ctx, ctx.gestores, 'arena-register-email')
+    ]);
   } catch (e) {
     logError('arena-register-email', e);
   }

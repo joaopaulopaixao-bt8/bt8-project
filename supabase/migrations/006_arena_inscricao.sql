@@ -5,7 +5,8 @@
 --
 -- Segurança:
 -- - acompanhamento_token é o "login" da dupla na página /acompanhar/<token>. Nunca sai em arena_public,
---   arena_live nem arena_inscricao_info. A equipe da arena lê pelo select de teams (para reenviar o link).
+--   arena_live nem arena_inscricao_info, e o select de teams não tem a coluna (grant por coluna): dono e
+--   gestor obtêm ou trocam o link pela RPC arena_team_link.
 -- - Token, comprovante e marca de e-mail não são alterados pelo cliente (trigger): só RPC e service role.
 -- - Bucket "comprovantes" privado e sem policies: só a service role (Functions) lê e grava.
 
@@ -84,6 +85,7 @@ declare
   a1 uuid;
   a2 uuid;
   tentativas int;
+  v_camp uuid;
   ocupadas int;
   st text;
   pg text;
@@ -103,6 +105,16 @@ begin
   returning n into tentativas;
   if tentativas > p_limite_hora then
     return jsonb_build_object('ok', false, 'erro', 'limite', 'mensagem', 'Muitas tentativas deste endereço. Tente de novo mais tarde.');
+  end if;
+  -- Limite por campeonato (60 tentativas por hora, de qualquer IP): segura robô com muitos IPs e o disparo de e-mails.
+  select id into v_camp from public.championships where inscricao_token = p_token;
+  if v_camp is not null then
+    insert into private.arena_rate (ip_hash, janela, n) values ('camp:' || v_camp, date_trunc('hour', now()), 1)
+    on conflict (ip_hash, janela) do update set n = private.arena_rate.n + 1
+    returning n into tentativas;
+    if tentativas > 60 then
+      return jsonb_build_object('ok', false, 'erro', 'limite', 'mensagem', 'Muitas inscrições neste campeonato agora. Tente de novo em alguns minutos.');
+    end if;
   end if;
 
   begin
@@ -139,7 +151,7 @@ begin
       returning id into aid;
     else
       update public.athletes set consentimento_em = now(), consentimento_versao = left(p_dados ->> 'consentimento_versao', 20),
-        email = coalesce(v_email, email)
+        email = coalesce(email, v_email) -- inscrição pública só preenche e-mail vazio: não desvia os avisos de quem já tem
       where id = aid;
     end if;
     if i = 1 then a1 := aid; else a2 := aid; end if;
@@ -198,7 +210,7 @@ begin
     'dupla', (select jsonb_build_object('id', t.id, 'nome', a1.nome || ' / ' || a2.nome, 'atleta1', a1.nome, 'atleta2', a2.nome)
               from public.athletes a1, public.athletes a2 where a1.id = t.athlete1_id and a2.id = t.athlete2_id),
     'status', t.status, 'pagamento', t.pagamento, 'pago_em', t.pago_em,
-    'pix', case when t.pagamento = 'pendente' and t.status <> 'cancelada' and jsonb_typeof(c.regras -> 'pix') = 'object'
+    'pix', case when t.pagamento = 'pendente' and t.status = 'pendente' and jsonb_typeof(c.regras -> 'pix') = 'object'
                 then c.regras -> 'pix' end,
     'whatsapp', coalesce(c.regras ->> 'whatsapp', a.whatsapp),
     'comprovante', jsonb_build_object('status', t.comprovante_status, 'motivo', t.comprovante_motivo,
@@ -239,7 +251,7 @@ begin
   if not found then
     return jsonb_build_object('ok', false, 'erro', 'nao_encontrado', 'mensagem', 'Link de acompanhamento inválido.');
   end if;
-  if t.status = 'cancelada' or t.pagamento <> 'pendente' or t.comprovante_status = 'aceito' then
+  if t.status <> 'pendente' or t.pagamento <> 'pendente' or t.comprovante_status = 'aceito' then
     return jsonb_build_object('ok', false, 'erro', 'status_invalido', 'mensagem', 'Esta inscrição não está aguardando pagamento.');
   end if;
   if t.comprovante_envios >= p_limite then
@@ -283,8 +295,53 @@ as $$
   where t.id = p_team;
 $$;
 
+-- Link de acompanhamento para dono/gestor (o token não é legível pelo select de teams), com opção de
+-- gerar um novo se vazou (o antigo para de funcionar na hora).
+create or replace function public.arena_team_link(p_team uuid, p_novo boolean default false)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+declare tok uuid;
+begin
+  perform private.arena_exigir(private.arena_da_categoria((select category_id from public.teams where id = p_team)), '{dono,gestor}');
+  if p_novo then
+    update public.teams set acompanhamento_token = gen_random_uuid() where id = p_team returning acompanhamento_token into tok;
+  else
+    select acompanhamento_token into tok from public.teams where id = p_team;
+  end if;
+  return jsonb_build_object('ok', true, 'token', tok);
+end;
+$$;
+
+-- Sorteio refeito ou dupla substituída: a dupla volta a poder receber o e-mail de "tabela publicada".
+create or replace function private.group_teams_reset_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, private, pg_temp
+as $$
+begin
+  update public.teams set tabela_email_em = null where id = new.team_id and tabela_email_em is not null;
+  return null;
+end;
+$$;
+drop trigger if exists group_teams_reset_email on public.group_teams;
+create trigger group_teams_reset_email after insert or update of team_id on public.group_teams
+for each row execute function private.group_teams_reset_email();
+
+-- Token fora da leitura de árbitro/scout (e do painel): select por coluna, sem acompanhamento_token.
+revoke select on public.teams from authenticated;
+grant select (id, category_id, athlete1_id, athlete2_id, status, pagamento, pago_em, seed, origem, presente1, presente2,
+  desistente_em, observacao, created_at, updated_at, comprovante_path, comprovante_enviado_em, comprovante_status,
+  comprovante_motivo, comprovante_envios, tabela_email_em) on public.teams to authenticated;
+
 -- ══ Grants ══════════════════════════════════════════════════════════
 revoke all on function private.team_inscricao_guard() from public, anon, authenticated;
+revoke all on function private.group_teams_reset_email() from public, anon, authenticated;
+revoke all on function public.arena_team_link(uuid, boolean) from public, anon;
+grant execute on function public.arena_team_link(uuid, boolean) to authenticated;
 revoke all on function public.arena_inscrever(text, text, jsonb, int) from public, anon, authenticated;
 revoke all on function public.arena_comprovante_reservar(text, int) from public, anon, authenticated;
 revoke all on function public.arena_inscricao_contexto(uuid) from public, anon, authenticated;

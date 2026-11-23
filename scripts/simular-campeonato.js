@@ -135,7 +135,7 @@ function sequenciaDePlacar() {
       const atletas = await rest(G, 'POST', 'athletes', Array.from({ length: 2 * n }, (_, i) => ({
         arena_id: arena.id, nome: `${nome.split(' ')[0]} ${i + 1}`, telefone: `+55819${String(++tel).padStart(8, '0')}`
       })));
-      const duplas = await rest(G, 'POST', 'teams', Array.from({ length: n }, (_, i) => ({
+      const duplas = await rest(G, 'POST', 'teams?select=id,seed', Array.from({ length: n }, (_, i) => ({
         category_id: cat.id, athlete1_id: atletas[2 * i].id, athlete2_id: atletas[2 * i + 1].id, origem: 'importacao',
         seed: i < 2 ? i + 1 : null, presente1: true, presente2: true
       })));

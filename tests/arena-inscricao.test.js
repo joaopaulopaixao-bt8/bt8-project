@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { detectarArquivo, validarComprovante, transicaoPagamento, validarInscricao, ARENA_LGPD_VERSAO, COMPROVANTE_MAX_BYTES } =
   require('../netlify/functions/lib/arena');
-const { modelos, destinatarios, enviarEmail, enviarModelo, esc } = require('../netlify/functions/lib/email');
+const { modelos, destinatarios, enviarEmail, enviarModelo, semAtrasar, esc } = require('../netlify/functions/lib/email');
 
 const TOKEN = '3f2b8c1e-9a4d-4e6f-8b2a-1c3d5e7f9a0b';
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)]);
@@ -41,8 +41,8 @@ test('transicaoPagamento: confirmar, recusar e desfazer', () => {
     { pagamento: 'pago', pago_em: agora, status: 'confirmada', comprovante_status: 'aceito', comprovante_motivo: null });
   // Sem comprovante (pagou em dinheiro): confirma e não inventa comprovante aceito.
   assert.equal(transicaoPagamento({ ...pendente, comprovante_status: 'nenhum', comprovante_path: null }, 'confirmar').patch.comprovante_status, 'nenhum');
-  // Lista de espera continua na espera depois de pagar.
-  assert.equal(transicaoPagamento({ ...pendente, status: 'espera' }, 'confirmar').patch.status, 'espera');
+  // Lista de espera não paga antes de ganhar a vaga.
+  assert.match(transicaoPagamento({ ...pendente, status: 'espera' }, 'confirmar').erro, /espera/);
   assert.match(transicaoPagamento({ ...pendente, pagamento: 'pago' }, 'confirmar').erro, /já está/);
 
   assert.deepEqual(transicaoPagamento(pendente, 'recusar', '  valor   errado ').patch, { comprovante_status: 'recusado', comprovante_motivo: 'valor errado' });
@@ -109,6 +109,43 @@ test('enviarEmail nunca lança: sem chave ou com falha de rede', async () => {
   } finally {
     global.fetch = fetchOriginal;
     console.log = log; console.error = err;
+    if (chave === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = chave;
+  }
+});
+
+test('semAtrasar não segura a resposta além do limite e nunca lança', async () => {
+  const err = console.error;
+  console.error = () => {};
+  try {
+    const t0 = Date.now();
+    await semAtrasar(new Promise(() => {}), 'teste', 50);
+    assert.ok(Date.now() - t0 < 1000);
+    await semAtrasar(Promise.reject(new Error('x')), 'teste', 50);
+    let feito = false;
+    await semAtrasar((async () => { feito = true; })(), 'teste', 50);
+    assert.ok(feito);
+  } finally { console.error = err; }
+});
+
+test('enviarEmail manda em paralelo com timeout por envio', async () => {
+  const chave = process.env.RESEND_API_KEY, fetchOriginal = global.fetch, err = console.error;
+  console.error = () => {};
+  try {
+    process.env.RESEND_API_KEY = 'teste';
+    const sinais = [];
+    let ativos = 0, pico = 0;
+    global.fetch = async (url, init) => {
+      sinais.push(init.signal);
+      pico = Math.max(pico, ++ativos);
+      await new Promise(r => setTimeout(r, 20));
+      ativos--;
+      return { ok: true };
+    };
+    assert.equal(await enviarEmail({ to: ['a@x.com', 'b@x.com', 'c@x.com'], subject: 's', html: 'h' }), 3);
+    assert.equal(pico, 3);
+    assert.ok(sinais.every(s => s && typeof s.aborted === 'boolean'));
+  } finally {
+    global.fetch = fetchOriginal; console.error = err;
     if (chave === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = chave;
   }
 });

@@ -88,4 +88,62 @@ select teste.ok((select acompanhamento_token::text = (select v::jsonb ->> 'token
                  from public.teams where id = (select (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r1')),
   'cliente não altera token nem comprovante (o resto salva)');
 
+-- ── Token fora do select de teams; dono/gestor pega e troca pela RPC ──
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-d000-000000000001","role":"authenticated"}', true);
+select teste.espera_erro('select acompanhamento_token from public.teams', '42501', 'select de teams não lê o token');
+select teste.ok((select count(*) > 0 from public.teams), 'o resto de teams continua legível');
+select teste.ok((select public.arena_team_link((v::jsonb ->> 'team_id')::uuid) ->> 'token' = v::jsonb ->> 'token' from teste.vars where k = 'r1'),
+  'arena_team_link devolve o token ao dono');
+select teste.ok((select public.arena_team_link((v::jsonb ->> 'team_id')::uuid, true) ->> 'token' <> v::jsonb ->> 'token' from teste.vars where k = 'r1'),
+  'arena_team_link com p_novo troca o token');
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-d000-0000000000ff","role":"authenticated"}', true);
+select teste.espera_erro($q$select public.arena_team_link((select (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r1'))$q$,
+  'sem_permissao', 'quem não é da arena não pega o link');
+reset role;
+
+-- ── Inscrição pública não sobrescreve e-mail já cadastrado ──
+update public.teams set status = 'cancelada' where id = (select (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r1');
+set local role service_role;
+select teste.ok(public.arena_inscrever('token-insc-006-00000001', 'ip-006b', $j${"category_id": "ca000000-0000-4000-8000-000000000006",
+  "consentimento_versao": "2026-11-22b", "atleta1": {"nome": "Ana Seis", "telefone": "+5581966660001", "email": "atacante@mal.test"},
+  "atleta2": {"nome": "Bia Seis", "telefone": "+5581966660002", "email": "bia@seis.test"}}$j$) ->> 'ok' = 'true', 'reinscrição aceita');
+reset role;
+select teste.ok((select email = 'ana@seis.test' from public.athletes where telefone = '+5581966660001'), 'e-mail existente não é trocado');
+select teste.ok((select email = 'bia@seis.test' from public.athletes where telefone = '+5581966660002'), 'e-mail vazio é preenchido');
+
+-- ── Lista de espera: sem Pix e sem comprovante ──
+insert into public.categories (id, championship_id, nome, max_duplas) values
+  ('ca000000-0000-4000-8000-000000000007', 'eeeeeeee-0000-4000-8000-000000000006', 'Lotada', 1);
+set local role service_role;
+select public.arena_inscrever('token-insc-006-00000001', 'ip-006c', $j${"category_id": "ca000000-0000-4000-8000-000000000007",
+  "consentimento_versao": "2026-11-22b", "atleta1": {"nome": "Eva Sete", "telefone": "+5581966670001"},
+  "atleta2": {"nome": "Fê Sete", "telefone": "+5581966670002"}}$j$);
+insert into teste.vars select 'r2', public.arena_inscrever('token-insc-006-00000001', 'ip-006c', $j${"category_id": "ca000000-0000-4000-8000-000000000007",
+  "consentimento_versao": "2026-11-22b", "atleta1": {"nome": "Gabi Sete", "telefone": "+5581966670003"},
+  "atleta2": {"nome": "Helô Sete", "telefone": "+5581966670004"}}$j$)::text;
+select teste.ok((select v::jsonb ->> 'status' = 'espera' from teste.vars where k = 'r2'), 'categoria lotada vai para espera');
+select teste.ok((select public.arena_inscricao_status(v::jsonb ->> 'token') -> 'pix' = 'null'::jsonb from teste.vars where k = 'r2'),
+  'espera não mostra Pix');
+select teste.ok((select public.arena_comprovante_reservar(v::jsonb ->> 'token') ->> 'erro' = 'status_invalido' from teste.vars where k = 'r2'),
+  'espera não envia comprovante');
+reset role;
+
+-- ── Sorteio refeito libera novo e-mail de tabela ──
+update public.teams set tabela_email_em = now() where id = (select (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r2');
+insert into public.category_groups (id, category_id, nome) values ('c9000000-0000-4000-8000-000000000007', 'ca000000-0000-4000-8000-000000000007', 'A');
+insert into public.group_teams (group_id, team_id) select 'c9000000-0000-4000-8000-000000000007', (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r2';
+select teste.ok((select tabela_email_em is null from public.teams where id = (select (v::jsonb ->> 'team_id')::uuid from teste.vars where k = 'r2')),
+  'entrar num grupo limpa a marca de e-mail de tabela');
+
+-- ── Limite por campeonato: 60 tentativas por hora, de qualquer IP ──
+set local role service_role;
+do $$ begin
+  for i in 1..60 loop
+    perform public.arena_inscrever('token-insc-006-00000001', 'ip-loop-' || i, '{"category_id": "ca000000-0000-4000-8000-0000000000ff"}');
+  end loop;
+end $$;
+select teste.ok(public.arena_inscrever('token-insc-006-00000001', 'ip-novo', '{}') ->> 'erro' = 'limite', 'limite por campeonato');
+reset role;
+
 rollback;

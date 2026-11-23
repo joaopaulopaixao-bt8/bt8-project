@@ -4,7 +4,7 @@
 // Contrato: docs/ARENA.md, seção 5. Não logar o corpo.
 const { logError } = require('./lib/_log');
 const { json, supabaseEnv, sbFetch, validarComprovante, contextoDupla, statusDaRecusa, COMPROVANTE_ENVIOS } = require('./lib/arena');
-const { enviarModelo } = require('./lib/email');
+const { enviarModelo, semAtrasar } = require('./lib/email');
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
@@ -29,21 +29,25 @@ exports.handler = async (event) => {
       method: 'POST', body: v.buf, headers: { 'content-type': v.tipo.mime, 'x-upsert': 'false' }
     });
     const agora = new Date().toISOString();
-    await sbFetch(env, `rest/v1/teams?id=eq.${encodeURIComponent(r.team_id)}`, {
-      method: 'PATCH', headers: { prefer: 'return=minimal' },
+    // Condicional: se a arena confirmou o pagamento durante o upload, não grava e apaga o arquivo novo.
+    const gravado = await sbFetch(env, `rest/v1/teams?id=eq.${encodeURIComponent(r.team_id)}` +
+      '&status=eq.pendente&pagamento=eq.pendente&comprovante_status=neq.aceito&select=id', {
+      method: 'PATCH', headers: { prefer: 'return=representation' },
       body: JSON.stringify({ comprovante_path: path, comprovante_enviado_em: agora, comprovante_status: 'enviado', comprovante_motivo: null })
     });
+    if (!gravado?.length) {
+      await sbFetch(env, `storage/v1/object/comprovantes/${path}`, { method: 'DELETE' }).catch(e => logError('arena-comprovante-apagar', e));
+      return json(409, { error: 'O pagamento desta inscrição já foi conferido pela arena. Atualize a página.' });
+    }
     // Só o último comprovante fica guardado (menos dado pessoal parado no bucket).
     if (r.path_anterior && r.path_anterior.startsWith(`${r.team_id}/`)) {
       await sbFetch(env, `storage/v1/object/comprovantes/${r.path_anterior}`, { method: 'DELETE' })
         .catch(e => logError('arena-comprovante-apagar', e));
     }
-    try {
+    await semAtrasar((async () => {
       const ctx = await contextoDupla(env, r.team_id);
       if (ctx) await enviarModelo('comprovanteEnviado', ctx, ctx.gestores, 'arena-comprovante-email');
-    } catch (e) {
-      logError('arena-comprovante-email', e);
-    }
+    })(), 'arena-comprovante-email');
     return json(200, { ok: true, comprovante: { status: 'enviado', enviado_em: agora } });
   } catch (e) {
     logError('arena-comprovante', e);

@@ -286,6 +286,7 @@ function transicaoPagamento(team, acao, motivo, agora = new Date().toISOString()
   const temComprovante = !!team.comprovante_path;
   if (acao === 'confirmar') {
     if (team.pagamento === 'pago') return { erro: 'O pagamento já está confirmado.' };
+    if (team.status === 'espera') return { erro: 'Dupla na lista de espera: confirme a vaga antes de confirmar o pagamento.' };
     return { patch: { pagamento: 'pago', pago_em: agora, status: team.status === 'pendente' ? 'confirmada' : team.status,
       comprovante_status: temComprovante ? 'aceito' : team.comprovante_status, comprovante_motivo: null } };
   }

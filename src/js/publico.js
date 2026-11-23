@@ -87,11 +87,11 @@ async function arenaRpc(nome, args = {}, opts = {}) {
   return body;
 }
 
-async function arenaFunction(nome, payload) {
+async function arenaFunction(nome, payload, limiteMs) {
   if (arenaDemoAtivo()) return arenaDemo.fn(nome, payload);
   const res = await arenaFetch(`/.netlify/functions/${nome}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-  });
+  }, limiteMs);
   let body = null;
   try { body = await res.json(); } catch (e) { /* corpo vazio */ }
   if (!res.ok) throw arenaErro(body?.error || `Erro ${res.status}`, res.status);
@@ -761,7 +761,7 @@ function inscricaoConfirmacao(r, dupla) {
   const situacao = {
     confirmada: 'Inscrição confirmada',
     pendente: 'Inscrição recebida: falta o pagamento.',
-    espera: 'A categoria lotou: vocês estão na lista de espera.',
+    espera: 'Lista de espera: a arena avisa se abrir vaga; não pague ainda.',
   }[r.status] || 'Inscrição recebida.';
   const pix = r.status === 'pendente' && r.pix ? r.pix : null;
   const zap = String(r.whatsapp || ch.whatsapp || '').replace(/\D/g, '');
@@ -850,10 +850,10 @@ function acompanharRender() {
   const st = ACOMP.st;
   const ch = st.championship;
   const cp = st.comprovante || {};
-  const pagando = st.pagamento === 'pendente' && st.status !== 'cancelada';
+  const pagando = st.pagamento === 'pendente' && st.status === 'pendente'; // espera não paga ainda
   const situacao = {
     confirmada: st.pagamento === 'pago' ? 'Inscrição confirmada e paga' : 'Inscrição confirmada',
-    pendente: 'Aguardando pagamento', espera: 'Lista de espera', cancelada: 'Inscrição cancelada',
+    pendente: 'Aguardando pagamento', espera: 'Lista de espera: a arena avisa se abrir vaga; não pague ainda.', cancelada: 'Inscrição cancelada',
   }[st.status] || st.status;
   const cpTexto = {
     nenhum: 'Comprovante ainda não enviado.',
@@ -907,7 +907,10 @@ function acompanharReduzir(file) {
       const cv = document.createElement('canvas');
       cv.width = Math.round(img.width * k);
       cv.height = Math.round(img.height * k);
-      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      const g = cv.getContext('2d');
+      g.fillStyle = '#fff'; // PNG transparente vira JPEG com fundo branco, não preto
+      g.fillRect(0, 0, cv.width, cv.height);
+      g.drawImage(img, 0, 0, cv.width, cv.height);
       URL.revokeObjectURL(url);
       cv.toBlob(b => resolve(b && b.size < file.size ? b : file), 'image/jpeg', 0.85);
     };
@@ -936,10 +939,21 @@ async function acompanharEnviar() {
       fr.onerror = () => reject(arenaErro('Não foi possível ler o arquivo.', 400));
       fr.readAsDataURL(arq);
     });
-    await arenaFunction('arena-comprovante', { token: ACOMP.token, arquivo });
+    const antes = ACOMP.st?.comprovante?.enviado_em || null;
+    try {
+      await arenaFunction('arena-comprovante', { token: ACOMP.token, arquivo }, 45000);
+    } catch (e) {
+      // Sem resposta (rede ou 45 s): o envio pode ter entrado. Recarrega antes de dizer que falhou.
+      if (e.status !== 0) throw e;
+      await openAcompanharRoute(ACOMP.token);
+      const depois = ACOMP.st?.comprovante;
+      if (depois?.status === 'enviado' && depois.enviado_em && depois.enviado_em !== antes) return;
+      throw e;
+    }
     await openAcompanharRoute(ACOMP.token);
   } catch (e) {
-    erro.textContent = e.status === 0 ? 'Sem conexão. Tente de novo.' : e.message;
+    const el = document.getElementById('acomp-erro');
+    if (el) el.textContent = e.status === 0 ? 'Sem resposta do servidor. Confira a internet e tente de novo.' : e.message;
     btn.disabled = false;
     btn.textContent = rotulo;
   } finally {
