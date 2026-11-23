@@ -31,20 +31,23 @@
 
   // ── Grupos ──────────────────────────────────────────────
   // g = ceil(n/4) grupos de 4 e 3, os de 4 primeiro. Menos de 6 duplas: grupo único.
-  function tamanhosGrupos(n) {
+  // tamGrupo = categories.formato.tam_grupo: 4 (padrão, g = ceil(n/4)) ou 3 ("grupos de 3",
+  // g = floor(n/3), com as sobras em grupos de 4).
+  function tamanhosGrupos(n, tamGrupo = 4) {
     if (!(n >= 3)) throw new Error('São precisas pelo menos 3 duplas na categoria');
     if (n < 6) return [n];
-    const g = Math.ceil(n / 4);
-    if (g > 8) throw new Error('Máximo de 32 duplas por categoria (8 grupos)');
-    const de3 = 4 * g - n;
-    return Array.from({ length: g }, (_, i) => (i < g - de3 ? 4 : 3));
+    const g = tamGrupo === 3 ? Math.floor(n / 3) : Math.ceil(n / 4);
+    if (g > 8) throw new Error('Máximo de 8 grupos por categoria');
+    const de4 = tamGrupo === 3 ? n - 3 * g : g - (4 * g - n);
+    return Array.from({ length: g }, (_, i) => (i < de4 ? 4 : 3));
   }
 
-  // duplas: [{ id, seed? }] (seed 1 = principal cabeça de chave). opts: { semente }.
+  // duplas: [{ id, seed? }] (seed 1 = principal cabeça de chave). opts: { semente, tam_grupo }.
   // Cabeças em ordem de seed, depois as demais embaralhadas pela semente; distribuição em serpentina.
+  // A semente pode vir como texto (category_publish_draw guarda texto).
   function montarGrupos(duplas, opts = {}) {
-    const semente = opts.semente != null ? opts.semente >>> 0 : Math.floor(Math.random() * 4294967296);
-    const tam = tamanhosGrupos(duplas.length);
+    const semente = opts.semente != null ? Number(opts.semente) >>> 0 : Math.floor(Math.random() * 4294967296);
+    const tam = tamanhosGrupos(duplas.length, opts.tam_grupo);
     const cabecas = duplas.filter(d => d.seed != null).sort((x, y) => x.seed - y.seed);
     const resto = embaralhar(duplas.filter(d => d.seed == null), mulberry32(semente));
     const fila = cabecas.concat(resto);
@@ -80,15 +83,29 @@
   }
 
   // ── Classificação do grupo ──────────────────────────────
-  // Resultado que conta, ou null (não jogado, anulado, WO duplo).
-  function resultado(j) {
+  // Partida no formato do motor ({a, b}) ou do banco ({team_a, team_b}).
+  const ladoA = j => (j.a !== undefined ? j.a : j.team_a);
+  const ladoB = j => (j.b !== undefined ? j.b : j.team_b);
+  // vencedor: 'a' | 'b' (motor, match_finish) ou o uuid da dupla (coluna matches.vencedor).
+  function ladoVencedor(j) {
+    if (j.vencedor === 'a' || j.vencedor === 'b') return j.vencedor;
+    if (j.vencedor != null && j.vencedor === ladoA(j)) return 'a';
+    if (j.vencedor != null && j.vencedor === ladoB(j)) return 'b';
+    return null;
+  }
+
+  // Resultado que conta, ou null (não jogado, anulado, WO duplo). WO sem games gravados = alvo x 0.
+  function resultado(j, alvo) {
     if (j.status !== 'encerrada' && j.status !== 'wo') return null;
+    const v = ladoVencedor(j);
     if (j.wo || j.status === 'wo') {
-      if (j.vencedor !== 'a' && j.vencedor !== 'b') return null; // WO duplo: partida anulada
-      return { vencedor: j.vencedor, ga: j.vencedor === 'a' ? 6 : 0, gb: j.vencedor === 'b' ? 6 : 0, wo: true };
+      if (!v) return null; // WO duplo: partida anulada
+      const ga = j.games_a != null ? j.games_a : v === 'a' ? alvo : 0;
+      const gb = j.games_b != null ? j.games_b : v === 'b' ? alvo : 0;
+      return { vencedor: v, ga, gb, wo: true };
     }
     const ga = j.games_a, gb = j.games_b;
-    const vencedor = j.vencedor || (ga > gb ? 'a' : gb > ga ? 'b' : null);
+    const vencedor = v || (ga > gb ? 'a' : gb > ga ? 'b' : null);
     return vencedor ? { vencedor, ga, gb, wo: false } : null;
   }
 
@@ -119,25 +136,29 @@
     return partes;
   }
 
-  // duplas: ids na ordem do grupo. jogos: [{ a, b, status, games_a, games_b, wo, vencedor }].
-  // regras: { desistencia_modo: 'anular' | 'wo', wo_conta_saldo: bool, desistentes: [ids], sorteio: [ids] }.
+  // duplas: ids na ordem do grupo. jogos: partidas do grupo ({a, b} ou {team_a, team_b}, status,
+  // games_a, games_b, wo, vencedor). regras: championships.regras ({ desistencia_modo: 'anular' |
+  // 'manter_wo', wo_conta_saldo }) mais { desistentes: [ids], sorteio: [ids] | { ordem: [ids] },
+  // preset: 'A' | 'B' (alvo do WO) }.
   // Devolve { tabela: [{ pos, team, jogos, vitorias, derrotas, gp, gc, saldo, criterio, desistente }], pendenteSorteio: [[ids]] }.
   function classificarGrupo(duplas, jogos, regras = {}) {
-    const modoWo = regras.desistencia_modo === 'wo';
+    const modoWo = regras.desistencia_modo === 'manter_wo' || regras.desistencia_modo === 'wo';
     const woSaldo = regras.wo_conta_saldo !== false;
+    const alvo = ALVO[regras.preset] || 6;
     const desist = new Set(regras.desistentes || []);
-    const sorteio = regras.sorteio || [];
+    const sorteio = (regras.sorteio && regras.sorteio.ordem) || regras.sorteio || [];
     const validos = [];
     for (const j of jogos) {
-      const da = desist.has(j.a), db = desist.has(j.b);
+      const a = ladoA(j), b = ladoB(j);
+      const da = desist.has(a), db = desist.has(b);
       if ((da || db) && !modoWo) continue; // "anular todos os jogos da dupla"
-      let r = resultado(j);
+      let r = resultado(j, alvo);
       // "manter os feitos e WO no restante": jogo não disputado contra a desistente vira WO.
       if (!r && da !== db && j.status !== 'anulada') {
         const v = da ? 'b' : 'a';
-        r = { vencedor: v, ga: v === 'a' ? 6 : 0, gb: v === 'b' ? 6 : 0, wo: true };
+        r = { vencedor: v, ga: v === 'a' ? alvo : 0, gb: v === 'b' ? alvo : 0, wo: true };
       }
-      if (r) validos.push({ a: j.a, b: j.b, ...r });
+      if (r) validos.push({ a, b, ...r });
     }
     const geral = estatisticas(duplas, validos, woSaldo);
     const criterio = {};
@@ -236,7 +257,8 @@
     FASES[S].forEach((fase, r) => {
       const atual = [];
       for (let k = 0; k < S / 2 ** (r + 1); k++) {
-        const id = fase === 'final' ? 'final' : fase + (k + 1);
+        // ids = refs do category_publish_draw: R16-1..8, QF1..4, SF1..2, F.
+        const id = fase === 'final' ? 'F' : fase === 'r16' ? 'R16-' + (k + 1) : fase.toUpperCase() + (k + 1);
         const p = {
           id, fase, rodada: r + 1, slot: k + 1, team_a: null, team_b: null, vencedor: null,
           origem_a: r ? { match: anterior[2 * k].id } : pares[k][0],
@@ -292,9 +314,13 @@
     return { tamanho: S, modo: 'melhores2', partidas: montarChave(S, pares) };
   }
 
-  // Preenche a 1ª rodada com as duplas classificadas. classificacoes: { A: tabela, B: tabela, ... }
-  // (tabela = classificarGrupo().tabela). No modo melhores 2ºs, troca vagas para que ninguém do
-  // mesmo grupo se cruze na 1ª rodada. Devolve as partidas novas (as vagas trocadas levam a origem junto).
+  // 1ª rodada do mata-mata: partidas cuja vaga vem de grupo (não de outra partida).
+  const primeiraRodada = partidas => partidas.filter(p => p.fase !== 'grupo' && p.origem_a && !p.origem_a.match && !p.origem_a.match_ref);
+
+  // Preenche a 1ª rodada com as duplas classificadas. chave: gerarChave() ou as partidas de mata-mata
+  // do banco (arena_public). classificacoes: { A: tabela, B: tabela, ... } (tabela = classificarGrupo().tabela).
+  // No modo melhores 2ºs, troca vagas para que ninguém do mesmo grupo se cruze na 1ª rodada.
+  // Devolve as partidas novas (as vagas trocadas levam a origem junto).
   function preencherChave(chave, classificacoes, opts = {}) {
     const sorteio = opts.sorteio || [];
     const nomes = Object.keys(classificacoes);
@@ -308,8 +334,8 @@
       if (!l) throw new Error('Vaga sem dupla classificada: ' + JSON.stringify(o));
       return l.team;
     };
-    const partidas = chave.partidas.map(p => ({ ...p }));
-    const r1 = partidas.filter(p => p.rodada === 1);
+    const partidas = (chave.partidas || chave).map(p => ({ ...p }));
+    const r1 = primeiraRodada(partidas);
     for (const p of r1) { p.team_a = resolver(p.origem_a); p.team_b = resolver(p.origem_b); }
     const conflito = (a, b) => grupoDe[a] === grupoDe[b];
     for (const p of r1) {
@@ -322,6 +348,43 @@
     return partidas;
   }
 
+  // p_slots do category_seed_knockout a partir de preencherChave().
+  const slotsMataMata = partidas => primeiraRodada(partidas).flatMap(p => [
+    { match: p.id, slot: 'a', team: p.team_a }, { match: p.id, slot: 'b', team: p.team_b },
+  ]);
+
+  // p_payload do category_publish_draw: grupos, jogos de grupo e mata-mata com as vagas.
+  // montagem = montarGrupos(), chave = gerarChave(). opts.categoriaIndice (0–9) intercala as categorias
+  // na fila: jogos de grupo por rodada, alternando grupos; mata-mata depois de todos os grupos.
+  function payloadSorteio(montagem, chave, opts = {}) {
+    const cat = opts.categoriaIndice || 0;
+    const partidas = [];
+    montagem.grupos.forEach((g, gi) => {
+      const porRodada = {};
+      jogosDoGrupo(g.duplas).forEach((j, k) => {
+        const slot = (porRodada[j.rodada] = (porRodada[j.rodada] || 0) + 1);
+        partidas.push({
+          ref: g.nome + (k + 1), fase: 'grupo', grupo: g.nome, rodada: j.rodada, slot,
+          team_a: j.a, team_b: j.b, prioridade: j.rodada * 1000 + (slot - 1) * 100 + gi * 10 + cat,
+        });
+      });
+    });
+    const ref = o => (o.match ? { match_ref: o.match } : o);
+    for (const p of chave.partidas) {
+      const item = {
+        ref: p.id, fase: p.fase, rodada: p.rodada, slot: p.slot, origem_a: ref(p.origem_a), origem_b: ref(p.origem_b),
+        prioridade: 10000 + p.rodada * 1000 + (p.slot - 1) * 10 + cat,
+      };
+      if (p.next_match_id) Object.assign(item, { next_ref: p.next_match_id, next_slot: p.next_slot });
+      partidas.push(item);
+    }
+    return {
+      semente: String(montagem.semente),
+      grupos: montagem.grupos.map((g, i) => ({ nome: g.nome, ordem: i + 1, duplas: g.duplas.slice() })),
+      partidas,
+    };
+  }
+
   // Partida já começou: a vaga dela não pode ser trocada sem "forçar".
   const iniciada = p => ['em_jogo', 'suspensa', 'encerrada', 'wo'].includes(p.status);
 
@@ -332,14 +395,15 @@
     return { m, prox, campo: 'team_' + m.next_slot };
   }
 
-  // Leva o vencedor (m.vencedor = 'a' | 'b') para a vaga da partida seguinte.
+  // Leva o vencedor (m.vencedor = 'a' | 'b' ou o uuid da dupla) para a vaga da partida seguinte.
   // Se a seguinte já começou com outra dupla na vaga, exige forcar e marca alerta_origem.
   function avancar(partidas, id, opts = {}) {
     const ps = partidas.map(p => ({ ...p }));
     const { m, prox, campo } = seguinte(ps, id);
-    if (m.vencedor !== 'a' && m.vencedor !== 'b') throw new Error('Partida sem vencedor');
+    const lado = ladoVencedor(m);
+    if (!lado) throw new Error('Partida sem vencedor');
     if (!prox) return ps;
-    const time = m['team_' + m.vencedor];
+    const time = m['team_' + lado];
     if (prox[campo] === time) return ps;
     if (iniciada(prox) && prox[campo] != null) {
       if (!opts.forcar) throw new Error('A partida seguinte já começou: só o gestor pode corrigir com "forçar"');
@@ -368,7 +432,8 @@
   const ALVO = { A: 6, B: 4 };
 
   // placar: { games_a, games_b, tb_a, tb_b }. Preset A: 6x0–6x4, 7x5, 7x6 com tie-break a 7.
-  // Preset B: 4x0–4x2, 5x3, 5x4 com tie-break a 7. Devolve { ok, vencedor, erro }.
+  // Preset B: 4x0–4x2, 5x3, 5x4 com tie-break a 7. Tie-break válido: 7-0 a 7-5, 8-6 ou 8-7.
+  // Devolve { ok, vencedor, erro }.
   function validarPlacar(placar, preset = 'A') {
     const alvo = ALVO[preset];
     if (!alvo) return { ok: false, erro: 'Preset desconhecido: ' + preset };
@@ -385,7 +450,8 @@
       const tw = vencedor === 'a' ? placar.tb_a : placar.tb_b;
       const tl = vencedor === 'a' ? placar.tb_b : placar.tb_a;
       if (!Number.isInteger(tw) || !Number.isInteger(tl) || tl < 0) return erro('Registre o placar do tie-break');
-      if (tw < 7 || tw - tl < 2 || (tw > 7 && tw - tl !== 2)) return erro('Tie-break inválido: ' + tw + '-' + tl);
+      // Tie-break a 7 (7-0 a 7-5); do 6-6 em diante vence quem fizer 8 (8-6 ou 8-7).
+      if (!((tw === 7 && tl <= 5) || (tw === 8 && (tl === 6 || tl === 7)))) return erro('Tie-break inválido: ' + tw + '-' + tl);
       return { ok: true, vencedor, erro: null };
     }
     return erro('Placar inválido para o preset ' + preset + ': ' + a + 'x' + b);
@@ -401,11 +467,11 @@
 
   // fila: partidas com { id, status, prioridade, atletas: [{ id, nome }] x4 (vazio se a vaga não foi definida) }.
   // presentes: ids com check-in (array ou Set). emQuadra: { atletaId: 'Q3' } (partidas chamadas ou em jogo).
-  // descanso: { ultimoFim: { atletaId: ms }, minimoMin = 15, agora = Date.now() }.
+  // descanso: { ultimoFim: { atletaId: ms }, descanso_min = 15 (regras), agora = Date.now() }.
   // Devolve { sugestao, lista: [{ partida, apto, motivos }] }.
   function proximoApto(fila, presentes, emQuadra = {}, descanso = {}) {
     const pres = new Set(presentes || []);
-    const minimo = descanso.minimoMin != null ? descanso.minimoMin : 15;
+    const minimo = descanso.descanso_min != null ? descanso.descanso_min : 15;
     const agora = descanso.agora != null ? descanso.agora : Date.now();
     const ultimoFim = descanso.ultimoFim || {};
     const lista = ordenarFila(fila).map(partida => {
@@ -427,13 +493,13 @@
   }
 
   // Previsão simples: posição na fila ÷ quadras × (duração + intervalo), pulando as pausas.
-  // opts: { quadras, inicio (ms), duracaoMin = 35, intervaloMin = 5, pausas: [{ inicio, fim }] (ms),
+  // opts: { quadras, inicio (ms), duracao_media_min = 35, intervalo_min = 5 (regras), pausas: [{ inicio, fim }] (ms),
   //         duracoesReais: [min] (com 5 ou mais, usa a média real). Devolve [{ id, previsto (ms) }].
   function preverHorarios(fila, opts = {}) {
     const quadras = Math.max(1, opts.quadras || 1);
     const reais = opts.duracoesReais || [];
-    const dur = reais.length >= 5 ? reais.reduce((s, x) => s + x, 0) / reais.length : (opts.duracaoMin || 35);
-    const passo = (dur + (opts.intervaloMin != null ? opts.intervaloMin : 5)) * 60000;
+    const dur = reais.length >= 5 ? reais.reduce((s, x) => s + x, 0) / reais.length : (opts.duracao_media_min || 35);
+    const passo = (dur + (opts.intervalo_min != null ? opts.intervalo_min : 5)) * 60000;
     const pausas = (opts.pausas || []).slice().sort((x, y) => x.inicio - y.inicio);
     let t = opts.inicio != null ? opts.inicio : Date.now();
     return ordenarFila(fila).map((p, i) => {
@@ -448,18 +514,19 @@
   const DIA_PADRAO = { inicio: '08:00', fim: '20:00', pausas: [{ inicio: '12:00', fim: '13:00' }] };
   const OPCOES_CAPACIDADE = ['Mais quadras', 'Grupos de 3', 'Preset B nos grupos', 'Começar mais cedo'];
 
-  // cfg: { categorias: [{ nome, duplas }], quadras = 4, dias = 2 × 8h–20h com almoço 12h–13h,
-  //        duracaoMin = 35, intervaloMin = 5, classificam = 2 }.
+  // cfg: { categorias: [{ nome, duplas, tam_grupo = 4, classificam = 2 }], quadras = 4, e os campos de
+  //        championships.regras: dias (padrão 2 × 8h–20h com almoço 12h–13h), duracao_media_min = 35, intervalo_min = 5 }.
+  // Uso: capacidade({ ...regras, categorias, quadras }).
   // Capacidade por dia = quadras × horas úteis × 60 / (duração + intervalo). Alerta com sobra < 15%.
   function capacidade(cfg = {}) {
     const quadras = cfg.quadras != null ? cfg.quadras : 4;
     const dias = cfg.dias || [DIA_PADRAO, DIA_PADRAO];
-    const passo = (cfg.duracaoMin || 35) + (cfg.intervaloMin != null ? cfg.intervaloMin : 5);
+    const passo = (cfg.duracao_media_min || 35) + (cfg.intervalo_min != null ? cfg.intervalo_min : 5);
     const porCategoria = (cfg.categorias || []).map(c => {
       if (!(c.duplas >= 3)) return { nome: c.nome, duplas: c.duplas, grupos: 0, jogosGrupo: 0, jogosMata: 0, total: 0 };
-      const tam = tamanhosGrupos(c.duplas);
+      const tam = tamanhosGrupos(c.duplas, c.tam_grupo);
       const jogosGrupo = tam.reduce((s, t) => s + (t * (t - 1)) / 2, 0);
-      const jogosMata = gerarChave(LETRAS.slice(0, tam.length).split(''), { classificam: cfg.classificam || 2 }).partidas.length;
+      const jogosMata = gerarChave(LETRAS.slice(0, tam.length).split(''), { classificam: c.classificam || 2 }).partidas.length;
       return { nome: c.nome, duplas: c.duplas, grupos: tam.length, jogosGrupo, jogosMata, total: jogosGrupo + jogosMata };
     });
     const jogos = porCategoria.reduce((s, c) => s + c.total, 0);
@@ -526,7 +593,7 @@
 
   return {
     mulberry32, tamanhosGrupos, montarGrupos, jogosDoGrupo, classificarGrupo, compararEntreGrupos,
-    ordemSeeds, gerarChave, preencherChave, avancar, limpar, validarPlacar,
+    ordemSeeds, gerarChave, preencherChave, slotsMataMata, payloadSorteio, avancar, limpar, validarPlacar,
     ordenarFila, proximoApto, preverHorarios, capacidade, parseListaInscritos,
   };
 });
