@@ -2,6 +2,8 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<!-- Rotas com 2 níveis (/telao/<slug>, /c/<slug>, /inscricao/<token>): os caminhos ./ continuam na raiz. -->
+<base href="/">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -575,6 +577,19 @@
   <div class="bottom-fixed" id="resultado-actions"></div>
 </div>
 
+<!-- ══════════ MÓDULO ARENA (conteúdo preenchido por arena.js, arena-mesa.js, scout.js, telao.js, publico.js) ══════════ -->
+<div class="screen" id="screen-arena"></div><!-- Minha arena -->
+<div class="screen" id="screen-arena-campeonato"></div><!-- Campeonato -->
+<div class="screen" id="screen-arena-inscritos"></div><!-- Inscritos -->
+<div class="screen" id="screen-arena-sorteio"></div><!-- Sorteio -->
+<div class="screen" id="screen-arena-chave"></div><!-- Grupos e chave -->
+<div class="screen" id="screen-arena-mesa"></div><!-- Mesa de Controle -->
+<div class="screen" id="screen-arena-credenciamento"></div><!-- Credenciamento -->
+<div class="screen" id="screen-scout"></div><!-- /scout -->
+<div class="screen" id="screen-telao"></div><!-- /telao/<slug> -->
+<div class="screen" id="screen-publico"></div><!-- /c/<slug> -->
+<div class="screen" id="screen-inscricao"></div><!-- /inscricao/<token> -->
+
 </div><!-- /app -->
 
 <!-- ══════════ SHARE MODAL ══════════ -->
@@ -609,5 +624,15 @@
 <script src="./js/tournament.js"></script>
 <script src="./js/landing-commercial.js"></script>
 <script src="./js/legal-pages.js"></script>
+<!-- ══ MÓDULO ARENA: estilos aqui (depois do style.css) e motores puros antes das telas ══ -->
+<link rel="stylesheet" href="./css/arena.css">
+<link rel="stylesheet" href="./css/telao.css">
+<script src="./js/championship.js"></script>
+<script src="./js/scoring.js"></script>
+<script src="./js/arena.js"></script>
+<script src="./js/arena-mesa.js"></script>
+<script src="./js/scout.js"></script>
+<script src="./js/telao.js"></script>
+<script src="./js/publico.js"></script>
 </body>
 </html>
