@@ -266,6 +266,12 @@ Criar:
 
 Atualizar: `{"acao": "atualizar", "arena_id", "member_id", "papel"?, "ativo"?, "nome"?}`. Recusa mexer no dono e no próprio papel.
 
+### `POST /.netlify/functions/arena-trocar-senha` (o próprio usuário, no primeiro login)
+
+Conta criada por `admin-arena` ou `arena-member` nasce com `app_metadata.trocar_senha = true` (a senha inicial foi escolhida por outra pessoa). No login, o front (`handleAuthStateChange` em `src/js/auth.js`) abre o modal de nova senha no modo obrigatório antes de qualquer coisa. Body `{"senha": "..."}` com `Authorization: Bearer`. Recusa senha fraca (8 a 72, 1 letra e 1 número) ou igual à inicial (400); `409` se não há troca pendente. Na troca, a service role grava a senha e limpa a marca, encerra **todas** as sessões antigas da conta (`logout?scope=global`: quem sabia a senha inicial perde o acesso) e abre uma sessão nova com a senha nova. Resposta `200 {"ok": true, "session": {"access_token", "refresh_token"}}`; o front aplica com `setSession()` e a pessoa continua logada, já sem a marca. Conta que já existia e foi só vinculada não ganha a marca.
+
+`ativo_ate` da arena vale até o fim do dia em São Paulo.
+
 ### `POST /.netlify/functions/arena-register` (público, sem login)
 
 ```json

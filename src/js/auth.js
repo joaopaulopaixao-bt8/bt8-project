@@ -115,6 +115,10 @@ function initSupabase() {
 // ── AUTH STATE CHANGE ────────────────────────────────────────
 // Única fonte de verdade para navegação pós-login.
 function handleAuthStateChange(user) {
+  // Conta criada pela arena com senha inicial do gestor: troca obrigatória antes de qualquer coisa.
+  if (user?.app_metadata?.trocar_senha && !document.getElementById('reset-password-modal')) {
+    showResetPasswordModal({ obrigatoria: true });
+  }
   const currentScreen = APP.history[APP.history.length - 1];
   const activeScreen = document.querySelector('.screen.active')?.id;
   const authModalOpen = document.getElementById('auth-modal')?.classList.contains('open');
@@ -301,18 +305,22 @@ function showResetPasswordExpiredModal() {
   document.body.appendChild(modal);
 }
 
-function showResetPasswordModal() {
+// opts.obrigatoria: troca da senha inicial definida pela arena (primeiro login), salva por arena-trocar-senha.
+function showResetPasswordModal(opts = {}) {
   closeAuthModal();
   const existing = document.getElementById('reset-password-modal');
   if (existing) existing.remove();
   const modal = document.createElement('div');
   modal.id = 'reset-password-modal';
   modal.className = 'reset-password-modal';
+  if (opts.obrigatoria) modal.dataset.obrigatoria = '1';
   modal.innerHTML = `
     <div class="reset-password-card">
-      <div class="reset-password-kicker">Redefinição de senha</div>
-      <h3>Crie sua nova senha</h3>
-      <p>Escolha uma senha segura para voltar a acessar sua conta BT8.</p>
+      <div class="reset-password-kicker">${opts.obrigatoria ? 'Primeiro acesso' : 'Redefinição de senha'}</div>
+      <h3>${opts.obrigatoria ? 'Troque a senha inicial' : 'Crie sua nova senha'}</h3>
+      <p>${opts.obrigatoria
+        ? 'Sua conta foi criada pela arena com uma senha inicial. Crie uma senha só sua para continuar.'
+        : 'Escolha uma senha segura para voltar a acessar sua conta BT8.'}</p>
 
       <div class="auth-field">
         <label>Nova senha</label>
@@ -403,6 +411,23 @@ async function saveNewPassword() {
   }
 
   try {
+    if (document.getElementById('reset-password-modal')?.dataset.obrigatoria) {
+      // A Function troca a senha, limpa a marca, encerra as sessões antigas e devolve uma sessão nova.
+      const { data } = await SUPA.auth.getSession();
+      const res = await fetch('/.netlify/functions/arena-trocar-senha', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${data?.session?.access_token || ''}` },
+        body: JSON.stringify({ senha: pw })
+      });
+      const out = await res.json().catch(() => ({}));
+      // 409 = a marca já foi limpa (sessão com dado antigo): segue como trocada.
+      if (!res.ok && res.status !== 409) throw new Error(out.error || 'Não foi possível trocar a senha.');
+      if (out.session) await SUPA.auth.setSession(out.session);
+      else await SUPA.auth.refreshSession().catch(() => {});
+      if (msg) { msg.className = 'reset-password-msg ok'; msg.textContent = 'Senha trocada. Bom campeonato!'; }
+      setTimeout(closeResetPasswordModal, 900);
+      return;
+    }
     const { error } = await SUPA.auth.updateUser({ password: pw });
     if (error) throw error;
     PASSWORD_RECOVERY_ACTIVE = false;
