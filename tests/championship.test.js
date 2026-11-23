@@ -276,7 +276,10 @@ test('validarPlacar preset A', () => {
   for (let lo = 0; lo <= 4; lo++) { assert.ok(ok(6, lo)); assert.ok(ok(lo, 6)); }
   assert.ok(ok(7, 5));
   assert.ok(ok(7, 6, 7, 5));
-  assert.ok(ok(6, 7, 10, 12));
+  assert.ok(ok(6, 7, 6, 8));
+  assert.ok(ok(7, 6, 8, 7));
+  for (let tl = 0; tl <= 5; tl++) assert.ok(ok(7, 6, 7, tl), `tie-break 7-${tl}`);
+  for (const [ta, tb] of [[7, 6], [8, 5], [9, 7], [10, 8], [12, 10], [8, 8]]) assert.equal(ok(7, 6, ta, tb), false, `tie-break ${ta}-${tb}`);
   assert.equal(C.validarPlacar({ games_a: 7, games_b: 6, tb_a: 7, tb_b: 5 }).vencedor, 'a');
   for (const [ga, gb, ta, tb] of [[6, 5], [6, 6], [7, 6], [7, 6, 7, 6], [7, 6, 5, 7], [7, 6, 12, 8], [8, 6], [7, 4], [6, 3, 7, 0], [5, 3], [-1, 6]]) {
     assert.equal(ok(ga, gb, ta, tb), false, `${ga}x${gb} ${ta}-${tb}`);

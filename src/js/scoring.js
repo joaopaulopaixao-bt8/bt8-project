@@ -21,14 +21,16 @@
 
   const emTieBreak = (e, preset = 'A') => e.games_a === alvoDe(preset) && e.games_b === alvoDe(preset);
 
-  // 'a' | 'b' quando o set acabou (6x≤4, 7x5, tie-break a 7 com 2 de diferença), senão null.
+  // 'a' | 'b' quando o set acabou, senão null. Set de 6 (preset B: 4): 6x≤4; em 5x5 segue até 7x5;
+  // em 6x6 tie-break a 7 pontos (7-0 a 7-5) e, se chegar a 6-6, vence quem fizer 8 (8-6 ou 8-7).
   function fim(e, preset = 'A') {
     const alvo = alvoDe(preset);
     const a = e.games_a, b = e.games_b;
     if (emTieBreak(e, preset)) {
       const ta = e.tb_a || 0, tb = e.tb_b || 0;
-      if (ta >= 7 && ta - tb >= 2) return 'a';
-      if (tb >= 7 && tb - ta >= 2) return 'b';
+      // Tie-break a 7; no 6-6 vence quem fizer 8 primeiro (8-6 ou 8-7), sem vantagem de 2 infinita.
+      if ((ta === 7 && tb <= 5) || (ta === 8 && tb >= 6)) return 'a';
+      if ((tb === 7 && ta <= 5) || (tb === 8 && ta >= 6)) return 'b';
       return null;
     }
     if (a === alvo && b <= alvo - 2) return 'a';
@@ -84,5 +86,13 @@
     return { games_a: e.games_a, games_b: e.games_b, tb_a: null, tb_b: null, vencedor };
   }
 
-  return { ALVO, novo, emTieBreak, fim, marcar, paraPlacarFinal };
+  // Quem saca o próximo ponto do tie-break pela sequência 1-2-2: 1 saque de quem abriu, depois 2 de cada.
+  // primeiro = dupla que sacou o 1º ponto do tie-break ('a' por padrão).
+  function sacaNoTieBreak(e, primeiro = 'a') {
+    const k = (e.tb_a || 0) + (e.tb_b || 0);
+    const outro = primeiro === 'a' ? 'b' : 'a';
+    return Math.floor((k + 1) / 2) % 2 === 0 ? primeiro : outro;
+  }
+
+  return { ALVO, novo, emTieBreak, fim, marcar, paraPlacarFinal, sacaNoTieBreak };
 });
