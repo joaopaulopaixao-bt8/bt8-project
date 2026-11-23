@@ -412,7 +412,7 @@ async function saveNewPassword() {
 
   try {
     if (document.getElementById('reset-password-modal')?.dataset.obrigatoria) {
-      // A Function troca a senha e limpa a marca com a service role; a sessão continua.
+      // A Function troca a senha, limpa a marca, encerra as sessões antigas e devolve uma sessão nova.
       const { data } = await SUPA.auth.getSession();
       const res = await fetch('/.netlify/functions/arena-trocar-senha', {
         method: 'POST',
@@ -422,7 +422,8 @@ async function saveNewPassword() {
       const out = await res.json().catch(() => ({}));
       // 409 = a marca já foi limpa (sessão com dado antigo): segue como trocada.
       if (!res.ok && res.status !== 409) throw new Error(out.error || 'Não foi possível trocar a senha.');
-      await SUPA.auth.refreshSession().catch(() => {});
+      if (out.session) await SUPA.auth.setSession(out.session);
+      else await SUPA.auth.refreshSession().catch(() => {});
       if (msg) { msg.className = 'reset-password-msg ok'; msg.textContent = 'Senha trocada. Bom campeonato!'; }
       setTimeout(closeResetPasswordModal, 900);
       return;

@@ -1,7 +1,8 @@
 // POST /.netlify/functions/arena-trocar-senha — troca obrigatória da senha inicial (definida pelo
 // gestor/admin em arena-member/admin-arena) no primeiro login. Body: { senha }. Bearer obrigatório.
-// Troca a senha e limpa app_metadata.trocar_senha com a service role, numa chamada só, e encerra as
-// outras sessões da conta (quem sabia a senha inicial e já tinha entrado perde o acesso).
+// Troca a senha e limpa app_metadata.trocar_senha com a service role, numa chamada só, encerra TODAS as
+// sessões antigas (quem sabia a senha inicial e já tinha entrado perde o acesso) e devolve uma sessão
+// nova, aberta com a senha nova, que o front aplica com setSession (a antiga não vale mais).
 const {
   json, supabaseEnv, sbFetch, usuarioDoToken, validarNovaSenha, respostaDeErro, erroPublico
 } = require('./lib/arena');
@@ -35,8 +36,11 @@ exports.handler = async (event) => {
       body: JSON.stringify({ password: v.senha, app_metadata: { trocar_senha: false } })
     });
     const token = String(event.headers?.authorization || event.headers?.Authorization || '').replace(/^Bearer\s+/i, '');
-    await sbFetch(env, 'auth/v1/logout?scope=others', { method: 'POST', authorization: `Bearer ${token}` }).catch(() => {});
-    return json(200, { ok: true });
+    await sbFetch(env, 'auth/v1/logout?scope=global', { method: 'POST', authorization: `Bearer ${token}` }).catch(() => {});
+    const sessao = await sbFetch(env, 'auth/v1/token?grant_type=password', {
+      method: 'POST', body: JSON.stringify({ email: user.email, password: v.senha })
+    });
+    return json(200, { ok: true, session: { access_token: sessao.access_token, refresh_token: sessao.refresh_token } });
   } catch (e) {
     return respostaDeErro('arena-trocar-senha', e, 'Não foi possível trocar a senha. Tente de novo.');
   }
