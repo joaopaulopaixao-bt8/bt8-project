@@ -169,6 +169,11 @@ function isArenaMember() {
       .then(lista => {
         if (ARENA_MEMBROS.uid !== uid) return;
         ARENA_MEMBROS.lista = lista;
+        // Quem só é scout abre direto no /scout ao entrar no app (plano, seção 3).
+        if (lista.length && lista.every(m => m.papel === 'scout') && !arenaRoute() && !(typeof isAdminRoute === 'function' && isAdminRoute())) {
+          location.replace('/scout');
+          return;
+        }
         if (lista.length && SUPA_USER) buildUserMenu(SUPA_USER);
       })
       .catch(() => {}); // sem a migração 004 a consulta falha: o item simplesmente não aparece
@@ -306,6 +311,10 @@ function arCampo(c) {
   const v = c.valor ?? '';
   const cls = `ar-field${c.meio ? ' meio' : ''}`;
   if (c.tipo === 'checkbox') return `<label class="ar-check ${c.meio ? 'meio' : ''}"><input type="checkbox" name="${c.nome}" ${v ? 'checked' : ''}> <span>${arEsc(c.rotulo)}</span></label>`;
+  if (c.tipo === 'radio') {
+    return `<fieldset class="ar-field ar-radios"><legend>${arEsc(c.rotulo)}</legend>${c.opcoes.map(([val, rot, ajuda]) =>
+      `<label class="ar-radio"><input type="radio" name="${c.nome}" value="${arEsc(val)}" ${String(val) === String(v) ? 'checked' : ''}><span>${arEsc(rot)}${ajuda ? `<small>${arEsc(ajuda)}</small>` : ''}</span></label>`).join('')}</fieldset>`;
+  }
   let campo;
   if (c.tipo === 'select') {
     campo = `<select class="input-field" id="${id}" name="${c.nome}">${c.opcoes.map(([val, rot]) =>
@@ -344,7 +353,8 @@ function arForm({ titulo, texto = '', campos = [], ok = 'Salvar', perigo = false
       const v = {};
       for (const c of campos) {
         const el = wrap.querySelector(`[name="${c.nome}"]`);
-        v[c.nome] = c.tipo === 'checkbox' ? el.checked : el.value.trim();
+        v[c.nome] = c.tipo === 'checkbox' ? el.checked
+          : c.tipo === 'radio' ? (wrap.querySelector(`[name="${c.nome}"]:checked`)?.value || '') : el.value.trim();
         if (c.obrigatorio && !v[c.nome]) {
           wrap.querySelector('.ar-modal-msg').textContent = c.tipo === 'checkbox' ? 'Marque a confirmação para continuar.' : `Preencha: ${c.rotulo}`;
           el.focus();
@@ -601,6 +611,9 @@ function arenaRenderCamp() {
       <button class="ar-nav-btn" onclick="arenaAbrirInscritos()">${icon('users')}<b>Inscritos</b><small>${ARENA.c.teams.filter(arAtiva).length} duplas</small></button>
       <button class="ar-nav-btn" onclick="arenaAbrirSorteio()">${icon('dices')}<b>Sorteio</b><small>${ARENA.c.groups.length ? 'publicado' : 'grupos'}</small></button>
       <button class="ar-nav-btn" onclick="arenaAbrirChave()">${icon('trophy')}<b>Grupos e chave</b><small>classificação</small></button>
+      <button class="ar-nav-btn" onclick="mesaAbrir()">${icon('zap')}<b>Mesa</b><small>quadras ao vivo</small></button>
+      <button class="ar-nav-btn" onclick="credAbrir()">${icon('check')}<b>Credenciamento</b><small>presença</small></button>
+      <button class="ar-nav-btn" onclick="mesaExportar()">${icon('download')}<b>Exportar</b><small>JSON, CSV, imprimir</small></button>
     </div>
 
     <div class="ar-grid2">
@@ -926,7 +939,8 @@ function arenaDuplaHtml(t, g) {
       ${t.pagamento !== 'nao_se_aplica' || arRegras().pix?.chave ? `<button class="btn btn-ghost btn-sm" onclick="arenaPago('${t.id}')">${icon('check')} ${t.pagamento === 'pago' ? 'Desmarcar pago' : 'Marcar pago'}</button>` : ''}
       ${t.status === 'espera' ? `<button class="btn btn-ghost btn-sm" onclick="arenaConfirmarVaga('${t.id}')">Confirmar vaga</button>` : ''}
       ${noGrupo
-        ? (!t.desistente_em ? `<button class="btn btn-coral btn-sm" onclick="arenaDesistencia('${t.id}')">Desistência</button>` : '')
+        ? (!t.desistente_em ? `<button class="btn btn-ghost btn-sm" onclick="mesaSubstituir('${t.id}')">Substituir dupla</button>
+          <button class="btn btn-coral btn-sm" onclick="arenaDesistencia('${t.id}')">Desistência</button>` : '')
         : `<button class="btn btn-coral btn-sm" onclick="arenaCancelarDupla('${t.id}')">Cancelar</button>`}` : '';
   return `
     <details class="ar-item">
