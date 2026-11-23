@@ -1,1 +1,161 @@
-/* Estilos do telão. Agente A2. */
+/* Estilos do telão, do scout, da página pública e da inscrição. Agente A2.
+   Prefixos: .tl- (telão), .sc- (scout), .pb- (página pública e inscrição). */
+
+/* ══ TELÃO (TV 1920x1080, fundo escuro, alto contraste) ══ */
+#screen-telao { background:#03070c; overflow:hidden; }
+.tl { display:flex; flex-direction:column; height:100%; padding:1.6vh 1.6vw; gap:1.4vh; color:#fff; font-family:'Barlow Condensed', sans-serif; }
+.tl-top { display:flex; align-items:center; gap:2vw; }
+.tl-titulo { font-family:'Bebas Neue', sans-serif; font-size:5vh; letter-spacing:.1vh; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tl-relogio { font-family:'Bebas Neue', sans-serif; font-size:5vh; color:var(--yellow); }
+.tl-tela-cheia { background:transparent; color:var(--muted2); border:1px solid var(--border2); border-radius:8px; padding:.6vh 1vw; font:inherit; font-size:1.8vh; cursor:pointer; }
+.tl-pausa { background:var(--coral); color:#fff; text-align:center; font-family:'Bebas Neue', sans-serif; font-size:6vh; letter-spacing:.3vh; padding:1vh; border-radius:12px; }
+.tl-main { flex:1; min-height:0; display:flex; flex-direction:column; }
+.tl-vazio { margin:auto; font-size:5vh; color:var(--muted2); }
+.tl-grade { flex:1; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:1.6vh 1.2vw; min-height:0; }
+.tl-quadra { background:var(--surface); border:2px solid var(--border2); border-radius:18px; padding:2vh 1.6vw; display:flex; flex-direction:column; justify-content:center; gap:1vh; min-width:0; }
+.tl-quadra.em_jogo { border-color:rgba(62,207,114,.55); }
+.tl-quadra.chamada { border-color:rgba(244,192,38,.7); }
+.tl-quadra.livre { opacity:.55; }
+.tl-quadra-top { display:flex; justify-content:space-between; align-items:center; gap:1vw; font-size:2.8vh; font-weight:700; color:var(--muted2); letter-spacing:.1vh; }
+.tl-quadra-top span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-selo { font-size:2.4vh; padding:.3vh .8vw; border-radius:999px; font-weight:700; flex-shrink:0; }
+.tl-selo.vivo { background:#3ecf72; color:#03140a; }
+.tl-selo.chamada { background:var(--yellow); color:#1a1300; }
+.tl-selo.livre { background:var(--dark3); color:var(--muted2); }
+.tl-dupla { display:flex; align-items:center; justify-content:space-between; gap:1vw; }
+.tl-nome { font-size:5vh; font-weight:700; line-height:1.05; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tl-games { font-family:'Bebas Neue', sans-serif; font-size:9vh; line-height:1; color:var(--yellow-l); min-width:6vw; text-align:right; }
+.tl-tb { font-size:3.4vh; font-weight:700; color:var(--coral); }
+.tl-paginas { text-align:center; color:var(--muted); font-size:2vh; margin-top:.6vh; }
+.tl-painel { flex:1; background:var(--surface); border-radius:18px; padding:3vh 3vw; overflow:hidden; }
+.tl-painel-titulo { font-family:'Bebas Neue', sans-serif; font-size:6vh; color:var(--yellow); margin-bottom:2vh; }
+.tl-tabela { width:100%; border-collapse:collapse; font-size:4.4vh; }
+.tl-tabela th { text-align:left; color:var(--muted2); font-size:2.8vh; padding:.6vh 1vw; }
+.tl-tabela td { padding:1vh 1vw; border-top:1px solid var(--border2); }
+.tl-tabela td:nth-child(n+3), .tl-tabela th:nth-child(n+3) { text-align:center; width:8vw; }
+.tl-lista { display:flex; flex-direction:column; gap:1.2vh; font-size:3.6vh; }
+.tl-lista-linha { display:grid; grid-template-columns:14vw 1fr 10vw 1fr; gap:1vw; align-items:center; }
+.tl-lista-linha b { text-align:center; color:var(--yellow-l); }
+.tl-fase { color:var(--muted2); font-size:2.8vh; }
+.tl-lista .venc, .pb .venc { color:#3ecf72; font-weight:700; }
+.tl-campeoes { display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:2vh; }
+.tl-campeao { font-family:'Bebas Neue', sans-serif; font-size:11vh; color:var(--yellow-l); }
+.tl-campeao .ic { width:9vh; height:9vh; vertical-align:-1vh; }
+.tl-vice { font-size:5vh; }
+.tl-rodape { display:flex; flex-wrap:wrap; gap:.6vh 1.4vw; align-items:center; font-size:3vh; min-height:5vh; color:#dce9f5; }
+.tl-chamada { background:var(--yellow); color:#1a1300; font-weight:700; padding:.4vh 1vw; border-radius:8px; }
+.tl-prox-rotulo { color:var(--muted2); font-weight:700; }
+.tl-sep { color:var(--muted); }
+.tl-atualizado { position:fixed; right:1.2vw; bottom:.6vh; font-size:1.8vh; color:var(--muted); }
+.tl-atualizado.atrasado { left:0; right:0; bottom:0; text-align:center; background:var(--yellow); color:#1a1300; font-size:2.6vh; font-weight:700; padding:.6vh; }
+
+/* ══ SCOUT (celular em retrato, botões enormes) ══ */
+#screen-scout { overflow-y:auto; }
+.sc { display:flex; flex-direction:column; gap:12px; padding:12px 16px calc(16px + var(--safe-bottom)); min-height:100%; }
+.sc-top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.sc-top-titulo { font-family:'Bebas Neue', sans-serif; font-size:22px; letter-spacing:1px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sc-rede { font-size:13px; font-weight:700; padding:4px 10px; border-radius:999px; flex-shrink:0; }
+.sc-rede.ok { background:rgba(62,207,114,.18); color:#3ecf72; }
+.sc-rede.pendente { background:rgba(244,192,38,.18); color:var(--yellow-l); }
+.sc-rede.erro { background:rgba(224,92,58,.2); color:#ff8a6b; }
+.sc-msg { color:var(--muted2); text-align:center; padding:24px 0; line-height:1.5; }
+.sc-login { display:flex; flex-direction:column; gap:12px; }
+.sc-login label, .pb-form label { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted2); }
+.sc-login input, .pb-form input, .pb-form select, .pb-busca input {
+  background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius-sm); color:var(--white);
+  font:inherit; font-size:16px; padding:12px; min-height:48px; }
+.sc-erro, .pb-erro { color:#ff8a6b; font-size:14px; min-height:1em; margin:0; }
+.sc-btn, .pb-btn { background:var(--yellow); color:#0a0a0a; border:none; border-radius:var(--radius-sm); font-family:'Bebas Neue', sans-serif;
+  font-size:20px; letter-spacing:1px; padding:12px 16px; min-height:48px; cursor:pointer; text-align:center; text-decoration:none; display:block; }
+.sc-btn:disabled, .pb-btn:disabled { opacity:.5; }
+.sc-sair { background:transparent; border:1px solid var(--border2); color:var(--muted2); border-radius:var(--radius-sm); padding:12px; font:inherit; min-height:44px; cursor:pointer; }
+.sc-alerta { background:rgba(224,92,58,.16); border:1px solid rgba(224,92,58,.5); border-radius:var(--radius-sm); padding:12px; line-height:1.4; }
+.sc-alerta.ambar { background:rgba(244,192,38,.12); border-color:rgba(244,192,38,.45); }
+.sc-alerta button { margin-left:8px; background:var(--white); color:#0a0a0a; border:none; border-radius:8px; padding:6px 10px; font:inherit; font-weight:700; }
+.sc-quadra { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); padding:14px; display:flex; flex-direction:column; gap:8px; }
+.sc-quadra-nome { font-family:'Bebas Neue', sans-serif; font-size:22px; display:flex; align-items:center; gap:8px; }
+.sc-quadra-cat { color:var(--muted2); font-size:14px; }
+.sc-quadra-duplas { font-size:16px; }
+.sc-livre { color:var(--muted); }
+.sc-selo { font-family:'Barlow', sans-serif; font-size:12px; font-weight:700; padding:2px 8px; border-radius:999px; }
+.sc-selo.em_jogo { background:#3ecf72; color:#03140a; }
+.sc-selo.chamada { background:var(--yellow); color:#1a1300; }
+.sc-jogo-meta { color:var(--muted2); font-size:14px; text-align:center; }
+.sc-placar { display:grid; grid-template-columns:1fr 1fr; gap:12px; flex:1; }
+.sc-lado { background:var(--surface); border-radius:var(--radius); padding:12px; display:flex; flex-direction:column; align-items:stretch; gap:10px; text-align:center; }
+.sc-nome { font-weight:700; font-size:18px; min-height:2.6em; display:flex; align-items:center; justify-content:center; overflow-wrap:anywhere; }
+.sc-games { font-family:'Bebas Neue', sans-serif; font-size:96px; line-height:1; color:var(--yellow-l); }
+.sc-tb { color:var(--coral); font-size:18px; }
+.sc-tb b { font-size:32px; }
+.sc-mais { background:var(--blue); color:#fff; border:none; border-radius:var(--radius); font-family:'Bebas Neue', sans-serif; font-size:30px; min-height:120px; cursor:pointer; touch-action:manipulation; }
+.sc-mais:disabled { opacity:.35; }
+.sc-menos { background:transparent; color:var(--muted2); border:1px solid var(--border2); border-radius:var(--radius-sm); font-size:20px; min-height:48px; cursor:pointer; touch-action:manipulation; }
+.sc-fim { background:#3ecf72; font-size:26px; min-height:64px; }
+.sc-oferta { display:flex; gap:8px; margin-top:10px; }
+.sc-oferta button { flex:1; margin:0; min-height:44px; }
+.sc-sacando { outline:3px solid var(--yellow); }
+.sc-saque { color:var(--yellow-l); font-weight:700; font-size:16px; min-height:1.2em; }
+.sc-saque-escolha { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:14px; color:var(--muted2); }
+.sc-saque-escolha button { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border2); color:var(--white); border-radius:var(--radius-sm);
+  padding:8px; min-height:44px; font:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.sc-saque-escolha button.on { background:var(--yellow); color:#0a0a0a; border-color:var(--yellow); font-weight:700; }
+
+/* ══ PÁGINA PÚBLICA E INSCRIÇÃO ══ */
+#screen-publico, #screen-inscricao { overflow-y:auto; }
+.pb { max-width:760px; width:100%; margin:0 auto; padding:16px 16px calc(24px + var(--safe-bottom)); display:flex; flex-direction:column; gap:12px; }
+.pb-top { text-align:center; padding:8px 0; }
+.pb-arena { color:var(--muted2); font-size:14px; }
+.pb-titulo { font-family:'Bebas Neue', sans-serif; font-size:32px; letter-spacing:1px; margin:4px 0; font-weight:400; }
+.pb-datas { color:var(--yellow-l); font-size:14px; }
+.pb-pausa { background:var(--coral); color:#fff; border-radius:var(--radius-sm); padding:10px; text-align:center; font-weight:700; }
+.pb-sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+.pb-busca input { width:100%; }
+.pb-tabs, .pb-cats { display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; }
+.pb-tabs button, .pb-cats button { flex-shrink:0; background:var(--surface); border:1px solid var(--border2); color:var(--muted2); border-radius:999px;
+  padding:8px 14px; font:inherit; font-size:14px; min-height:40px; cursor:pointer; }
+.pb-tabs button.on, .pb-cats button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+.pb-conteudo { display:flex; flex-direction:column; gap:10px; }
+.pb-aviso { color:var(--muted2); text-align:center; padding:16px 0; }
+.pb-nota { color:var(--muted); font-size:12px; margin:4px 0 0; }
+.pb-quadras { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:10px; }
+.pb-quadra, .pb-grupo, .pb-minha, .pb-campeoes, .pb-ok { background:var(--surface); border:1px solid var(--border2); border-radius:var(--radius); padding:12px; }
+.pb-quadra-nome, .pb-grupo-nome, .pb-minha-nome { font-family:'Bebas Neue', sans-serif; font-size:20px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.pb-quadra-cat { color:var(--muted2); font-size:13px; margin-bottom:6px; }
+.pb-linha { display:flex; justify-content:space-between; gap:8px; font-size:15px; padding:2px 0; }
+.pb-linha b { color:var(--yellow-l); font-size:20px; }
+.pb-livre { color:var(--muted); }
+.pb-tb { color:var(--coral); font-size:13px; font-weight:700; }
+.pb-selo { font-family:'Barlow', sans-serif; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; }
+.pb-selo.vivo { background:#3ecf72; color:#03140a; }
+.pb-selo.chamada { background:var(--yellow); color:#1a1300; }
+.pb-fechado { font-family:'Barlow', sans-serif; font-size:11px; color:var(--muted2); border:1px solid var(--border2); border-radius:999px; padding:1px 8px; }
+.pb-tabela { width:100%; border-collapse:collapse; font-size:14px; }
+.pb-tabela th { color:var(--muted2); font-weight:600; text-align:center; padding:4px; font-size:12px; }
+.pb-tabela td { border-top:1px solid var(--border); padding:6px 4px; text-align:center; }
+.pb-tabela td:nth-child(2), .pb-tabela th:nth-child(2) { text-align:left; }
+.pb-tabela small { display:block; color:var(--muted); font-size:11px; }
+.pb-tabela tr.desist td { opacity:.5; text-decoration:line-through; }
+.pb-fase { font-family:'Bebas Neue', sans-serif; font-size:18px; color:var(--yellow); margin-top:6px; }
+.pb-jogo { display:grid; grid-template-columns:1fr auto 1fr; gap:8px; align-items:center; background:var(--surface); border-radius:var(--radius-sm); padding:10px; font-size:14px; }
+.pb-jogo > span:last-child { text-align:right; }
+.pb-jogo b { color:var(--yellow-l); }
+.pb-jogo-det { display:flex; flex-direction:column; gap:2px; margin-top:6px; background:var(--dark3); }
+.pb-jogo-meta { color:var(--muted2); font-size:12px; }
+.pb-jogo-sit { color:var(--yellow-l); font-size:13px; font-weight:600; }
+.pb-campeoes-cat { font-family:'Bebas Neue', sans-serif; font-size:20px; color:var(--yellow); }
+.pb-regras { line-height:1.6; padding-left:20px; margin:0; }
+.pb-regulamento { white-space:pre-wrap; background:var(--surface); border-radius:var(--radius-sm); padding:12px; line-height:1.5; }
+.pb-rodape { text-align:center; color:var(--muted); font-size:13px; padding-top:12px; }
+.pb-rodape a, .pb-link { color:var(--blue-l); }
+.pb-form { display:flex; flex-direction:column; gap:12px; }
+.pb-atleta { border:1px solid var(--border2); border-radius:var(--radius); padding:12px; display:flex; flex-direction:column; gap:10px; margin:0; }
+.pb-atleta legend { padding:0 6px; color:var(--yellow-l); font-weight:600; }
+.pb-hp { position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden; }
+.pb-lgpd { font-size:13px; color:var(--muted2); line-height:1.5; max-height:180px; overflow-y:auto; background:var(--surface); border-radius:var(--radius-sm); padding:10px 12px; }
+.pb-check { display:flex; gap:10px; align-items:center; font-size:14px; min-height:44px; }
+.pb-check input { width:22px; height:22px; }
+.pb-ok { display:flex; flex-direction:column; gap:10px; text-align:center; }
+.pb-ok-titulo { font-family:'Bebas Neue', sans-serif; font-size:26px; color:#3ecf72; }
+.pb-pix { display:flex; flex-direction:column; gap:8px; }
+.pb-pix code { background:var(--dark3); padding:10px; border-radius:8px; word-break:break-all; font-size:15px; }
+.pb-btn-sec { background:var(--surface2); color:var(--white); }

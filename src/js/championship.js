@@ -430,6 +430,56 @@
     return ps;
   }
 
+  // ── Resumo para telão e página pública ──────────────────
+  const FASE_NOME = { grupo: 'Grupos', r16: 'Oitavas', qf: 'Quartas', sf: 'Semifinal', final: 'Final' };
+  const FASE_ORDEM = { r16: 1, qf: 2, sf: 3, final: 4 };
+
+  function rotuloOrigem(o, partidas) {
+    if (!o) return 'A definir';
+    if (o.grupo) return `${o.pos}º Grupo ${o.grupo}`;
+    if (o.melhor1) return `Melhor 1º nº${o.melhor1}`;
+    if (o.melhor2) return `Melhor 2º nº${o.melhor2}`;
+    const m = partidas.find(p => p.id === (o.match || o.match_ref));
+    return m ? `Vencedor ${FASE_NOME[m.fase]} ${m.slot}` : 'A definir';
+  }
+
+  // pub = resposta de arena_public. Classificação dos grupos (com as regras do campeonato),
+  // mata-mata em ordem de fase com os rótulos das vagas, e campeão, vice e 3ºs quando a final acaba.
+  function resumoCategoria(pub, categoryId) {
+    const regras = (pub.championship && pub.championship.regras) || {};
+    const categoria = (pub.categorias || []).find(c => c.id === categoryId) || {};
+    const formato = categoria.formato || {};
+    const duplas = (pub.duplas || []).filter(d => d.category_id === categoryId);
+    const nome = id => (duplas.find(d => d.id === id) || {}).nome || null;
+    const partidas = (pub.partidas || []).filter(p => p.category_id === categoryId);
+    const desistentes = duplas.filter(d => d.desistente).map(d => d.id);
+    const grupos = (pub.grupos || []).filter(g => g.category_id === categoryId)
+      .sort((x, y) => (x.ordem || 0) - (y.ordem || 0))
+      .map(g => {
+        const jogos = partidas.filter(p => p.group_id === g.id);
+        const r = classificarGrupo(g.duplas, jogos, {
+          ...regras, preset: formato.preset_grupo || 'A', desistentes, sorteio: g.sorteio_desempate || [],
+        });
+        // completo: todos os jogos terminaram (só então um empate "a sortear" é real).
+        const completo = jogos.length > 0 && jogos.every(p => ['encerrada', 'wo', 'anulada'].includes(p.status));
+        return { id: g.id, nome: g.nome, fechado: !!g.fechado, completo, pendenteSorteio: r.pendenteSorteio,
+          tabela: r.tabela.map(l => ({ ...l, nome: nome(l.team) })) };
+      });
+    const mata = partidas.filter(p => p.fase !== 'grupo')
+      .sort((x, y) => FASE_ORDEM[x.fase] - FASE_ORDEM[y.fase] || x.slot - y.slot)
+      .map(p => ({ ...p, nome_a: nome(p.team_a) || rotuloOrigem(p.origem_a, partidas),
+        nome_b: nome(p.team_b) || rotuloOrigem(p.origem_b, partidas) }));
+    const vencedorDe = p => { const l = ladoVencedor(p); return l ? p['team_' + l] : null; };
+    const perdedorDe = p => { const w = vencedorDe(p); return w ? (w === p.team_a ? p.team_b : p.team_a) : null; };
+    const final = mata.find(p => p.fase === 'final');
+    let campeoes = null;
+    if (final && (final.status === 'encerrada' || final.status === 'wo') && vencedorDe(final)) {
+      campeoes = { campeao: nome(vencedorDe(final)), vice: nome(perdedorDe(final)),
+        terceiros: mata.filter(p => p.fase === 'sf').map(perdedorDe).filter(Boolean).map(nome) };
+    }
+    return { categoria, grupos, mata, campeoes };
+  }
+
   // ── Placar ──────────────────────────────────────────────
   const ALVO = { A: 6, B: 4 };
 
@@ -595,7 +645,7 @@
 
   return {
     mulberry32, tamanhosGrupos, montarGrupos, jogosDoGrupo, classificarGrupo, compararEntreGrupos,
-    ordemSeeds, gerarChave, preencherChave, slotsMataMata, payloadSorteio, avancar, limpar, validarPlacar,
+    ordemSeeds, gerarChave, preencherChave, slotsMataMata, payloadSorteio, avancar, FASE_NOME, rotuloOrigem, resumoCategoria, limpar, validarPlacar,
     ordenarFila, proximoApto, preverHorarios, capacidade, parseListaInscritos,
   };
 });

@@ -86,6 +86,23 @@
     return { games_a: e.games_a, games_b: e.games_b, tb_a: null, tb_b: null, vencedor };
   }
 
+  // Placar vindo do servidor (match_take, conflito) para o estado do scout: 7x6 com tie-break volta a 6x6 + tb.
+  function dePlacarServidor(p, preset = 'A') {
+    const alvo = alvoDe(preset);
+    const e = { games_a: p.games_a || 0, games_b: p.games_b || 0, tb_a: p.tb_a ?? null, tb_b: p.tb_b ?? null };
+    const hi = Math.max(e.games_a, e.games_b), lo = Math.min(e.games_a, e.games_b);
+    if (hi === alvo + 1 && lo === alvo && (e.tb_a != null || e.tb_b != null)) {
+      if (e.games_a > e.games_b) e.games_a = alvo; else e.games_b = alvo;
+    }
+    return e;
+  }
+
+  // Snapshot para o servidor: placar final quando o set acabou (7x6 + tb), senão o estado como está.
+  const paraServidor = (e, preset = 'A') => {
+    const f = paraPlacarFinal(e, preset);
+    return f ? { games_a: f.games_a, games_b: f.games_b, tb_a: f.tb_a, tb_b: f.tb_b } : { ...e };
+  };
+
   // Quem saca o próximo ponto do tie-break pela sequência 1-2-2: 1 saque de quem abriu, depois 2 de cada.
   // primeiro = dupla que sacou o 1º ponto do tie-break ('a' por padrão).
   function sacaNoTieBreak(e, primeiro = 'a') {
@@ -94,5 +111,5 @@
     return Math.floor((k + 1) / 2) % 2 === 0 ? primeiro : outro;
   }
 
-  return { ALVO, novo, emTieBreak, fim, marcar, paraPlacarFinal, sacaNoTieBreak };
+  return { ALVO, novo, emTieBreak, fim, marcar, paraPlacarFinal, dePlacarServidor, paraServidor, sacaNoTieBreak };
 });
