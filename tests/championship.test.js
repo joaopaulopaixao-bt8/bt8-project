@@ -207,6 +207,11 @@ for (const g of [3, 5, 6, 7]) {
       const o = p['origem_' + lado];
       if (p['team_' + lado] === '2A') assert.deepEqual(o, { melhor2: 1 });
     }
+    // p_slots do category_seed_knockout: a origem vai junto com a dupla, já trocada
+    const slots = C.slotsMataMata(C.preencherChave(chave, classificacoesComConflito(g)));
+    assert.equal(slots.length, S);
+    assert.deepEqual(slots.find(s => s.team === '2A').origem, { melhor2: 1 });
+    assert.ok(slots.every(s => s.origem && !s.origem.match));
   });
 }
 
@@ -428,8 +433,8 @@ test('payloadSorteio no formato do category_publish_draw e slots do category_see
   ];
   const cheia = C.preencherChave(banco, { A: [{ team: 'a1' }, { team: 'a2' }], B: [{ team: 'b1' }, { team: 'b2' }] });
   assert.deepEqual(C.slotsMataMata(cheia), [
-    { match: 'm-sf1', slot: 'a', team: 'a1' }, { match: 'm-sf1', slot: 'b', team: 'b2' },
-    { match: 'm-sf2', slot: 'a', team: 'b1' }, { match: 'm-sf2', slot: 'b', team: 'a2' },
+    { match: 'm-sf1', slot: 'a', team: 'a1', origem: { grupo: 'A', pos: 1 } }, { match: 'm-sf1', slot: 'b', team: 'b2', origem: { grupo: 'B', pos: 2 } },
+    { match: 'm-sf2', slot: 'a', team: 'b1', origem: { grupo: 'B', pos: 1 } }, { match: 'm-sf2', slot: 'b', team: 'a2', origem: { grupo: 'A', pos: 2 } },
   ]);
   // vencedor como uuid (coluna matches.vencedor)
   const fim = C.avancar(cheia.map(x => (x.id === 'm-sf2' ? { ...x, vencedor: 'a2' } : x)), 'm-sf2');
