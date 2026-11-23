@@ -96,7 +96,8 @@ function sequenciaDePlacar() {
   else {
     embaralhado(5, 5);
     if (sorte(0.5)) { w++; snap(); l++; snap(); } else { l++; snap(); w++; snap(); }
-    const tbw = 7 + inteiro(3), tbl = tbw === 7 ? inteiro(6) : tbw - 2;
+    // Regra do dono: tie-break a 7; em 6x6 nos pontos vence quem fizer 8 (8-6 ou 8-7).
+    const tbw = sorte(0.7) ? 7 : 8, tbl = tbw === 7 ? inteiro(6) : 6 + inteiro(2);
     for (let i = 1; i < Math.min(tbw, 6); i++) snap(i, Math.min(i, tbl));
     w = 7; snap(tbw, tbl);
   }
