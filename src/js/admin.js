@@ -164,7 +164,8 @@ const ADMIN_TABS = [
   { id: 'overview', label: 'Visão geral', icon: 'grid', render: renderAdminOverview },
   { id: 'revenue', label: 'Receita', icon: 'wallet', render: renderAdminRevenue },
   { id: 'customers', label: 'Clientes', icon: 'users', render: renderAdminCustomers },
-  { id: 'health', label: 'Saúde técnica', icon: 'activity', render: renderAdminHealth }
+  { id: 'health', label: 'Saúde técnica', icon: 'activity', render: renderAdminHealth },
+  { id: 'arenas', label: 'Arenas', icon: 'trophy', render: renderAdminArenas }
 ];
 
 async function adminFetch(params) {
@@ -238,7 +239,7 @@ function renderAdmin() {
   document.querySelectorAll('#admin-panel [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === ADMIN.tab));
   document.querySelectorAll('#admin-panel [data-period]').forEach(b => b.classList.toggle('on', b.dataset.period === ADMIN.period));
   const target = document.getElementById('admin-tab-content');
-  if (!target || !ADMIN.data) return;
+  if (!target || (!ADMIN.data && ADMIN.tab !== 'arenas')) return; // Arenas não depende do admin-dashboard
   (ADMIN_TABS.find(t => t.id === ADMIN.tab) || ADMIN_TABS[0]).render(target, ADMIN.data);
 }
 
@@ -490,4 +491,111 @@ function renderAdminHealth(target, d) {
       ${notConfigured('Backup do banco', 'Falta o script de backup do VPS registrar data, tamanho e resultado de cada execução (ver docs/SUPABASE_VPS.md).')}
     </div>
     ${adminFooter(d)}`;
+}
+
+// ── Arenas: lista e criação (Function admin-arena, docs/ARENA.md §5) ──
+const admSlug = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
+async function loadAdminArenas() {
+  const { data, error } = await SUPA.from('arenas').select('*, arena_members(nome, email, papel)').order('nome');
+  if (error) throw new Error(error.message || 'Não foi possível ler as arenas.');
+  return data || [];
+}
+
+function adminArenaRows(rows) {
+  if (!rows.length) return admEmpty('Nenhuma arena criada ainda.');
+  return `<div class="adm-table-wrap"><table class="adm-table">
+    <thead><tr><th>Arena</th><th>Slug</th><th>Status</th><th>Plano</th><th>Ativa até</th><th>Dono</th></tr></thead>
+    <tbody>${rows.map(a => {
+      const dono = (a.arena_members || []).find(m => m.papel === 'dono') || {};
+      return `<tr>
+        <td><strong>${escapeHtml(a.nome)}</strong><small>${escapeHtml([a.cidade, a.estado].filter(Boolean).join(' - '))}</small></td>
+        <td data-label="Slug">${escapeHtml(a.slug)}</td>
+        <td data-label="Status"><span class="adm-pill ${a.status === 'ativa' ? '' : 'neg'}">${escapeHtml(a.status)}</span></td>
+        <td data-label="Plano">${escapeHtml(a.plano || '–')}</td>
+        <td data-label="Ativa até">${admDate(a.ativo_ate ? `${a.ativo_ate}T12:00:00` : null)}</td>
+        <td data-label="Dono">${escapeHtml(dono.nome || '–')}<small>${escapeHtml(dono.email || '')}</small></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+
+function renderAdminArenas(target) {
+  const campo = (id, rotulo, extra = '') => `<label class="adm-arena-campo"><span class="adm-label">${rotulo}</span><input id="adm-ar-${id}" class="adm-input" ${extra}></label>`;
+  target.innerHTML = `
+    ${admSection('Criar arena', `
+      <form class="adm-arena-form" onsubmit="event.preventDefault();adminCriarArena()" novalidate>
+        <div class="adm-arena-grid">
+          ${campo('nome', 'Nome da arena', 'required oninput="adminArenaSlugSugerido()"')}
+          ${campo('slug', 'Slug (endereço)', 'required oninput="this.dataset.editado=1" placeholder="arena-exemplo"')}
+          ${campo('cidade', 'Cidade')}
+          ${campo('estado', 'Estado (UF)', 'maxlength="2" placeholder="PE"')}
+          ${campo('whatsapp', 'WhatsApp da arena', 'type="tel" placeholder="(81) 99999-0000"')}
+          ${campo('ativo_ate', 'Ativa até', 'type="date" value="2027-03-31"')}
+        </div>
+        <div class="adm-label" style="margin-top:14px">Gestor (dono da arena)</div>
+        <div class="adm-arena-grid">
+          ${campo('g_nome', 'Nome', 'required')}
+          ${campo('g_email', 'E-mail', 'type="email" required autocomplete="off"')}
+          ${campo('g_senha', 'Senha inicial (8 a 72 caracteres)', 'type="text" required autocomplete="new-password"')}
+        </div>
+        <p class="adm-muted adm-small">Se o e-mail já tiver conta no BT8, ela é vinculada e a senha é ignorada.</p>
+        <div id="adm-ar-msg" class="adm-msg" role="alert"></div>
+        <button id="adm-ar-btn" class="adm-btn-primary" type="submit">CRIAR ARENA</button>
+      </form>`)}
+    ${admSection('Arenas', `<div id="adm-arena-list">${admEmpty('Carregando arenas...')}</div>`)}`;
+  loadAdminArenas()
+    .then(rows => { const el = document.getElementById('adm-arena-list'); if (el) el.innerHTML = adminArenaRows(rows); })
+    .catch(e => { const el = document.getElementById('adm-arena-list'); if (el) el.innerHTML = `<div class="adm-error">${escapeHtml(e.message)}</div>`; });
+}
+
+function adminArenaSlugSugerido() {
+  const slug = document.getElementById('adm-ar-slug');
+  if (slug && !slug.dataset.editado) slug.value = admSlug(document.getElementById('adm-ar-nome').value);
+}
+
+async function adminCriarArena() {
+  const val = id => (document.getElementById(`adm-ar-${id}`)?.value || '').trim();
+  const msg = document.getElementById('adm-ar-msg');
+  const btn = document.getElementById('adm-ar-btn');
+  const erro = texto => { msg.style.color = ''; msg.textContent = texto; };
+  const slug = admSlug(val('slug'));
+  const tel = val('whatsapp').replace(/\D/g, '');
+  const whatsapp = tel.length === 10 || tel.length === 11 ? `+55${tel}` : (tel.length >= 12 && tel.startsWith('55') ? `+${tel}` : '');
+  if (!val('nome')) return erro('Informe o nome da arena.');
+  if (!slug) return erro('Informe o slug.');
+  if (val('estado') && !/^[A-Za-z]{2}$/.test(val('estado'))) return erro('Estado: use a sigla com 2 letras.');
+  if (tel && !whatsapp) return erro('WhatsApp inválido: use DDD e número.');
+  if (!val('g_nome')) return erro('Informe o nome do gestor.');
+  if (!/^\S+@\S+\.\S+$/.test(val('g_email'))) return erro('Informe um e-mail válido para o gestor.');
+  if (val('g_senha').length < 8 || val('g_senha').length > 72) return erro('A senha inicial precisa ter de 8 a 72 caracteres.');
+  const payload = {
+    arena: { nome: val('nome'), slug, cidade: val('cidade') || null, estado: val('estado').toUpperCase() || null, whatsapp: whatsapp || null, plano: 'fundadora', ativo_ate: val('ativo_ate') || '2027-03-31' },
+    gestor: { nome: val('g_nome'), email: val('g_email').toLowerCase(), senha: val('g_senha') },
+  };
+  btn.disabled = true;
+  erro('');
+  try {
+    const { data: s } = await SUPA.auth.getSession();
+    const token = s?.session?.access_token;
+    if (!token) throw new Error('Sessão inválida. Faça login novamente.');
+    const r = await fetch('/.netlify/functions/admin-arena', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `Erro ${r.status} ao criar a arena.`);
+    document.getElementById('admin-tab-content').innerHTML = admSection('Arena criada', `
+      <p class="adm-card-body"><strong>${escapeHtml(j.arena?.nome || payload.arena.nome)}</strong> foi criada.
+        ${escapeHtml(j.mensagem || `O gestor entra com ${payload.gestor.email}.`)}</p>
+      <p class="adm-muted adm-small">Se o e-mail já tinha conta no BT8, vale a senha que a pessoa já usa.</p>
+      <div class="adm-arena-acoes">
+        <button class="adm-btn-primary" onclick="location.href='/arena'">ABRIR A ARENA</button>
+        <button class="adm-btn-link" onclick="setAdminTab('arenas')">Voltar para Arenas</button>
+      </div>`);
+  } catch (e) {
+    erro(/failed to fetch|load failed/i.test(e.message) ? 'Sem conexão com o servidor. Tente de novo.' : e.message);
+    btn.disabled = false;
+  }
 }
