@@ -1,5 +1,6 @@
 // Página pública e inscrição. Agente A2. Entradas: openPublicoRoute(slug) em #screen-publico (/c/<slug>),
-// openInscricaoRoute(token) em #screen-inscricao (/inscricao/<token>).
+// openInscricaoRoute(token) em #screen-inscricao (/inscricao/<token>), openAcompanharRoute(token) em
+// #screen-acompanhar (/acompanhar/<token>: situação, Pix, comprovante, grupo e jogos da dupla).
 // Este arquivo também traz a camada de API da arena e o modo demo, usados por scout.js e telao.js
 // (os três são carregados antes do DOMContentLoaded; o contrato está em docs/ARENA.md).
 
@@ -207,6 +208,7 @@ const arenaDemo = (() => {
     const hoje = arenaHoje();
     st = {
       eventos: new Set(),
+      inscricoes: demoInscricoes(), // token -> inscrição feita nesta aba (demo do acompanhamento)
       arena: { nome: 'Arena Demo', cidade: 'Recife', estado: 'PE' },
       championship: {
         id: 'champ', titulo: 'Open de Verão (demo)', slug: 'demo', status: 'em_andamento',
@@ -221,6 +223,14 @@ const arenaDemo = (() => {
       },
       quadras, categorias, duplas, grupos, partidas,
     };
+  }
+
+  // A página /acompanhar abre em outra carga: as inscrições do demo ficam no sessionStorage da aba.
+  function demoInscricoes() {
+    try { return JSON.parse(sessionStorage.getItem('bt8_demo_inscricoes') || '{}'); } catch (e) { return {}; }
+  }
+  function salvarInscricoes() {
+    try { sessionStorage.setItem('bt8_demo_inscricoes', JSON.stringify(st.inscricoes)); } catch (e) { /* sem storage: só nesta carga */ }
   }
 
   const estado = () => (st || montar(), st);
@@ -292,6 +302,31 @@ const arenaDemo = (() => {
             vagas: Math.max(0, c.max_duplas - inscritas), inscricoes_abertas: true };
         }) };
     },
+    // Acompanhamento: token de uma inscrição feita nesta aba ou, qualquer outro, a 1ª dupla do Feminino B (com jogos).
+    arena_inscricao_status({ p_token }) {
+      const insc = st.inscricoes[p_token];
+      const dupla = insc ? insc.dupla : st.duplas[0];
+      const pix = { chave: 'pix@arenademo.com.br', favorecido: 'Arena Demo', valor: 120 };
+      const grupo = st.grupos.find(g => g.duplas.includes(dupla.id));
+      const nos = p => (p.team_a === dupla.id ? ['a', 'b'] : ['b', 'a']);
+      const pg = insc ? insc.pagamento : 'pago';
+      return { ok: true, arena: copia(st.arena),
+        championship: { titulo: st.championship.titulo, slug: 'demo', status: st.championship.status,
+          data_inicio: st.championship.data_inicio, data_fim: st.championship.data_fim },
+        categoria: { nome: (st.categorias.find(c => c.id === dupla.category_id) || {}).nome },
+        dupla: { id: dupla.id, nome: dupla.nome, atleta1: dupla.atleta1, atleta2: dupla.atleta2 },
+        status: insc ? insc.status : 'confirmada', pagamento: pg, pix: pg === 'pendente' ? pix : null, whatsapp: '+5581999990000',
+        comprovante: insc ? copia(insc.comprovante) : { status: 'aceito', motivo: null, enviado_em: null, envios_restantes: 4 },
+        grupo: grupo ? { nome: grupo.nome, fechado: grupo.fechado } : null,
+        jogos: st.partidas.filter(p => p.team_a === dupla.id || p.team_b === dupla.id).sort((x, y) => x.prioridade - y.prioridade).map(p => {
+          const [n, e] = nos(p);
+          return { id: p.id, fase: p.fase, rodada: p.rodada, status: p.status, adversario: nomeDupla(p['team_' + e]),
+            quadra: (st.quadras.find(q => q.id === p.court_id) || {}).nome || null,
+            chamada_em: p.chamada_em, iniciada_em: p.iniciada_em, encerrada_em: p.encerrada_em,
+            games_nos: p['games_' + n], games_eles: p['games_' + e], tb_nos: p['tb_' + n], tb_eles: p['tb_' + e],
+            resultado: p.vencedor ? (p.vencedor === dupla.id ? 'vitoria' : 'derrota') : null, wo: p.wo };
+        }) };
+    },
     match_take({ p_match, p_device }) {
       const p = partida(p_match);
       if (!['agendada', 'chamada', 'em_jogo'].includes(p.status)) throw arenaErro('A partida não está em andamento', 400, 'status_invalido');
@@ -350,11 +385,31 @@ const arenaDemo = (() => {
     },
     fn(nome, payload) {
       estado();
+      if (nome === 'arena-comprovante') {
+        const insc = st.inscricoes[payload.token];
+        if (!insc) return Promise.reject(arenaErro('Na demonstração, envie o comprovante de uma inscrição feita nesta aba.', 400));
+        if (insc.comprovante.envios_restantes <= 0) return Promise.reject(arenaErro('Limite de envios de comprovante atingido.', 429));
+        Object.assign(insc.comprovante, { status: 'enviado', motivo: null, enviado_em: new Date().toISOString(),
+          envios_restantes: insc.comprovante.envios_restantes - 1 });
+        salvarInscricoes();
+        return Promise.resolve({ ok: true, comprovante: { status: 'enviado', enviado_em: insc.comprovante.enviado_em } });
+      }
       if (nome !== 'arena-register') return Promise.reject(arenaErro('Function sem simulação: ' + nome, 404));
       const cat = st.categorias.find(c => c.id === payload.categoria_id);
       if (!cat) return Promise.reject(arenaErro('Escolha a categoria', 400));
-      return Promise.resolve({ ok: true, team_id: arenaUuid(), status: 'pendente', pagamento: 'pendente', categoria: cat.nome,
+      const token = arenaUuid();
+      const [n1, n2] = [payload.atleta1.nome, payload.atleta2.nome];
+      st.inscricoes[token] = { status: 'pendente', pagamento: 'pendente',
+        dupla: { id: 'insc-' + token, category_id: cat.id, nome: `${n1.split(' ')[0]} / ${n2.split(' ')[0]}`, atleta1: n1, atleta2: n2 },
+        comprovante: { status: 'nenhum', motivo: null, enviado_em: null, envios_restantes: 5 } };
+      salvarInscricoes();
+      return Promise.resolve({ ok: true, team_id: arenaUuid(), token, status: 'pendente', pagamento: 'pendente', categoria: cat.nome,
         pix: { chave: 'pix@arenademo.com.br', favorecido: 'Arena Demo', valor: 120 }, whatsapp: '+5581999990000' });
+    },
+    // Simula a arena recusando o comprovante: arenaDemo.recusarComprovante(token, 'valor errado').
+    recusarComprovante(token, motivo) {
+      Object.assign(st.inscricoes[token].comprovante, { status: 'recusado', motivo });
+      salvarInscricoes();
     },
     // A Mesa corrige o placar: o próximo envio do scout recebe conflito com por = 'mesa'.
     ajustarPelaMesa(id, ga, gb) {
@@ -635,6 +690,7 @@ function inscricaoForm() {
   const atleta = (n, rotulo) => `<fieldset class="pb-atleta"><legend>${rotulo}</legend>
     <label>Nome completo<input name="nome${n}" required minlength="3" maxlength="80" autocomplete="${n === 1 ? 'name' : 'off'}"></label>
     <label>WhatsApp com DDD<input name="tel${n}" required inputmode="tel" maxlength="20" placeholder="(81) 99999-0000" autocomplete="${n === 1 ? 'tel' : 'off'}"></label>
+    <label>E-mail (opcional, para receber confirmações)<input name="email${n}" type="email" inputmode="email" maxlength="254" autocomplete="${n === 1 ? 'email' : 'off'}"></label>
   </fieldset>`;
   el.innerHTML = `<div class="pb pb-insc">
     <header class="pb-top"><div class="pb-arena">${escapeHtml(arena.nome)}</div><h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1>
@@ -674,6 +730,7 @@ async function inscricaoEnviar(ev) {
   if (!v('categoria')) msg = 'Escolha a categoria.';
   else if (v('nome1').length < 3 || v('nome2').length < 3) msg = 'Informe o nome completo dos dois atletas.';
   else if (![v('tel1'), v('tel2')].every(t => digitos(t).length >= 10 && digitos(t).length <= 13)) msg = 'Informe o WhatsApp dos dois com DDD.';
+  else if (![v('email1'), v('email2')].every(e => !e || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))) msg = 'Confira o e-mail: ele é opcional, mas precisa estar completo.';
   else if (!f.elements.lgpd.checked) msg = 'É preciso aceitar o uso dos dados para se inscrever.';
   erro.textContent = msg;
   if (msg) return;
@@ -684,7 +741,8 @@ async function inscricaoEnviar(ev) {
   try {
     const r = await arenaFunction('arena-register', {
       token: INSC.token, categoria_id: v('categoria'),
-      atleta1: { nome: v('nome1'), telefone: v('tel1') }, atleta2: { nome: v('nome2'), telefone: v('tel2') },
+      atleta1: { nome: v('nome1'), telefone: v('tel1'), email: v('email1') },
+      atleta2: { nome: v('nome2'), telefone: v('tel2'), email: v('email2') },
       lgpd: true, lgpd_versao: inscricaoTermoLgpd(INSC.info.arena.nome).versao,
       website: f.elements.website.value,
     });
@@ -708,27 +766,183 @@ function inscricaoConfirmacao(r, dupla) {
   const pix = r.status === 'pendente' && r.pix ? r.pix : null;
   const zap = String(r.whatsapp || ch.whatsapp || '').replace(/\D/g, '');
   const texto = encodeURIComponent(`Olá! Segue o comprovante da inscrição de ${dupla} (${r.categoria}) no ${ch.titulo}.`);
+  const link = r.token ? `${location.origin}/acompanhar/${encodeURIComponent(r.token)}${arenaDemoAtivo() ? '?demo=1' : ''}` : '';
   document.getElementById('screen-inscricao').innerHTML = `<div class="pb pb-insc">
     <header class="pb-top"><div class="pb-arena">${escapeHtml(arena.nome)}</div><h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1></header>
     <div class="pb-ok">
       <div class="pb-ok-titulo">${escapeHtml(situacao)}</div>
       <div>${escapeHtml(dupla)} · ${escapeHtml(r.categoria || '')}</div>
-      ${pix ? `<div class="pb-pix">
-        <div>Pix${pix.valor ? ` de R$ ${Number(pix.valor).toFixed(2).replace('.', ',')}` : ''} para ${escapeHtml(pix.favorecido || arena.nome)}</div>
-        <code id="insc-pix">${escapeHtml(pix.chave)}</code>
-        <button class="pb-btn pb-btn-sec" type="button" onclick="inscricaoCopiarPix()">Copiar chave Pix</button>
+      ${pix ? publicoPixHtml(pix, arena.nome) : ''}
+      ${link ? `<div class="pb-acomp-link">
+        <div><b>Guarde este link.</b> Nele você acompanha a inscrição${r.status === 'pendente' ? ', envia o comprovante do Pix' : ''} e vê grupo e jogos. Quem informou e-mail recebe o link também por lá.</div>
+        <code id="insc-link">${escapeHtml(link)}</code>
+        <button class="pb-btn pb-btn-sec" type="button" onclick="publicoCopiar('insc-link', this, 'Link copiado')">Copiar link</button>
+        <a class="pb-btn" href="${escapeHtml(link)}">${r.status === 'pendente' ? 'Enviar comprovante' : 'Acompanhar inscrição'}</a>
       </div>` : ''}
-      ${zap && r.status === 'pendente' ? `<a class="pb-btn" href="https://wa.me/${zap}?text=${texto}" target="_blank" rel="noopener">Enviar comprovante</a>` : ''}
+      ${zap && r.status === 'pendente' ? `<a class="pb-link" href="https://wa.me/${zap}?text=${texto}" target="_blank" rel="noopener">Prefere o WhatsApp? Enviar o comprovante para a arena</a>` : ''}
       ${ch.slug ? `<a class="pb-link" href="/c/${encodeURIComponent(ch.slug)}">Ver a página do campeonato</a>` : ''}
     </div>
   </div>`;
 }
 
-function inscricaoCopiarPix() {
-  const chave = document.getElementById('insc-pix')?.textContent || '';
-  const rotulo = txt => { const b = document.querySelector('.pb-pix .pb-btn'); if (b) b.textContent = txt; };
-  const falhou = () => rotulo('Não deu para copiar: selecione a chave acima');
-  // "Chave copiada" só quando a área de transferência confirmou.
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(chave).then(() => rotulo('Chave copiada'), falhou);
+function publicoPixHtml(pix, favorecido) {
+  return `<div class="pb-pix">
+    <div>Pix${pix.valor ? ` de R$ ${Number(pix.valor).toFixed(2).replace('.', ',')}` : ''} para ${escapeHtml(pix.favorecido || favorecido)}</div>
+    <code id="pb-pix-chave">${escapeHtml(pix.chave)}</code>
+    <button class="pb-btn pb-btn-sec" type="button" onclick="publicoCopiar('pb-pix-chave', this, 'Chave copiada')">Copiar chave Pix</button>
+  </div>`;
+}
+
+// "Copiado" só quando a área de transferência confirmou.
+function publicoCopiar(id, btn, ok) {
+  const valor = document.getElementById(id)?.textContent || '';
+  const falhou = () => { btn.textContent = 'Não deu para copiar: selecione o texto acima'; };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(valor).then(() => { btn.textContent = ok; }, falhou);
   else falhou();
+}
+
+// ══ ACOMPANHAMENTO (/acompanhar/<token>) ═══════════════════
+const ACOMP = { token: '', st: null, prev: {}, enviando: false };
+const ACOMP_MAX_BYTES = 4 * 1024 * 1024; // mesmo limite da Function arena-comprovante
+
+async function openAcompanharRoute(token) {
+  ACOMP.token = token;
+  document.title = 'Minha inscrição · BT8';
+  const el = document.getElementById('screen-acompanhar');
+  if (!ACOMP.st) el.innerHTML = '<div class="pb pb-insc"><p class="pb-aviso">Carregando…</p></div>';
+  try {
+    const st = await arenaRpc('arena_inscricao_status', { p_token: token });
+    if (st.ok === false) throw arenaErro('Link de acompanhamento inválido. Confira se copiou o link inteiro.', 404);
+    ACOMP.st = st;
+    ACOMP.prev = await acompanharPrevisoes(st);
+    acompanharRender();
+  } catch (e) {
+    el.innerHTML = `<div class="pb pb-insc"><p class="pb-aviso">${escapeHtml(e.status === 0 ? 'Sem conexão. Recarregue a página.' : e.message)}</p></div>`;
+  }
+}
+
+// Horário previsto pelo motor, a partir da página pública (só quando ainda há jogo por fazer).
+async function acompanharPrevisoes(st) {
+  if (!st.championship?.slug || !(st.jogos || []).some(j => j.status === 'agendada' || j.status === 'suspensa')) return {};
+  try {
+    const pub = await arenaRpc('arena_public', { p_slug: st.championship.slug });
+    return pub.ok === false ? {} : arenaPrevisoes(pub);
+  } catch (e) { return {}; }
+}
+
+function acompanharPlacar(j) {
+  return j.games_nos == null ? '' : `${j.games_nos}x${j.games_eles}${j.tb_nos != null ? ` (${j.tb_nos}-${j.tb_eles})` : ''}`;
+}
+
+function acompanharSitJogo(j) {
+  const q = j.quadra ? escapeHtml(j.quadra) : '';
+  if (j.status === 'em_jogo') return `Ao vivo${q ? ` · ${q}` : ''} · ${acompanharPlacar(j) || '0x0'}`;
+  if (j.status === 'chamada') return `Chamada${q ? ` para ${q}` : ''}`;
+  if (j.status === 'encerrada' || j.status === 'wo') {
+    return `${{ vitoria: 'Vitória', derrota: 'Derrota' }[j.resultado] || 'Encerrada'}${j.wo ? ' por WO' : ''} · ${acompanharPlacar(j)}`;
+  }
+  if (j.status === 'anulada') return 'Anulada';
+  if (j.status === 'suspensa') return 'Suspensa: volta à fila';
+  return ACOMP.prev[j.id] ? `Previsão ~${arenaHora(ACOMP.prev[j.id])}` : 'Aguardando';
+}
+
+function acompanharRender() {
+  const st = ACOMP.st;
+  const ch = st.championship;
+  const cp = st.comprovante || {};
+  const pagando = st.pagamento === 'pendente' && st.status !== 'cancelada';
+  const situacao = {
+    confirmada: st.pagamento === 'pago' ? 'Inscrição confirmada e paga' : 'Inscrição confirmada',
+    pendente: 'Aguardando pagamento', espera: 'Lista de espera', cancelada: 'Inscrição cancelada',
+  }[st.status] || st.status;
+  const cpTexto = {
+    nenhum: 'Comprovante ainda não enviado.',
+    enviado: `Comprovante enviado${cp.enviado_em ? ` em ${arenaDataHora(cp.enviado_em)}` : ''}. A arena vai conferir.`,
+    recusado: 'A arena não aceitou o comprovante. Envie outro.',
+    aceito: 'Comprovante aceito.',
+  }[cp.status] || '';
+  const zap = String(st.whatsapp || '').replace(/\D/g, '');
+  const podeEnviar = pagando && cp.status !== 'aceito' && cp.envios_restantes > 0;
+  const jogos = (st.jogos || []).map(j => `<div class="pb-jogo pb-jogo-det">
+      <div class="pb-jogo-meta">${escapeHtml(j.fase === 'grupo' ? `Grupo${st.grupo ? ' ' + st.grupo.nome : ''} · rodada ${j.rodada}` : (BT8Championship.FASE_NOME[j.fase] || j.fase))}</div>
+      <div class="pb-jogo-duplas">contra ${escapeHtml(j.adversario || 'a definir')}</div>
+      <div class="pb-jogo-sit">${acompanharSitJogo(j)}</div>
+    </div>`).join('');
+  const comprovante = pagando || cp.status !== 'nenhum' ? `<div class="pb-comp">
+      <div>${escapeHtml(cpTexto)}</div>
+      ${cp.status === 'recusado' && cp.motivo ? `<div class="pb-comp-motivo">Motivo: ${escapeHtml(cp.motivo)}</div>` : ''}
+      ${podeEnviar ? `<label class="pb-file">Foto ou PDF do comprovante (até 4 MB)
+          <input type="file" id="acomp-arquivo" accept="image/jpeg,image/png,image/webp,application/pdf"></label>
+        <p class="pb-erro" id="acomp-erro" role="alert"></p>
+        <button class="pb-btn" type="button" id="acomp-btn" onclick="acompanharEnviar()">${cp.status === 'nenhum' ? 'Enviar comprovante' : 'Enviar outro comprovante'}</button>
+        <p class="pb-nota">${cp.envios_restantes} envio(s) restante(s).</p>` : ''}
+      ${pagando && cp.envios_restantes <= 0 && cp.status !== 'aceito' ? '<p class="pb-nota">Limite de envios atingido. Fale com a arena.</p>' : ''}
+      ${pagando && zap ? `<a class="pb-link" href="https://wa.me/${zap}" target="_blank" rel="noopener">Dúvidas sobre o pagamento? Falar com a arena no WhatsApp</a>` : ''}
+    </div>` : '';
+  const semJogos = st.status === 'cancelada' ? '' : '<p class="pb-nota">Grupo e jogos aparecem aqui depois do sorteio.</p>';
+  document.getElementById('screen-acompanhar').innerHTML = `<div class="pb pb-insc">
+    <header class="pb-top"><div class="pb-arena">${escapeHtml(st.arena?.nome || '')}</div><h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1></header>
+    <div class="pb-ok">
+      <div class="pb-ok-titulo${st.status === 'confirmada' ? '' : ' pb-ok-pend'}">${escapeHtml(situacao)}</div>
+      <div>${escapeHtml(st.dupla?.nome || '')} · ${escapeHtml(st.categoria?.nome || '')}</div>
+      ${pagando && st.pix ? publicoPixHtml(st.pix, st.arena?.nome || 'a arena') : ''}
+      ${comprovante}
+    </div>
+    ${st.grupo || jogos ? `<h2 class="pb-sub">${st.grupo ? `Grupo ${escapeHtml(st.grupo.nome)}` : 'Jogos'}</h2>${jogos || '<p class="pb-nota">Sem jogos ainda.</p>'}` : semJogos}
+    <div class="pb-acoes">
+      <button class="pb-btn pb-btn-sec" type="button" onclick="openAcompanharRoute(ACOMP.token)">Atualizar</button>
+      ${ch.slug ? `<a class="pb-link" href="/c/${encodeURIComponent(ch.slug)}${arenaDemoAtivo() ? '?demo=1' : ''}">Ver a página do campeonato</a>` : ''}
+    </div>
+  </div>`;
+}
+
+// Foto grande do celular vira JPEG menor antes do envio (o limite é 4 MB); PDF vai como está.
+function acompanharReduzir(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size <= 1.5 * 1024 * 1024) return Promise.resolve(file);
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 2000 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(img.width * k);
+      cv.height = Math.round(img.height * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(b => resolve(b && b.size < file.size ? b : file), 'image/jpeg', 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+async function acompanharEnviar() {
+  if (ACOMP.enviando) return;
+  const erro = document.getElementById('acomp-erro');
+  const file = document.getElementById('acomp-arquivo')?.files?.[0];
+  if (!file) { erro.textContent = 'Escolha a foto ou o PDF do comprovante.'; return; }
+  const btn = document.getElementById('acomp-btn');
+  const rotulo = btn.textContent;
+  ACOMP.enviando = true;
+  btn.disabled = true;
+  btn.textContent = 'Enviando…';
+  erro.textContent = '';
+  try {
+    const arq = await acompanharReduzir(file);
+    if (arq.size > ACOMP_MAX_BYTES) throw arenaErro('Arquivo grande demais (máximo 4 MB).', 400);
+    const arquivo = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(arenaErro('Não foi possível ler o arquivo.', 400));
+      fr.readAsDataURL(arq);
+    });
+    await arenaFunction('arena-comprovante', { token: ACOMP.token, arquivo });
+    await openAcompanharRoute(ACOMP.token);
+  } catch (e) {
+    erro.textContent = e.status === 0 ? 'Sem conexão. Tente de novo.' : e.message;
+    btn.disabled = false;
+    btn.textContent = rotulo;
+  } finally {
+    ACOMP.enviando = false;
+  }
 }

@@ -2,7 +2,8 @@
 // Honeypot, limite por hash de IP, LGPD versionada; a RPC arena_inscrever faz o advisory lock por categoria.
 // Contrato: docs/ARENA.md, seções 4.7 e 5. Não logar o corpo (nomes e telefones).
 const { logError } = require('./lib/_log');
-const { json, validarInscricao, statusDaRecusa, hashIp, clientIp, supabaseEnv, sbFetch } = require('./lib/arena');
+const { json, validarInscricao, statusDaRecusa, hashIp, clientIp, supabaseEnv, sbFetch, contextoDupla } = require('./lib/arena');
+const { enviarModelo, emailsAtletas } = require('./lib/email');
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return json(204, {});
@@ -29,9 +30,23 @@ exports.handler = async (event) => {
       })
     });
     if (!r?.ok) return json(statusDaRecusa(r?.erro), { error: r?.mensagem || 'Não foi possível concluir a inscrição.', erro: r?.erro });
+    await avisarInscricao(env, r.team_id);
     return json(200, r);
   } catch (e) {
     logError('arena-register', e);
     return json(500, { error: 'Não foi possível concluir a inscrição. Tente de novo.' });
   }
 };
+
+// "Inscrição recebida" para os atletas com e-mail e "nova inscrição" para dono/gestores. Só depois de
+// uma inscrição gravada (já passou pelo limite por IP), então não vira disparador de e-mail. Nunca lança.
+async function avisarInscricao(env, teamId) {
+  try {
+    const ctx = await contextoDupla(env, teamId);
+    if (!ctx) return;
+    await enviarModelo('inscricaoRecebida', ctx, emailsAtletas(ctx), 'arena-register-email');
+    await enviarModelo('novaInscricao', ctx, ctx.gestores, 'arena-register-email');
+  } catch (e) {
+    logError('arena-register-email', e);
+  }
+}

@@ -157,5 +157,13 @@
 .pb-ok { display:flex; flex-direction:column; gap:10px; text-align:center; }
 .pb-ok-titulo { font-family:'Bebas Neue', sans-serif; font-size:26px; color:#3ecf72; }
 .pb-pix { display:flex; flex-direction:column; gap:8px; }
-.pb-pix code { background:var(--dark3); padding:10px; border-radius:8px; word-break:break-all; font-size:15px; }
+.pb-pix code, .pb-acomp-link code { background:var(--dark3); padding:10px; border-radius:8px; word-break:break-all; font-size:15px; }
+.pb-ok-titulo.pb-ok-pend { color:var(--yellow-l); }
+.pb-acomp-link, .pb-comp { display:flex; flex-direction:column; gap:8px; border-top:1px solid var(--border2); padding-top:10px; }
+.pb-acomp-link code { font-size:13px; }
+.pb-comp-motivo { color:#ff8a6b; }
+.pb-file { display:flex; flex-direction:column; gap:6px; font-size:14px; color:var(--muted2); text-align:left; }
+.pb-file input { min-height:44px; color:var(--white); }
+.pb-sub { font-family:'Bebas Neue', sans-serif; font-size:22px; margin:18px 0 8px; }
+.pb-acoes { display:flex; flex-direction:column; gap:10px; align-items:center; margin-top:16px; }
 .pb-btn-sec { background:var(--surface2); color:var(--white); }

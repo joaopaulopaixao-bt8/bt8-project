@@ -14,7 +14,7 @@ Desde 2026-10-25 o banco e a autenticacao do BT8 rodam num Supabase auto-hospeda
 
 ## Servicos
 
-So o que o app usa: `db`, `auth`, `rest`, `meta`, `studio` e o gateway `api-gw`. Realtime, Storage, imgproxy, Edge Functions e o pooler ficam desligados em `docker-compose.bt8.yml`, que tambem limita a memoria de cada container e prende o gateway em `127.0.0.1:8100`. O Postgres nao fica exposto na internet.
+So o que o app usa: `db`, `auth`, `rest`, `meta`, `studio` e o gateway `api-gw` (a partir da 006 tambem `storage`, para os comprovantes da Arena; ver abaixo). Realtime, Storage (ate a 006), imgproxy, Edge Functions e o pooler ficam desligados em `docker-compose.bt8.yml`, que tambem limita a memoria de cada container e prende o gateway em `127.0.0.1:8100`. O Postgres nao fica exposto na internet.
 
 O painel (Studio) abre em `https://api.bt8.com.br` com usuario e senha `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` do `.env`.
 
@@ -71,6 +71,46 @@ ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose e
 
 Ordem com os PRs: a 002 pode ir antes ou depois do deploy do PR #9 (o webhook ja trata a falta do indice). Evento novo gravado em `app_events` por qualquer codigo precisa entrar no CHECK `app_events_event_type_chk` numa migracao nova, senao o insert falha.
 
+### Aplicar a 006 (inscricao com acompanhamento, comprovante e e-mails) em producao
+
+O que muda: e-mail opcional por atleta; em `teams`, token de acompanhamento e colunas de comprovante; `arena_inscrever` aceita e-mail e devolve o token; RPCs `arena_inscricao_status` (publica), `arena_comprovante_reservar` e `arena_inscricao_contexto` (service role); bucket privado `comprovantes`. Functions novas: `arena-comprovante`, `arena-pagamento`, `arena-notificar`.
+
+**Ordem:** aplicar a 006 **antes** do merge na `main` (o front novo chama `arena_inscricao_status` e as Functions usam as colunas novas; o front antigo continua funcionando com a 006).
+
+1. Ligar o Storage no VPS (hoje desligado em `docker-compose.bt8.yml`): tirar `storage` da lista de servicos desligados (`imgproxy` pode continuar desligado, com `ENABLE_IMAGE_TRANSFORMATION=false`), conferir no `.env` as variaveis do storage do compose oficial (backend `file`, volume `./volumes/storage`), limitar a memoria como os outros containers e subir:
+
+```bash
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose up -d storage && docker compose ps storage"
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -Atc 'select to_regclass(''storage.buckets'')'"
+```
+
+   O segundo comando tem que imprimir `storage.buckets` (o container cria o schema na primeira subida). Conferir que o gateway encaminha `/storage/v1/` (rota padrao do compose oficial). Os arquivos ficam em `/opt/bt8/volumes/storage`: incluir essa pasta no `backup.sh`.
+
+2. Backup e aplicar a migracao (numa transacao):
+
+```bash
+scp -i ~/.ssh/bot_dizimo_vps supabase/migrations/006_arena_inscricao.sql supabase/tests/006_arena_inscricao_test.sql root@212.47.66.152:/opt/bt8/
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "/opt/bt8/backup.sh && cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=1 --single-transaction -f - < 006_arena_inscricao.sql"
+```
+
+   Se o Storage nao estava ligado, a migracao avisa (`NOTICE: Schema storage ausente`) e segue sem o bucket. Depois de ligar o Storage, criar o bucket a mao:
+
+```sql
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('comprovantes', 'comprovantes', false, 5242880, array['image/jpeg','image/png','image/webp','application/pdf'])
+on conflict (id) do update set public = false;
+```
+
+3. Testar (ROLLBACK no fim; cada `ok:` aparece como NOTICE, qualquer falha para tudo):
+
+```bash
+ssh -i ~/.ssh/bot_dizimo_vps root@212.47.66.152 "cd /opt/bt8 && docker compose exec -T db psql -U postgres -d postgres -X -q -v ON_ERROR_STOP=1 -f - < 006_arena_inscricao_test.sql"
+```
+
+4. No Netlify (Site configuration > Environment variables), criar `RESEND_API_KEY` com escopo **Functions** (API key do Resend com permissao so de envio; pode ser a mesma do `SMTP_PASS`). Nunca no repositorio. Sem ela tudo funciona, so nao sai e-mail (fica registrado no log da Function).
+
+5. Mesclar o PR na `main` e conferir num campeonato TESTE com Pix: inscricao com e-mail, link `/acompanhar/<token>`, envio de comprovante (foto e PDF), "Ver comprovante", confirmar/recusar/desfazer no painel e "Avisar duplas por e-mail" depois do sorteio.
+
 Restaurar um backup:
 
 ```bash
@@ -81,6 +121,7 @@ docker exec -i supabase-db pg_restore -U supabase_admin -d postgres --clean --if
 
 - `BT8_SUPABASE_URL` = `https://api.bt8.com.br` (todos os contextos).
 - `BT8_SUPABASE_SERVICE_ROLE_KEY` = `SERVICE_ROLE_KEY` do `/opt/bt8/.env` (secreta, escopo Functions).
+- `RESEND_API_KEY` = API key do Resend (secreta, escopo Functions), para os e-mails da Arena (006). Sem ela os e-mails so vao para o log.
 - A chave publica (publishable) fica no codigo (`src/js/env.js`, `src/js/auth.js`, `scripts/build-netlify.js`, `netlify.toml`), como antes.
 
 ## E-mails

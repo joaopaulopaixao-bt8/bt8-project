@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { logError } = require('./_log');
 
 // Mesma versão de BT8_ARENA_LGPD_VERSAO em src/js/legal-pages.js (o teste confere).
-const ARENA_LGPD_VERSAO = '2026-11-22';
+const ARENA_LGPD_VERSAO = '2026-11-22b';
 const PAPEIS_EQUIPE = ['gestor', 'arbitro', 'scout'];
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -81,7 +81,9 @@ function validarInscricao(body, versaoAtual = ARENA_LGPD_VERSAO) {
     if (!nome) return { erro: `Informe o nome do atleta ${i}.` };
     const telefone = normalizarTelefone(a?.telefone);
     if (!telefone) return { erro: `WhatsApp do atleta ${i} inválido. Use DDD + número.` };
-    atletas.push({ nome, telefone });
+    const email = String(a?.email ?? '').trim().toLowerCase();
+    if (email && !emailValido(email)) return { erro: `E-mail do atleta ${i} inválido.` };
+    atletas.push(email ? { nome, telefone, email } : { nome, telefone });
   }
   if (atletas[0].telefone === atletas[1].telefone) return { erro: 'Os dois atletas precisam ter WhatsApp diferentes.' };
   return {
@@ -247,7 +249,78 @@ async function arenaAtiva(env, arenaId) {
   return a.status === 'ativa' && (!a.ativo_ate || a.ativo_ate >= hojeSaoPaulo());
 }
 
+// ── Inscrição: comprovante e pagamento (006) ──
+const COMPROVANTE_MAX_BYTES = 4 * 1024 * 1024; // base64 de 4 MB ≈ 5,4 MB: cabe no limite de 6 MB do corpo das Functions
+const COMPROVANTE_ENVIOS = 5;
+const tokenValido = v => uuidValido(v);
+
+// Tipo pelo conteúdo (assinatura), não pelo nome nem pelo mime do navegador.
+function detectarArquivo(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return { mime: 'image/jpeg', ext: 'jpg' };
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { mime: 'image/png', ext: 'png' };
+  if (buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WEBP') return { mime: 'image/webp', ext: 'webp' };
+  if (buf.toString('latin1', 0, 5) === '%PDF-') return { mime: 'application/pdf', ext: 'pdf' };
+  return null;
+}
+
+// Corpo do POST /arena-comprovante -> { erro } | { token, buf, tipo }.
+function validarComprovante(body) {
+  if (!tokenValido(body?.token)) return { erro: 'Link de acompanhamento inválido.' };
+  const b64 = String(body.arquivo ?? '').replace(/^data:[^,]*,/, '');
+  if (!b64) return { erro: 'Escolha o arquivo do comprovante.' };
+  if (b64.length > Math.ceil(COMPROVANTE_MAX_BYTES / 3) * 4 + 4) return { erro: 'Arquivo grande demais (máximo 4 MB).' };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return { erro: 'Arquivo inválido.' };
+  const buf = Buffer.from(b64, 'base64');
+  if (!buf.length || buf.length > COMPROVANTE_MAX_BYTES) return { erro: 'Arquivo grande demais (máximo 4 MB).' };
+  const tipo = detectarArquivo(buf);
+  if (!tipo) return { erro: 'Envie uma foto (JPG, PNG ou WEBP) ou um PDF.' };
+  return { token: body.token, buf, tipo };
+}
+
+// Regras do pagamento pelo gestor. team = linha de teams (status, pagamento, comprovante_*).
+// Devolve { patch } (colunas de teams) ou { erro }.
+function transicaoPagamento(team, acao, motivo, agora = new Date().toISOString()) {
+  if (!team) return { erro: 'Dupla não encontrada.' };
+  if (team.status === 'cancelada') return { erro: 'Dupla cancelada.' };
+  const temComprovante = !!team.comprovante_path;
+  if (acao === 'confirmar') {
+    if (team.pagamento === 'pago') return { erro: 'O pagamento já está confirmado.' };
+    return { patch: { pagamento: 'pago', pago_em: agora, status: team.status === 'pendente' ? 'confirmada' : team.status,
+      comprovante_status: temComprovante ? 'aceito' : team.comprovante_status, comprovante_motivo: null } };
+  }
+  if (acao === 'recusar') {
+    const m = texto(motivo, 280);
+    if (m.length < 3) return { erro: 'Informe o motivo da recusa.' };
+    if (team.pagamento === 'pago') return { erro: 'Desfaça a confirmação antes de recusar.' };
+    if (team.comprovante_status !== 'enviado') return { erro: 'Não há comprovante aguardando conferência.' };
+    return { patch: { comprovante_status: 'recusado', comprovante_motivo: m } };
+  }
+  if (acao === 'desfazer') {
+    if (team.pagamento === 'pago') {
+      return { patch: { pagamento: 'pendente', pago_em: null, status: team.status === 'confirmada' ? 'pendente' : team.status,
+        comprovante_status: temComprovante ? 'enviado' : 'nenhum' } };
+    }
+    if (team.comprovante_status === 'recusado') return { patch: { comprovante_status: 'enviado', comprovante_motivo: null } };
+    return { erro: 'Nada para desfazer.' };
+  }
+  return { erro: 'Ação inválida.' };
+}
+
+// Contexto da dupla (RPC só da service role; tem e-mails: não devolver ao navegador).
+const contextoDupla = (env, teamId) => sbFetch(env, 'rest/v1/rpc/arena_inscricao_contexto', {
+  method: 'POST', body: JSON.stringify({ p_team: teamId })
+});
+
+// Dono ou gestor ativo da arena, ou admin do BT8.
+async function podeGerirArena(env, userId, arenaId) {
+  const rows = await sbFetch(env, `rest/v1/arena_members?select=id&arena_id=eq.${encodeURIComponent(arenaId)}` +
+    `&user_id=eq.${encodeURIComponent(userId)}&ativo=is.true&papel=in.(dono,gestor)&limit=1`);
+  return rows?.length > 0 || ehAdmin(env, userId);
+}
+
 module.exports = {
+  COMPROVANTE_MAX_BYTES, COMPROVANTE_ENVIOS, detectarArquivo, validarComprovante, transicaoPagamento, contextoDupla, podeGerirArena,
   ARENA_LGPD_VERSAO, PAPEIS_EQUIPE, json, hojeSaoPaulo, validarNovaSenha, dataValida, erroPublico, respostaDeErro, apagarUsuario, arenaAtiva, limparNome, normalizarTelefone, emailValido, uuidValido,
   validarInscricao, statusDaRecusa, validarArena, validarPessoa, validarMembro, hashIp, clientIp,
   supabaseEnv, sbFetch, usuarioDoToken, ehAdmin, obterOuCriarUsuario

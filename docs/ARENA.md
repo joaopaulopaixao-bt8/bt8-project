@@ -73,7 +73,7 @@ Membros ativos da arena (qualquer papel) e o admin do BT8 leem tudo da arena por
 | `championships` | id, arena_id, titulo, slug, data_inicio, data_fim, status, inscricao_token, inscricoes_ate, regras, pausado, pausa_motivo, pausado_em, live_version, estrutura_version | sim, menos `live_version`, `estrutura_version`, `pausado`, `pausa_motivo`, `pausado_em`, `arena_id` (o banco preserva) |
 | `categories` | id, championship_id, nome, genero, max_duplas, formato, inscricoes_abertas, sorteio_semente, ordem | sim (`sorteio_semente` é gravada pelo sorteio) |
 | `athletes` | id, arena_id, nome, telefone (E.164 ou null), email, user_id, consentimento_em, consentimento_versao | sim |
-| `teams` | id, category_id, athlete1_id, athlete2_id, status, pagamento, pago_em, seed, origem, presente1, presente2, desistente_em, observacao | sim; depois do sorteio publicado, `athlete1_id`, `athlete2_id` e `category_id` só mudam por RPC |
+| `teams` | id, category_id, athlete1_id, athlete2_id, status, pagamento, pago_em, seed, origem, presente1, presente2, desistente_em, observacao; desde a 006: acompanhamento_token, comprovante_path, comprovante_enviado_em, comprovante_status (`nenhum`, `enviado`, `aceito`, `recusado`), comprovante_motivo, comprovante_envios, tabela_email_em | sim; depois do sorteio publicado, `athlete1_id`, `athlete2_id` e `category_id` só mudam por RPC. As colunas da 006 o cliente não escreve (trigger mantém o valor): só RPC e Functions |
 | `category_groups` | id, category_id, nome, ordem, fechado_em, fechado_por, sorteio_desempate | nenhuma (RPC) |
 | `group_teams` | group_id, team_id | nenhuma (RPC) |
 | `matches` | ver objeto partida + championship_id, origem_a, origem_b, next_match_id, next_slot, prioridade, scout_user, updated_by, updated_at | nenhuma (RPC) |
@@ -230,12 +230,36 @@ Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `esp
 
 `aberto` = status `inscricoes` e antes de `inscricoes_ate`. Token inválido: `{"ok": false, "erro": "nao_encontrado"}`.
 
+**`arena_inscricao_status(p_token text)`** (006) — página `/acompanhar/<token>`. `p_token` = `teams.acompanhamento_token` (uuid devolvido pela inscrição). Nunca traz telefone, e-mail, `user_id`, caminho do comprovante nem o próprio token (o teste SQL confere).
+
+```json
+{ "ok": true, "arena": { "nome", "cidade", "estado" },
+  "championship": { "titulo", "slug", "status", "data_inicio", "data_fim" }, "categoria": { "nome" },
+  "dupla": { "id", "nome": "Ana / Bia", "atleta1", "atleta2" },
+  "status": "pendente", "pagamento": "pendente", "pago_em": null,
+  "pix": { "chave", "favorecido", "valor" } | null,          // só com pagamento pendente e dupla não cancelada
+  "whatsapp": "+55...",
+  "comprovante": { "status": "nenhum|enviado|aceito|recusado", "motivo": null, "enviado_em": null, "envios_restantes": 5 },
+  "grupo": { "nome": "A", "fechado": false } | null,
+  "jogos": [ { "id", "fase", "rodada", "status", "adversario": "Cris / Duda", "quadra": "Quadra 1" | null,
+               "chamada_em", "iniciada_em", "encerrada_em", "games_nos", "games_eles", "tb_nos", "tb_eles",
+               "resultado": "vitoria|derrota|null", "wo": false } ] }
+```
+
+O horário previsto é calculado no cliente (`arenaPrevisoes` sobre `arena_public`), como na página pública. Token inválido: `{"ok": false, "erro": "nao_encontrado"}`.
+
 ### 4.7 Só service role
 
 **`arena_conta_por_email(p_email text) → uuid`** (005) — conta pelo e-mail em `auth.users`, sem diferenciar maiúsculas; `null` se não existe. **`arena_criar(p_arena jsonb, p_owner uuid, p_nome text, p_email text)`** (005) — arena + membro `dono` numa transação; slug repetido dá 23505. Desde a 005, `profiles.email` acompanha `auth.users` (o cliente não altera mais).
 
 
-**`arena_inscrever(p_token text, p_ip_hash text, p_dados jsonb, p_limite_hora int default 10)`** — usada só pela Function `arena-register`. Limite por hash de IP por hora, advisory lock por categoria, atleta reaproveitado pelo telefone na arena. Status final: `espera` se a categoria lotou (`confirmada + pendente >= max_duplas`), senão `pendente` se o campeonato tem Pix, senão `confirmada`. Recusas voltam como `{"ok": false, "erro": "limite" | "nao_encontrado" | "status_invalido" | "dados_invalidos" | "atleta_ja_inscrito", "mensagem": "..."}` (sem erro HTTP), para o contador do limite não ser desfeito por rollback; tentativas recusadas também contam.
+**`arena_inscrever(p_token text, p_ip_hash text, p_dados jsonb, p_limite_hora int default 10)`** — usada só pela Function `arena-register`. Desde a 006, cada `atletaN` aceita `email` opcional (até 254, formato conferido, gravado em minúsculas; atleta reaproveitado só troca o e-mail se vier um novo) e a resposta traz `token` (o de acompanhamento). Limite por hash de IP por hora, advisory lock por categoria, atleta reaproveitado pelo telefone na arena. Status final: `espera` se a categoria lotou (`confirmada + pendente >= max_duplas`), senão `pendente` se o campeonato tem Pix, senão `confirmada`. Recusas voltam como `{"ok": false, "erro": "limite" | "nao_encontrado" | "status_invalido" | "dados_invalidos" | "atleta_ja_inscrito", "mensagem": "..."}` (sem erro HTTP), para o contador do limite não ser desfeito por rollback; tentativas recusadas também contam.
+
+**`arena_comprovante_reservar(p_token text, p_limite int default 5)`** (006) — reserva um envio antes do upload: só com pagamento `pendente`, dupla não cancelada e comprovante não aceito; no máximo `p_limite` por dupla. `{"ok": true, "team_id", "path_anterior"}` ou `{"ok": false, "erro": "nao_encontrado" | "status_invalido" | "limite", "mensagem"}`.
+
+**`arena_inscricao_contexto(p_team uuid)`** (006) — o que as Functions precisam para autorizar e montar e-mails: ids, situação, `comprovante_path`, arena, campeonato, categoria, Pix, `atletas` (nome e e-mail) e `gestores` (e-mails de dono/gestores ativos). Tem e-mails: nunca devolver ao navegador.
+
+**Storage (006):** bucket privado `comprovantes` (5 MB, jpeg/png/webp/pdf), sem policies: só a service role lê e grava. Caminho `<team_id>/<timestamp>.<ext>`; só o último comprovante fica guardado.
 
 ## 5. Netlify Functions
 
@@ -278,10 +302,39 @@ Conta criada por `admin-arena` ou `arena-member` nasce com `app_metadata.trocar_
 { "token": "inscricao_token", "categoria_id": "uuid",
   "atleta1": { "nome": "Ana Souza", "telefone": "(81) 99999-0000" },
   "atleta2": { "nome": "Bia Lima", "telefone": "81988887777" },
-  "lgpd": true, "lgpd_versao": "2026-11-22", "website": "" }
+  "lgpd": true, "lgpd_versao": "2026-11-22b", "website": "" }
 ```
 
-`website` é o honeypot (campo escondido; preenchido = robô, recebe um falso sucesso). Telefone é normalizado para E.164 (`+55` quando vier com DDD). `lgpd_versao` precisa ser a versão atual (`BT8_ARENA_LGPD_VERSAO` em `src/js/legal-pages.js`, mesma de `netlify/functions/lib/arena.js`). Resposta `200 {"ok": true, "team_id", "status": "confirmada|pendente|espera", "pagamento", "categoria", "pix", "whatsapp"}`. Erros: 400 (dados, inscrições fechadas, atleta já inscrito na categoria), 429 (muitas tentativas), 404 (token).
+`website` é o honeypot (campo escondido; preenchido = robô, recebe um falso sucesso). Telefone é normalizado para E.164 (`+55` quando vier com DDD). `lgpd_versao` precisa ser a versão atual (`BT8_ARENA_LGPD_VERSAO` em `src/js/legal-pages.js`, mesma de `netlify/functions/lib/arena.js`). Resposta `200 {"ok": true, "team_id", "token", "status": "confirmada|pendente|espera", "pagamento", "categoria", "pix", "whatsapp"}`. Erros: 400 (dados, inscrições fechadas, atleta já inscrito na categoria), 429 (muitas tentativas), 404 (token).
+
+Desde a 006: `atleta1.email`/`atleta2.email` opcionais. Depois de gravar, envia "inscrição recebida" (Pix e link `/acompanhar/<token>`) aos atletas com e-mail e "nova inscrição" a dono/gestores. Os e-mails só saem depois de uma inscrição gravada (que já passou pelo limite por IP), então a Function não vira disparador de spam. Falha de e-mail não muda a resposta.
+
+### E-mails (`netlify/functions/lib/email.js`)
+
+Resend HTTP API (`https://api.resend.com/emails`) com `RESEND_API_KEY` (variável do Netlify, escopo Functions). Remetente `BT8 <noreply@bt8.com.br>` (o mesmo do Auth), `reply_to` = `suporte@bt8.com.br` (o WhatsApp da arena aparece na página de acompanhamento). Um envio por destinatário. Sem a chave: loga e segue. `enviarEmail` nunca lança: falha de e-mail não derruba inscrição, comprovante nem pagamento. Modelos (pt-BR, todo dado de usuário escapado, rodapé com suporte): `inscricaoRecebida`, `novaInscricao`, `comprovanteEnviado`, `pagamentoConfirmado`, `comprovanteRecusado`, `tabelaPublicada`.
+
+### `POST /.netlify/functions/arena-comprovante` (público; o token de acompanhamento é a credencial)
+
+`{"token": "<acompanhamento_token>", "arquivo": "<base64 ou data URL>"}`. JPG, PNG, WEBP ou PDF, **até 4 MB** (o base64 de 4 MB, cerca de 5,4 MB, cabe no limite de 6 MB do corpo das Functions do Netlify; o front reduz fotos grandes antes de enviar). O tipo é conferido pela assinatura do arquivo, não pelo nome nem pelo mime. Reserva o envio (`arena_comprovante_reservar`, máx. 5 por dupla), grava no bucket, marca `comprovante_status = 'enviado'` (limpa o motivo), apaga o comprovante anterior e avisa dono/gestores por e-mail. `200 {"ok": true, "comprovante": {"status", "enviado_em"}}`. Erros: 400 (arquivo/estado), 404 (token), 429 (limite).
+
+### `POST /.netlify/functions/arena-pagamento` (dono ou gestor ativo da arena da dupla, ou admin)
+
+`{"team_id": "uuid", "acao": "confirmar" | "recusar" | "desfazer" | "ver", "motivo": "..."}` com `Authorization: Bearer`. Regras em `transicaoPagamento` (testada):
+
+| Ação | Efeito |
+|---|---|
+| `confirmar` | `pagamento = 'pago'`, `pago_em = now`, `pendente` vira `confirmada` (espera continua espera), comprovante `aceito` se houver arquivo. E-mail aos atletas. |
+| `recusar` | só com comprovante `enviado` e não pago; motivo obrigatório (3 a 280). `comprovante_status = 'recusado'` + motivo; continua pendente. E-mail aos atletas com o motivo. |
+| `desfazer` | pago volta a `pendente` (confirmada volta a `pendente`, comprovante volta a `enviado` ou `nenhum`); recusado volta a `enviado`. |
+| `ver` | URL assinada do comprovante, válida por 5 minutos: `{"ok": true, "url", "expira_em_s": 300}`. Confere que o caminho é da própria dupla. |
+
+Resposta das ações: `{"ok": true, "team": {status, pagamento, pago_em, comprovante_status, comprovante_motivo, comprovante_enviado_em, tem_comprovante}}` (sem o caminho do arquivo). O painel não faz mais PATCH direto de pagamento.
+
+### `POST /.netlify/functions/arena-notificar` (dono ou gestor ativo, ou admin)
+
+`{"category_id": "uuid"}`. Depois de publicar o sorteio (o painel pergunta logo após publicar e tem o botão "Avisar duplas por e-mail" em Inscritos): e-mail "tabela publicada" com grupo e primeiro jogo para as duplas sorteadas (`confirmada`/`pendente`) com e-mail. Idempotente: marca `teams.tabela_email_em` antes de enviar, e quem já foi marcado não recebe de novo. `{"ok": true, "avisadas", "emails", "mensagem"}`.
+
+**Pendente:** lembrete de véspera (Scheduled Function) e aviso quando o sorteio é refeito (as duplas já marcadas não recebem a tabela nova).
 
 ## 6. Rotas do front (`netlify.toml` → `/index.html`)
 
@@ -292,11 +345,12 @@ Conta criada por `admin-arena` ou `arena-member` nasce com `app_metadata.trocar_
 | `/telao/<slug>` | TV, sem login | A2 |
 | `/c/<slug>` | público, sem login | A2 |
 | `/inscricao/<token>` | atleta, sem login | A2 |
+| `/acompanhar/<token>` | dupla inscrita, sem login (token de acompanhamento) | A2 |
 | `/admin` (já existe) | admin BT8 (criar arena) | A3 |
 
 ## 7. LGPD da inscrição
 
-Texto e versão em `src/js/legal-pages.js`: `BT8_ARENA_LGPD_VERSAO` e `arenaLgpdHtml(nomeArena)` (HTML pronto, nomes já escapados). O formulário mostra o texto, exige o aceite e envia `lgpd_versao`. O banco guarda `consentimento_em` e `consentimento_versao` em `athletes`.
+Texto e versão em `src/js/legal-pages.js` (versão `2026-11-22b` desde a 006: cita o e-mail opcional e o comprovante): `BT8_ARENA_LGPD_VERSAO` e `arenaLgpdHtml(nomeArena)` (HTML pronto, nomes já escapados). O formulário mostra o texto, exige o aceite e envia `lgpd_versao`. O banco guarda `consentimento_em` e `consentimento_versao` em `athletes`.
 
 ## 8. Operação
 
