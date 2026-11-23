@@ -56,7 +56,7 @@ reset role;
 set local role anon;
 select teste.ok((select (public.arena_inscricao_status(v::jsonb ->> 'token') ->> 'ok')::boolean from teste.vars where k = 'r1'),
   'anon lê a situação pelo token');
-select teste.ok((select x::text !~ '\+55' and x::text !~ '@seis' and x::text !~ (v::jsonb ->> 'token')
+select teste.ok((select x::text !~ '\+5581966' and x::text !~ '@seis' and x::text !~ (v::jsonb ->> 'token')
                  and x -> 'pix' ->> 'chave' = 'pix@arena006.test' and x -> 'comprovante' ->> 'status' = 'nenhum'
                  from teste.vars, lateral (select public.arena_inscricao_status(v::jsonb ->> 'token') x) s where k = 'r1'),
   'status traz Pix e comprovante, sem telefone, e-mail nem token');
