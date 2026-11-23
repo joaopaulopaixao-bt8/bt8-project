@@ -1,6 +1,9 @@
-const BT8_LEGAL_UPDATED_AT = '29 de abril de 2026';
+const BT8_LEGAL_UPDATED_AT = '22 de novembro de 2026';
 const BT8_LEGAL_CNPJ = '53.243.248/0001-40';
 const BT8_SUPPORT_EMAIL = 'suporte@bt8.com.br';
+// Versão do aceite da inscrição em campeonato de arena. Mudou o texto abaixo: mudar a versão
+// (e a de netlify/functions/lib/arena.js, que o teste confere).
+const BT8_ARENA_LGPD_VERSAO = '2026-11-22';
 
 function legalRouteKey() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -8,6 +11,18 @@ function legalRouteKey() {
   if (path === '/termos-de-uso') return 'terms';
   if (path === '/politica-de-privacidade') return 'privacy';
   return null;
+}
+
+// Texto de LGPD do formulário /inscricao/<token>. nomeArena entra escapado.
+function arenaLgpdHtml(nomeArena) {
+  const arena = escapeHtml(nomeArena || 'a arena organizadora');
+  return `
+    <p><strong>Uso dos dados da inscrição</strong> (versão ${BT8_ARENA_LGPD_VERSAO})</p>
+    <p>Ao inscrever a dupla, você informa o nome e o WhatsApp dos dois atletas. ${arena} é a organizadora do campeonato e decide como esses dados são usados; o BT8 opera o sistema em nome dela.</p>
+    <p>Os dados servem para organizar o campeonato: montar grupos e jogos, chamar a dupla para a quadra e falar com os atletas sobre jogos e pagamento da inscrição.</p>
+    <p>Os <strong>nomes</strong> e os resultados aparecem na página pública do campeonato e no telão. O <strong>WhatsApp nunca é publicado</strong>: só a equipe da arena tem acesso.</p>
+    <p>Os dados ficam guardados enquanto forem necessários para o campeonato e o histórico de resultados. Para pedir acesso, correção ou exclusão, fale com a arena ou com <a href="mailto:${BT8_SUPPORT_EMAIL}">${BT8_SUPPORT_EMAIL}</a>.</p>
+    <p>Ao aceitar, você confirma que o seu parceiro de dupla autorizou a inscrição com os dados dele.</p>`;
 }
 
 function legalNav() {
@@ -132,18 +147,22 @@ const LEGAL_PAGES = {
         'O BT8 pode usar localStorage, sessionStorage e tecnologias semelhantes para manter sessão, lembrar intenção de checkout, controlar teste sem cadastro, melhorar navegação e reduzir fricção no uso.',
         'A remoção desses dados no navegador pode afetar login, teste sem cadastro ou continuidade de fluxos.'
       ]],
-      ['6. Compartilhamento', [
+      ['6. Campeonatos de arena', [
+        'Quando uma arena organiza um campeonato no BT8, ela é a controladora dos dados dos atletas inscritos (nome e WhatsApp) e o BT8 atua como operador, tratando os dados só para organizar o campeonato.',
+        'Nomes e resultados aparecem na página pública do campeonato e no telão. Telefones e e-mails nunca são publicados e ficam visíveis apenas para a equipe da arena.'
+      ]],
+      ['7. Compartilhamento', [
         'O BT8 não vende dados pessoais. Dados podem ser compartilhados com operadores técnicos essenciais, por obrigação legal, para defesa de direitos ou para prevenir fraude e abuso.'
       ]],
-      ['7. Segurança e retenção', [
+      ['8. Segurança e retenção', [
         'Adotamos medidas técnicas e organizacionais compatíveis com o estágio do produto para proteger informações contra acesso indevido, perda ou alteração não autorizada.',
         'Dados podem ser mantidos enquanto a conta estiver ativa, enquanto forem necessários para operação, cumprimento legal, auditoria, prevenção de fraude ou defesa de direitos.'
       ]],
-      ['8. Direitos do usuário', [
+      ['9. Direitos do usuário', [
         'O usuário pode solicitar acesso, correção ou exclusão de dados, conforme a legislação aplicável.',
         'O app possui fluxo de exclusão de conta. Ao excluir a conta, dados de perfil e acesso são removidos ou desativados conforme necessidade técnica, legal e operacional.'
       ]],
-      ['9. Contato e atualizações', [
+      ['10. Contato e atualizações', [
         `Dúvidas sobre privacidade, termos ou direitos do sistema podem ser enviadas para <a href="mailto:${BT8_SUPPORT_EMAIL}">${BT8_SUPPORT_EMAIL}</a>, canal do responsável pela marca vinculada ao CNPJ ${BT8_LEGAL_CNPJ}.`,
         'Esta política pode ser atualizada conforme o produto evoluir. A versão vigente será sempre a publicada nesta página.'
       ]]
