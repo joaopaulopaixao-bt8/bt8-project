@@ -4,13 +4,30 @@
 // (os três são carregados antes do DOMContentLoaded; o contrato está em docs/ARENA.md).
 
 // ══ API DA ARENA ═══════════════════════════════════════════
-const ARENA_HOSTS_PRODUCAO = ['bt8.com.br', 'www.bt8.com.br'];
+const ARENA_TIMEOUT_MS = 8000;
+const ARENA_FUSO = 'America/Sao_Paulo';
 
-// ?demo=1 usa dados simulados em memória, nunca em produção.
+// ?demo=1 usa dados simulados em memória, só em host local ou build fora de produção (mesma regra do painel).
+// Assim o *.netlify.app de produção (APP_ENV = production) nunca liga o demo.
 function arenaDemoAtivo() {
   try {
-    return new URLSearchParams(location.search).get('demo') === '1' && !ARENA_HOSTS_PRODUCAO.includes(location.hostname);
+    const h = location.hostname;
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(h) || /\.(localhost|test)$/.test(h);
+    return new URLSearchParams(location.search).get('demo') === '1' && (local || (window.BT8_ENV?.APP_ENV || 'production') !== 'production');
   } catch (e) { return false; }
+}
+
+// fetch com limite de ~8 s: estourar conta como falta de rede (status 0) e libera quem espera a resposta.
+async function arenaFetch(url, init, limiteMs = ARENA_TIMEOUT_MS) {
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctl ? setTimeout(() => ctl.abort(), limiteMs) : null;
+  try {
+    return await fetch(url, { ...init, signal: ctl?.signal });
+  } catch (e) {
+    throw arenaErro(e?.name === 'AbortError' ? 'A conexão demorou demais' : 'Sem conexão', 0, e?.name === 'AbortError' ? 'timeout' : 'sem_rede');
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // SUPA é criado no DOMContentLoaded do auth.js, depois do handler de rotas do app.js.
@@ -25,13 +42,24 @@ function arenaSupaPronto(timeoutMs = 8000) {
   });
 }
 
-async function arenaToken() {
+// Token do login. Se ele venceu e não dá para renová-lo por falta de rede, o erro é de rede (status 0,
+// hint token_sem_rede), não 401: quem chama mantém a fila e só pede login quando houver rede.
+async function arenaToken(renovar = false) {
   const supa = await arenaSupaPronto();
-  if (!supa) return null;
+  if (!supa) throw arenaErro('Sem conexão', 0, 'token_sem_rede');
+  let res;
   try {
-    const { data } = await supa.auth.getSession();
-    return data?.session?.access_token || null;
-  } catch (e) { return null; }
+    res = renovar ? await supa.auth.refreshSession() : await supa.auth.getSession();
+  } catch (e) {
+    res = { data: null, error: e };
+  }
+  const token = res?.data?.session?.access_token;
+  if (token) return token;
+  const erro = res?.error;
+  const semRede = !navigator.onLine || (erro && (erro.name === 'AuthRetryableFetchError' || erro.status === 0 ||
+    /fetch|network|load failed|timeout/i.test(erro.message || '')));
+  if (semRede) throw arenaErro('Sem rede para renovar o login', 0, 'token_sem_rede');
+  throw arenaErro('Entre de novo', 401, 'sem_sessao');
 }
 
 // Erro com .status (HTTP) e .hint (código estável do contrato). Falha de rede: status 0.
@@ -45,16 +73,12 @@ function arenaErro(msg, status, hint) {
 async function arenaRpc(nome, args = {}, opts = {}) {
   if (arenaDemoAtivo()) return arenaDemo.rpc(nome, args);
   const headers = { apikey: SUPA_KEY, 'Content-Type': 'application/json' };
-  if (opts.auth) {
-    const token = await arenaToken();
-    if (!token) throw arenaErro('Entre de novo', 401, 'sem_sessao');
-    headers.Authorization = 'Bearer ' + token;
-  }
-  let res;
-  try {
-    res = await fetch(`${SUPA_URL}/rest/v1/rpc/${nome}`, { method: 'POST', headers, body: JSON.stringify(args) });
-  } catch (e) {
-    throw arenaErro('Sem conexão', 0);
+  const chamar = () => arenaFetch(`${SUPA_URL}/rest/v1/rpc/${nome}`, { method: 'POST', headers, body: JSON.stringify(args) });
+  if (opts.auth) headers.Authorization = 'Bearer ' + await arenaToken();
+  let res = await chamar();
+  if (opts.auth && res.status === 401) { // token vencido no servidor: renova uma vez e repete
+    headers.Authorization = 'Bearer ' + await arenaToken(true);
+    res = await chamar();
   }
   let body = null;
   try { body = await res.json(); } catch (e) { /* corpo vazio */ }
@@ -64,18 +88,19 @@ async function arenaRpc(nome, args = {}, opts = {}) {
 
 async function arenaFunction(nome, payload) {
   if (arenaDemoAtivo()) return arenaDemo.fn(nome, payload);
-  let res;
-  try {
-    res = await fetch(`/.netlify/functions/${nome}`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-    });
-  } catch (e) {
-    throw arenaErro('Sem conexão. Tente de novo.', 0);
-  }
+  const res = await arenaFetch(`/.netlify/functions/${nome}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  });
   let body = null;
   try { body = await res.json(); } catch (e) { /* corpo vazio */ }
   if (!res.ok) throw arenaErro(body?.error || `Erro ${res.status}`, res.status);
   return body;
+}
+
+// Resposta fora de ordem: só aceita versão igual ou maior que a que já está na tela.
+function arenaAceita(atual, nova, campo) {
+  const va = atual?.championship?.[campo], vn = nova?.championship?.[campo];
+  return va == null || vn == null || vn >= va;
 }
 
 function arenaUuid() {
@@ -86,9 +111,19 @@ function arenaUuid() {
   });
 }
 
+// Horários sempre no fuso da arena (America/Sao_Paulo), não no do aparelho.
 function arenaHora(ms) {
-  return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: ARENA_FUSO });
 }
+function arenaDataHora(ts) {
+  return new Date(ts).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: ARENA_FUSO });
+}
+// Data de hoje (AAAA-MM-DD) e "data + HH:MM" em ms, no fuso da arena.
+function arenaHoje(agora = Date.now()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: ARENA_FUSO }).format(new Date(agora));
+}
+// shortcut: Brasília sem horário de verão desde 2019 (-03:00 fixo); calcular o offset com Intl se ele voltar.
+const arenaMs = (data, hhmm) => new Date(`${data}T${hhmm}:00-03:00`).getTime();
 
 function arenaPlacar(p) {
   if (p.games_a == null || p.games_b == null) return '';
@@ -97,14 +132,14 @@ function arenaPlacar(p) {
 }
 
 // Previsão de início das partidas pendentes de todas as categorias (fila global), pulando as pausas de hoje.
-function arenaPrevisoes(pub) {
+function arenaPrevisoes(pub, agora = Date.now()) {
   const regras = pub.championship?.regras || {};
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = arenaHoje(agora);
   const dia = (regras.dias || []).find(d => d.data === hoje);
-  const ms = hhmm => new Date(`${hoje}T${hhmm}:00`).getTime();
+  const ms = hhmm => arenaMs(hoje, hhmm);
   const quadras = (pub.quadras || []).filter(q => q.ativa !== false).length || 1;
   const prontas = (pub.partidas || []).filter(p => p.team_a && p.team_b);
-  const inicio = Math.max(Date.now(), dia ? ms(dia.inicio) : 0);
+  const inicio = Math.max(agora, dia ? ms(dia.inicio) : 0);
   const prev = BT8Championship.preverHorarios(prontas, {
     quadras, inicio, duracao_media_min: regras.duracao_media_min, intervalo_min: regras.intervalo_min,
     pausas: dia ? (dia.pausas || []).map(p => ({ inicio: ms(p.inicio), fim: ms(p.fim) })) : [],
@@ -169,13 +204,13 @@ const arenaDemo = (() => {
     Object.assign(fila[4], { status: 'em_jogo', court_id: 'q1', games_a: 3, games_b: 2, iniciada_em: new Date(agora - 20 * 60000).toISOString() });
     Object.assign(fila[5], { status: 'em_jogo', court_id: 'q2', games_a: 5, games_b: 5, iniciada_em: new Date(agora - 30 * 60000).toISOString() });
     Object.assign(fila[6], { status: 'chamada', court_id: 'q3', chamada_em: new Date(agora - 3 * 60000).toISOString() });
-    const hoje = new Date().toISOString().slice(0, 10);
+    const hoje = arenaHoje();
     st = {
       eventos: new Set(),
       arena: { nome: 'Arena Demo', cidade: 'Recife', estado: 'PE' },
       championship: {
         id: 'champ', titulo: 'Open de Verão (demo)', slug: 'demo', status: 'em_andamento',
-        data_inicio: hoje, data_fim: hoje, inscricoes_ate: hoje, pausado: false, pausa_motivo: null,
+        data_inicio: hoje, data_fim: hoje, inscricoes_ate: new Date(arenaMs(hoje, '23:59')).toISOString(), pausado: false, pausa_motivo: null,
         live_version: 1, estrutura_version: 1,
         regras: {
           dias: [{ data: hoje, inicio: '08:00', fim: '20:00', pausas: [{ inicio: '12:00', fim: '13:00' }] }],
@@ -375,22 +410,26 @@ function openPublicoRoute(slug) {
 
 let publicoCiclo = 0;
 async function publicoAtualizar(forcarEstrutura) {
+  if (PB.ocupado) return; // uma atualização por vez
+  PB.ocupado = true;
   try {
     const live = await arenaRpc('arena_live', { p_slug: PB.slug, p_since: PB.live?.championship?.live_version ?? null });
     if (live.ok === false) return publicoErro('Campeonato não encontrado.');
-    if (live.changed !== false) PB.live = live;
+    if (live.changed !== false && arenaAceita(PB.live, live, 'live_version')) PB.live = live;
     // Estrutura a cada 30 s (2 ciclos de 15 s) ou assim que a versão dela muda.
     const ev = live.estrutura_version ?? live.championship?.estrutura_version;
     if (forcarEstrutura || !PB.pub || publicoCiclo++ % 2 === 1 || (ev != null && ev !== PB.pub.championship.estrutura_version)) {
       const pub = await arenaRpc('arena_public', { p_slug: PB.slug, p_since_estrutura: PB.pub?.championship?.estrutura_version ?? null });
       if (pub.ok === false) return publicoErro('Campeonato não encontrado.');
-      if (pub.changed !== false) PB.pub = pub;
+      if (pub.changed !== false && arenaAceita(PB.pub, pub, 'estrutura_version')) PB.pub = pub;
     }
     PB.erro = null;
     publicoRender();
   } catch (e) {
     PB.erro = e.status === 0 ? 'Sem conexão. Tentando de novo…' : e.message;
     if (!PB.pub) publicoErro(PB.erro);
+  } finally {
+    PB.ocupado = false;
   }
 }
 
@@ -583,8 +622,14 @@ function inscricaoForm() {
       <h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1></header><p class="pb-aviso">As inscrições estão fechadas.</p></div>`;
     return;
   }
-  const lgpd = typeof arenaLgpdHtml === 'function' ? arenaLgpdHtml(arena.nome)
-    : `<p>Seus dados (nome e WhatsApp) são usados por ${escapeHtml(arena.nome)} só para organizar este campeonato e falar com você sobre ele. O telefone nunca aparece na página pública.</p>`;
+  const termo = inscricaoTermoLgpd(arena.nome);
+  if (!termo) {
+    el.innerHTML = `<div class="pb pb-insc"><header class="pb-top"><div class="pb-arena">${escapeHtml(arena.nome)}</div>
+      <h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1></header>
+      <p class="pb-aviso">As inscrições por este link ainda não estão disponíveis. Fale com a arena.</p></div>`;
+    return;
+  }
+  const lgpd = termo.html;
   const opcoes = categorias.filter(c => c.inscricoes_abertas !== false).map(c =>
     `<option value="${escapeHtml(c.id)}">${escapeHtml(c.nome)} — ${c.vagas > 0 ? `${c.vagas} vaga${c.vagas === 1 ? '' : 's'}` : 'lotada (lista de espera)'}</option>`).join('');
   const atleta = (n, rotulo) => `<fieldset class="pb-atleta"><legend>${rotulo}</legend>
@@ -593,7 +638,7 @@ function inscricaoForm() {
   </fieldset>`;
   el.innerHTML = `<div class="pb pb-insc">
     <header class="pb-top"><div class="pb-arena">${escapeHtml(arena.nome)}</div><h1 class="pb-titulo">${escapeHtml(ch.titulo)}</h1>
-      <div class="pb-datas">Inscrições até ${escapeHtml((ch.inscricoes_ate || '').split('-').reverse().join('/'))}</div></header>
+      ${ch.inscricoes_ate ? `<div class="pb-datas">Inscrições até ${escapeHtml(arenaDataHora(ch.inscricoes_ate))}</div>` : ''}</header>
     <form id="insc-form" class="pb-form" onsubmit="inscricaoEnviar(event)" novalidate>
       <label>Categoria<select name="categoria" required><option value="">Escolha</option>${opcoes}</select></label>
       ${atleta(1, 'Você')}${atleta(2, 'Seu parceiro ou parceira')}
@@ -604,6 +649,18 @@ function inscricaoForm() {
       <button class="pb-btn" type="submit" id="insc-btn">Inscrever dupla</button>
     </form>
   </div>`;
+}
+
+// Texto e versão da LGPD vêm do legal-pages.js (arenaLgpdHtml, BT8_ARENA_LGPD_VERSAO). Sem eles não há
+// inscrição pelo link: a versão aceita precisa ser exatamente a que o backend confere. No demo, texto local.
+function inscricaoTermoLgpd(nomeArena) {
+  if (typeof arenaLgpdHtml === 'function' && typeof BT8_ARENA_LGPD_VERSAO !== 'undefined') {
+    return { html: arenaLgpdHtml(nomeArena), versao: BT8_ARENA_LGPD_VERSAO };
+  }
+  if (arenaDemoAtivo()) {
+    return { versao: 'demo', html: `<p>(Demonstração) Seus dados são usados por ${escapeHtml(nomeArena)} só para organizar este campeonato.</p>` };
+  }
+  return null;
 }
 
 async function inscricaoEnviar(ev) {
@@ -628,7 +685,7 @@ async function inscricaoEnviar(ev) {
     const r = await arenaFunction('arena-register', {
       token: INSC.token, categoria_id: v('categoria'),
       atleta1: { nome: v('nome1'), telefone: v('tel1') }, atleta2: { nome: v('nome2'), telefone: v('tel2') },
-      lgpd: true, lgpd_versao: typeof BT8_ARENA_LGPD_VERSAO !== 'undefined' ? BT8_ARENA_LGPD_VERSAO : '2026-11-22',
+      lgpd: true, lgpd_versao: inscricaoTermoLgpd(INSC.info.arena.nome).versao,
       website: f.elements.website.value,
     });
     inscricaoConfirmacao(r, `${v('nome1')} / ${v('nome2')}`);
@@ -644,7 +701,7 @@ async function inscricaoEnviar(ev) {
 function inscricaoConfirmacao(r, dupla) {
   const { arena, championship: ch } = INSC.info;
   const situacao = {
-    confirmada: 'Inscrição confirmada!',
+    confirmada: 'Inscrição confirmada',
     pendente: 'Inscrição recebida: falta o pagamento.',
     espera: 'A categoria lotou: vocês estão na lista de espera.',
   }[r.status] || 'Inscrição recebida.';
@@ -669,7 +726,9 @@ function inscricaoConfirmacao(r, dupla) {
 
 function inscricaoCopiarPix() {
   const chave = document.getElementById('insc-pix')?.textContent || '';
-  const feito = () => { const b = document.querySelector('.pb-pix .pb-btn'); if (b) b.textContent = 'Chave copiada'; };
-  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(chave).then(feito).catch(() => {});
-  else feito();
+  const rotulo = txt => { const b = document.querySelector('.pb-pix .pb-btn'); if (b) b.textContent = txt; };
+  const falhou = () => rotulo('Não deu para copiar: selecione a chave acima');
+  // "Chave copiada" só quando a área de transferência confirmou.
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(chave).then(() => rotulo('Chave copiada'), falhou);
+  else falhou();
 }

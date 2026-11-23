@@ -91,6 +91,8 @@
 .sc-mais:disabled { opacity:.35; }
 .sc-menos { background:transparent; color:var(--muted2); border:1px solid var(--border2); border-radius:var(--radius-sm); font-size:20px; min-height:48px; cursor:pointer; touch-action:manipulation; }
 .sc-fim { background:#3ecf72; font-size:26px; min-height:64px; }
+.sc-oferta { display:flex; gap:8px; margin-top:10px; }
+.sc-oferta button { flex:1; margin:0; min-height:44px; }
 .sc-sacando { outline:3px solid var(--yellow); }
 .sc-saque { color:var(--yellow-l); font-weight:700; font-size:16px; min-height:1.2em; }
 .sc-saque-escolha { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:14px; color:var(--muted2); }

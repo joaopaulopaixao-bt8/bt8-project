@@ -31,25 +31,34 @@ function openTelaoRoute(slug) {
   setTimeout(() => location.reload(), 2 * 60 * 60 * 1000);
 }
 
+// Uma chamada de cada tipo por vez (a rede lenta não empilha pedidos) e resposta mais velha é ignorada.
 async function telaoLive() {
+  if (TL.liveOcupado) return;
+  TL.liveOcupado = true;
   try {
     const r = await arenaRpc('arena_live', { p_slug: TL.slug, p_since: TL.live?.championship?.live_version ?? null });
     if (r.ok === false) return telaoMensagem('Campeonato não encontrado');
     TL.okEm = Date.now();
-    if (r.changed !== false) TL.live = r;
+    if (r.changed !== false && arenaAceita(TL.live, r, 'live_version')) TL.live = r;
     const ev = r.estrutura_version ?? r.championship?.estrutura_version;
     if (TL.pub && ev != null && ev !== TL.pub.championship.estrutura_version) telaoEstrutura();
     telaoRender();
-  } catch (e) { /* mantém a última tela; a faixa amarela avisa depois de 30 s */ }
+  } catch (e) { /* mantém a última tela; a faixa amarela avisa depois de 30 s */ } finally {
+    TL.liveOcupado = false;
+  }
 }
 
 async function telaoEstrutura() {
+  if (TL.pubOcupado) return;
+  TL.pubOcupado = true;
   try {
     const r = await arenaRpc('arena_public', { p_slug: TL.slug, p_since_estrutura: TL.pub?.championship?.estrutura_version ?? null });
     if (r.ok === false) return;
-    if (r.changed !== false) TL.pub = r;
+    if (r.changed !== false && arenaAceita(TL.pub, r, 'estrutura_version')) TL.pub = r;
     telaoRender();
-  } catch (e) { /* tenta no próximo ciclo */ }
+  } catch (e) { /* tenta no próximo ciclo */ } finally {
+    TL.pubOcupado = false;
+  }
 }
 
 function telaoMensagem(msg) {
