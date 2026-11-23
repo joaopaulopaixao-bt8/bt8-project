@@ -2,7 +2,7 @@
 // Usa os componentes e o acesso a dados de arena.js (arScreen, arForm, arenaDb...) e o motor (BT8Championship).
 // Contrato: docs/ARENA.md 4.4 e 4.5.
 
-const MESA = { timer: null, ocupado: false, ultimaAtualizacao: 0 };
+const MESA = { timer: null, ciclo: null, ultimaAtualizacao: 0, falhaDesde: null };
 
 const mesaMin = ts => (ts ? Math.max(0, Math.floor((Date.now() - Date.parse(ts)) / 60000)) : null);
 const mesaQuadra = id => ARENA.quadras.find(q => q.id === id);
@@ -23,23 +23,42 @@ function mesaPreset(m) {
   return m.fase === 'grupo' ? f.preset_grupo : f.preset_mata;
 }
 
-// ── Carga e polling (5 s, uma chamada por vez) ───────────
-async function mesaAtualizar() {
-  if (MESA.ocupado || !ARENA.c) return;
-  MESA.ocupado = true;
+// ── Carga e polling (5 s, uma chamada por vez, 10 s de limite) ──
+async function mesaBuscar() {
+  const ctrl = new AbortController();
+  const limite = setTimeout(() => ctrl.abort(), 10000);
   try {
     const db = arenaDb();
     const catIds = ARENA.c.cats.map(c => c.id);
-    const [camps, matches, teams, groups] = await Promise.all([
-      db.select('championships', { id: ARENA.c.camp.id }),
-      db.select('matches', { championship_id: ARENA.c.camp.id }),
-      catIds.length ? db.select('teams', { category_id: catIds }) : [],
-      catIds.length ? db.select('category_groups', { category_id: catIds }, 'ordem') : [],
+    const [camps, matches, teams, groups] = await Promise.race([
+      Promise.all([
+        db.select('championships', { id: ARENA.c.camp.id }, null, ctrl.signal),
+        db.select('matches', { championship_id: ARENA.c.camp.id }, null, ctrl.signal),
+        catIds.length ? db.select('teams', { category_id: catIds }, null, ctrl.signal) : [],
+        catIds.length ? db.select('category_groups', { category_id: catIds }, 'ordem', ctrl.signal) : [],
+      ]),
+      new Promise((_, rej) => ctrl.signal.addEventListener('abort', () => rej(new Error('O servidor demorou mais de 10 s para responder.')))),
     ]);
     Object.assign(ARENA.c, { camp: camps[0] || ARENA.c.camp, matches, teams, groups });
     MESA.ultimaAtualizacao = Date.now();
+    MESA.falhaDesde = null;
+  } catch (e) {
+    MESA.falhaDesde = MESA.falhaDesde || Date.now();
+    throw e;
   } finally {
-    MESA.ocupado = false;
+    clearTimeout(limite);
+  }
+}
+
+// Recarga depois de uma ação espera o ciclo em andamento e busca de novo (nunca redesenha dado velho).
+async function mesaAtualizar() {
+  if (!ARENA.c) return;
+  while (MESA.ciclo) await MESA.ciclo.catch(() => {});
+  MESA.ciclo = mesaBuscar();
+  try {
+    await MESA.ciclo;
+  } finally {
+    MESA.ciclo = null;
   }
 }
 
@@ -47,14 +66,19 @@ function mesaIniciarPolling(render, telaId) {
   clearInterval(MESA.timer);
   MESA.timer = setInterval(async () => {
     if (!document.getElementById(telaId)?.classList.contains('active')) return clearInterval(MESA.timer);
-    if (document.visibilityState !== 'visible' || MESA.ocupado) return;
+    if (document.visibilityState !== 'visible' || MESA.ciclo) return;
     try {
       await mesaAtualizar();
-      if (!document.querySelector('.ar-modal')) render();
     } catch (e) {
       console.warn('Mesa: falha ao atualizar', e);
     }
+    if (!document.querySelector('.ar-modal')) render();
   }, 5000);
+}
+
+function mesaFaixaRede() {
+  if (!MESA.falhaDesde) return '';
+  return `<div class="mesa-rede" role="alert">${icon('alert')} Sem conexão há ${Math.round((Date.now() - MESA.falhaDesde) / 1000)} s. Os dados podem estar desatualizados.</div>`;
 }
 
 async function mesaRecarregar(render) {
@@ -96,7 +120,7 @@ function mesaAlertas() {
   const out = [];
   for (const m of ARENA.c.matches) {
     const q = mesaQuadra(m.court_id)?.nome || 'Quadra';
-    if (m.status === 'chamada' && mesaMin(m.chamada_em) >= R.tolerancia_wo_min) {
+    if (m.status === 'chamada' && !ARENA.c.camp.pausado && mesaMin(m.chamada_em) >= R.tolerancia_wo_min) {
       out.push({ tipo: 'err', txt: `${q}: tolerância de WO vencida (${mesaMin(m.chamada_em)} min) · ${mesaNomes(m)}` });
     }
     if (m.status === 'em_jogo' && mesaMin(m.updated_at || m.iniciada_em) >= 10) {
@@ -104,7 +128,7 @@ function mesaAlertas() {
     }
     if (m.alerta_origem && !arFinal(m)) out.push({ tipo: 'err', txt: `${mesaRotulo(m)}: origem alterada, revisar` });
   }
-  for (const g of ARENA.c.groups) {
+  for (const g of arG() ? ARENA.c.groups : []) { // fechar grupo é só do gestor
     const jogos = ARENA.c.matches.filter(m => m.group_id === g.id);
     if (!g.fechado_em && jogos.length && jogos.every(arFinal)) {
       out.push({ tipo: 'ok', txt: `${mesaCat(g.category_id)?.nome} · Grupo ${g.nome} pronto para fechar`, acao: `mesaIrChave('${g.category_id}')` });
@@ -144,7 +168,7 @@ function mesaColunaHtml(q) {
   }
   const min = mesaMin(jogo.status === 'em_jogo' ? jogo.iniciada_em : jogo.chamada_em);
   const longo = jogo.status === 'em_jogo' && min > 1.5 * R.duracao_media_min;
-  const woVencido = jogo.status === 'chamada' && min >= R.tolerancia_wo_min;
+  const woVencido = jogo.status === 'chamada' && !ARENA.c.camp.pausado && min >= R.tolerancia_wo_min;
   const tb = jogo.tb_a != null || jogo.tb_b != null ? `<div class="mesa-tb">TIE-BREAK ${jogo.tb_a ?? 0}-${jogo.tb_b ?? 0}</div>` : '';
   return `
     <div class="mesa-col ${jogo.status} ${longo || woVencido ? 'alerta' : ''}">
@@ -185,6 +209,7 @@ function mesaRender() {
         <div class="ar-sub">Atualizado às ${new Date(MESA.ultimaAtualizacao || Date.now()).toLocaleTimeString('pt-BR')} · a cada 5 s</div></div>
       ${g ? `<button class="btn ${camp.pausado ? 'btn-yellow' : 'btn-coral'} btn-sm" onclick="mesaPausar()">${camp.pausado ? 'Retomar evento' : 'Pausar evento'}</button>` : ''}
     </div>
+    ${mesaFaixaRede()}
     ${camp.pausado ? `<div class="mesa-pausa">PAUSA${camp.pausa_motivo ? ' – ' + arEsc(camp.pausa_motivo) : ''}</div>` : ''}
     ${alertas.length ? `<div class="mesa-alertas" role="status">${alertas.map(a =>
       `<${a.acao ? `button onclick="${a.acao}"` : 'div'} class="mesa-alerta ${a.tipo}">${icon(a.tipo === 'ok' ? 'check' : 'alert')} ${arEsc(a.txt)}</${a.acao ? 'button' : 'div'}>`).join('')}</div>` : ''}
@@ -199,6 +224,7 @@ function mesaRender() {
               <small>${arEsc(mesaRotulo(l.partida))}${l.partida.status === 'suspensa' ? ' · SUSPENSA' : ''}</small>
               ${l.motivos.length ? `<small class="mesa-motivo">${arEsc(l.motivos.join(' · '))}</small>` : ''}</span>
             ${l.apto ? arChip('Apto', 'ok') : arChip('Aguardando', 'mute')}
+            ${l.partida.team_a && l.partida.team_b ? `<button class="btn btn-ghost btn-sm" onclick="mesaPlacar('${l.partida.id}')" title="Lançar o placar final (súmula em papel)">Placar</button>` : ''}
           </div>`).join('') || '<div class="ar-vazio">Fila vazia.</div>'}</div>
       </div>
       <div class="ar-card">
@@ -212,30 +238,57 @@ function mesaRender() {
     </div>`);
 }
 
+// A RPC é o que importa: se ela passou e só a recarga falhou, é sucesso com aviso, não erro.
 async function mesaRpc(nome, args, ok) {
-  await arAcao(async () => {
+  try {
     await arenaDb().rpc(nome, args);
-    await mesaRecarregar(mesaRender);
-  }, ok);
+  } catch (e) {
+    console.warn('Mesa:', e);
+    return arToast(e.message || 'Algo deu errado', 'erro');
+  }
+  try {
+    await mesaAtualizar();
+    if (ok) arToast(ok);
+  } catch (e) {
+    arToast(`${ok || 'Feito.'} Não foi possível atualizar a tela agora; ela tenta de novo em 5 s.`);
+  }
+  mesaRender();
 }
 
 async function mesaEscolherProximo(quadraId) {
   const q = mesaQuadra(quadraId);
   const { sugestao, lista } = mesaProximo();
-  const opcoes = lista.filter(l => l.partida.team_a && l.partida.team_b).slice(0, 15);
+  const comDuplas = lista.filter(l => l.partida.team_a && l.partida.team_b);
+  const opcoes = comDuplas.slice(0, 15);
+  // A sugestão pode estar além das 15 primeiras: entra no topo da lista.
+  if (sugestao && !opcoes.some(l => l.partida.id === sugestao.id)) opcoes.unshift(comDuplas.find(l => l.partida.id === sugestao.id));
   if (!opcoes.length) return arToast('Nenhum jogo na fila com as duas duplas definidas.', 'erro');
   const v = await arForm({
     titulo: `Próximo jogo · ${q.nome}`,
-    texto: sugestao ? `Sugestão: <b>${arEsc(mesaNomes(sugestao))}</b>` : `<span class="ar-aviso">${icon('alert')} Nenhum jogo com os 4 atletas presentes, livres e descansados. Você pode chamar mesmo assim.</span>`,
+    texto: sugestao ? `Sugestão: <b>${arEsc(mesaNomes(sugestao))}</b>` : `<span class="ar-aviso">${icon('alert')} Nenhum jogo com os 4 atletas presentes, livres e descansados. Escolha um para chamar mesmo assim.</span>`,
     campos: [{
-      nome: 'id', rotulo: 'Chamar', tipo: 'radio', valor: (sugestao || opcoes[0].partida).id,
+      nome: 'id', rotulo: 'Chamar', tipo: 'radio', valor: sugestao?.id || '', obrigatorio: true,
       opcoes: opcoes.map(l => [l.partida.id, `${mesaNomes(l.partida)} · ${mesaRotulo(l.partida)}`, l.apto ? '' : l.motivos.join(' · ')]),
     }],
     ok: 'Chamar',
   });
   if (!v) return;
-  const m = ARENA.c.matches.find(x => x.id === v.id);
-  await mesaRpc('match_call', { p_match: m.id, p_court: quadraId }, `Chamada: ${q.nome} – ${mesaNomes(m)}`);
+  const escolha = opcoes.find(l => l.partida.id === v.id);
+  if (!escolha) return arToast('Escolha um jogo da lista.', 'erro');
+  if (!escolha.apto && !(await arConfirm('Jogo não apto', `${arEsc(mesaNomes(escolha.partida))}<br><span class="mesa-motivo">${arEsc(escolha.motivos.join(' · '))}</span>`, 'Chamar mesmo assim'))) return;
+  // Rebusca o jogo: outro aparelho da Mesa pode ter chamado antes (match_call moveria o jogo de quadra).
+  let atual;
+  try {
+    atual = (await arenaDb().select('matches', { id: v.id }))[0];
+  } catch (e) {
+    return arToast(e.message, 'erro');
+  }
+  if (!atual || !['agendada', 'suspensa'].includes(atual.status)) {
+    const onde = atual && mesaAtivos(atual) ? ` na ${mesaQuadra(atual.court_id)?.nome || 'outra quadra'}` : '';
+    arToast(`Esse jogo já foi chamado${onde}.`, 'erro');
+    return mesaRecarregar(mesaRender).catch(() => {});
+  }
+  await mesaRpc('match_call', { p_match: atual.id, p_court: quadraId }, `Chamada: ${q.nome} – ${mesaNomes(atual)}`);
 }
 
 function mesaIniciar(id) {
@@ -258,7 +311,7 @@ async function mesaWo(id) {
   const v = await arForm({
     titulo: 'Aplicar WO', texto: 'Escolha quem <b>não</b> compareceu.',
     campos: [
-      { nome: 'ausente', rotulo: 'Ausente', tipo: 'radio', valor: 'a', opcoes: [['a', arDupla(arTeam(m.team_a))], ['b', arDupla(arTeam(m.team_b))], ['duplo', 'As duas (WO duplo: partida anulada)']] },
+      { nome: 'ausente', rotulo: 'Ausente', tipo: 'radio', valor: '', obrigatorio: true, opcoes: [['a', arDupla(arTeam(m.team_a))], ['b', arDupla(arTeam(m.team_b))], ['duplo', 'As duas (WO duplo: partida anulada)']] },
       { nome: 'motivo', rotulo: 'Motivo', obrigatorio: true, valor: 'Não compareceu no tempo de tolerância' },
     ],
     ok: 'Aplicar WO', perigo: true,
@@ -272,12 +325,19 @@ async function mesaPlacar(id) {
   const preset = mesaPreset(m);
   const corrigir = arFinal(m);
   const podeForcar = arG() && m.fase !== 'grupo';
+  const ladoWo = (m.wo || m.status === 'wo') && m.vencedor ? (m.vencedor === m.team_a ? 'wo_a' : 'wo_b') : 'placar';
   const v = await arForm({
     titulo: corrigir ? 'Corrigir placar' : 'Lançar placar final',
     texto: `${arEsc(mesaRotulo(m))} · preset ${arEsc(preset)}${corrigir ? ` · atual ${arEsc(arPlacar(m))}` : ''}`,
     campos: [
-      { nome: 'ga', rotulo: arDupla(arTeam(m.team_a)), tipo: 'number', valor: m.games_a ?? '', meio: true, extra: 'min="0" max="7" inputmode="numeric"', obrigatorio: true },
-      { nome: 'gb', rotulo: arDupla(arTeam(m.team_b)), tipo: 'number', valor: m.games_b ?? '', meio: true, extra: 'min="0" max="7" inputmode="numeric"', obrigatorio: true },
+      // Corrigir um WO não pode apagá-lo sem querer: o tipo de resultado vem marcado como está.
+      { nome: 'tipo', rotulo: 'Resultado', tipo: 'radio', valor: ladoWo, opcoes: [
+        ['placar', 'Placar jogado (preencha os games)'],
+        ['wo_a', `WO, vence ${arDupla(arTeam(m.team_a))}`],
+        ['wo_b', `WO, vence ${arDupla(arTeam(m.team_b))}`],
+      ] },
+      { nome: 'ga', rotulo: arDupla(arTeam(m.team_a)), tipo: 'number', valor: m.games_a ?? '', meio: true, extra: 'min="0" max="7" inputmode="numeric"' },
+      { nome: 'gb', rotulo: arDupla(arTeam(m.team_b)), tipo: 'number', valor: m.games_b ?? '', meio: true, extra: 'min="0" max="7" inputmode="numeric"' },
       { nome: 'ta', rotulo: 'Tie-break (A)', tipo: 'number', valor: m.tb_a ?? '', meio: true, extra: 'min="0" max="50" inputmode="numeric"' },
       { nome: 'tb', rotulo: 'Tie-break (B)', tipo: 'number', valor: m.tb_b ?? '', meio: true, extra: 'min="0" max="50" inputmode="numeric"' },
       { nome: 'motivo', rotulo: 'Motivo', obrigatorio: true, valor: corrigir ? '' : 'Lançado pela Mesa' },
@@ -287,12 +347,20 @@ async function mesaPlacar(id) {
   });
   if (!v) return;
   const n = x => (x === '' ? null : Number(x));
-  const placar = { games_a: n(v.ga), games_b: n(v.gb), tb_a: n(v.ta), tb_b: n(v.tb) };
-  const r = BT8Championship.validarPlacar(placar, preset);
-  if (!r.ok) return arToast(r.erro, 'erro');
+  const wo = v.tipo !== 'placar';
+  const alvo = preset === 'B' ? 4 : 6;
+  // WO = alvo x 0 para quem compareceu (docs/ARENA.md, presets).
+  const placar = wo
+    ? { games_a: v.tipo === 'wo_a' ? alvo : 0, games_b: v.tipo === 'wo_b' ? alvo : 0, tb_a: null, tb_b: null }
+    : { games_a: n(v.ga), games_b: n(v.gb), tb_a: n(v.ta), tb_b: n(v.tb) };
+  if (!wo) {
+    if (placar.games_a == null || placar.games_b == null) return arToast('Preencha os games das duas duplas.', 'erro');
+    const r = BT8Championship.validarPlacar(placar, preset);
+    if (!r.ok) return arToast(r.erro, 'erro');
+  }
   mesaRpc('match_set_result', {
     p_match: id, p_games_a: placar.games_a, p_games_b: placar.games_b, p_tb_a: placar.tb_a, p_tb_b: placar.tb_b,
-    p_wo: false, p_motivo: v.motivo, p_forcar: !!v.forcar,
+    p_wo: wo, p_motivo: v.motivo, p_forcar: !!v.forcar,
   }, corrigir ? 'Placar corrigido.' : 'Placar lançado.');
 }
 
@@ -409,7 +477,9 @@ function mesaBaixar(nome, conteudo, tipo) {
 // CSV com ; e BOM: abre certo no Excel em português.
 function mesaCsv(linhas) {
   const cel = v => {
-    const s = v == null ? '' : String(v);
+    let s = v == null ? '' : String(v);
+    // Anti-injeção de fórmula; também faz telefone (+55...) ficar como texto, sem notação científica.
+    if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
     return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return '﻿' + linhas.map(l => l.map(cel).join(';')).join('\r\n');
@@ -554,17 +624,19 @@ if (typeof AR_DEMO_RPC !== 'undefined') {
       mesaDemoToque(m);
       return { ok: true, match: m };
     },
-    match_set_result(db, { p_match, p_games_a, p_games_b, p_tb_a, p_tb_b, p_motivo, p_forcar }) {
+    match_set_result(db, { p_match, p_games_a, p_games_b, p_tb_a, p_tb_b, p_wo, p_motivo, p_forcar }) {
       const m = db.matches.find(x => x.id === p_match);
       if (!p_motivo) throw arDemoErro('Informe o motivo.', 'motivo_obrigatorio');
       if (m.group_id && db.category_groups.find(g => g.id === m.group_id)?.fechado_em) throw arDemoErro('O grupo já foi fechado: o placar não pode mais mudar.', 'grupo_fechado');
       const cat = db.categories.find(c => c.id === m.category_id);
       const f = { ...AR_FORMATO_PADRAO, ...(cat.formato || {}) };
       const placar = { games_a: p_games_a, games_b: p_games_b, tb_a: p_tb_a, tb_b: p_tb_b };
-      const r = BT8Championship.validarPlacar(placar, m.fase === 'grupo' ? f.preset_grupo : f.preset_mata);
+      const r = p_wo
+        ? { ok: (p_games_a > 0) !== (p_games_b > 0), vencedor: p_games_a > 0 ? 'a' : 'b', erro: 'WO precisa de um vencedor.' }
+        : BT8Championship.validarPlacar(placar, m.fase === 'grupo' ? f.preset_grupo : f.preset_mata);
       if (!r.ok) throw arDemoErro(r.erro, 'placar_invalido');
       const antes = { ...m };
-      Object.assign(m, placar, { status: 'encerrada', wo: false, vencedor: m[`team_${r.vencedor}`], encerrada_em: m.encerrada_em || new Date().toISOString(), court_id: null });
+      Object.assign(m, placar, { status: p_wo ? 'wo' : 'encerrada', wo: !!p_wo, vencedor: m[`team_${r.vencedor}`], encerrada_em: m.encerrada_em || new Date().toISOString(), court_id: null });
       try {
         mesaDemoPropagar(db, m, p_forcar);
       } catch (e) {

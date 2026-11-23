@@ -104,10 +104,11 @@ function arErro(e) {
 }
 
 const ARENA_REAL = {
-  async select(tabela, filtro = {}, ordem) {
+  async select(tabela, filtro = {}, ordem, signal) {
     let q = SUPA.from(tabela).select('*');
     for (const [k, v] of Object.entries(filtro)) q = Array.isArray(v) ? q.in(k, v) : q.eq(k, v);
     if (ordem) q = q.order(ordem);
+    if (signal) q = q.abortSignal(signal);
     const { data, error } = await q;
     if (error) throw arErro(error);
     return data || [];
@@ -170,7 +171,10 @@ function isArenaMember() {
         if (ARENA_MEMBROS.uid !== uid) return;
         ARENA_MEMBROS.lista = lista;
         // Quem só é scout abre direto no /scout ao entrar no app (plano, seção 3).
-        if (lista.length && lista.every(m => m.papel === 'scout') && !arenaRoute() && !(typeof isAdminRoute === 'function' && isAdminRoute())) {
+        const especial = arenaRoute() || (typeof isAdminRoute === 'function' && isAdminRoute())
+          || (typeof isResetPasswordRoute === 'function' && isResetPasswordRoute());
+        const admin = typeof currentAccess === 'function' && currentAccess()?.isAdmin; // buildUserMenu roda depois do refreshAccess
+        if (lista.length && lista.every(m => m.papel === 'scout') && !especial && !admin) {
           location.replace('/scout');
           return;
         }
@@ -356,7 +360,8 @@ function arForm({ titulo, texto = '', campos = [], ok = 'Salvar', perigo = false
         v[c.nome] = c.tipo === 'checkbox' ? el.checked
           : c.tipo === 'radio' ? (wrap.querySelector(`[name="${c.nome}"]:checked`)?.value || '') : el.value.trim();
         if (c.obrigatorio && !v[c.nome]) {
-          wrap.querySelector('.ar-modal-msg').textContent = c.tipo === 'checkbox' ? 'Marque a confirmação para continuar.' : `Preencha: ${c.rotulo}`;
+          wrap.querySelector('.ar-modal-msg').textContent = c.tipo === 'checkbox' ? 'Marque a confirmação para continuar.'
+            : c.tipo === 'radio' ? `Escolha uma opção em "${c.rotulo}".` : `Preencha: ${c.rotulo}`;
           el.focus();
           return;
         }
@@ -1370,7 +1375,7 @@ function arClassificar(g, sorteio = g.sorteio_desempate?.ordem || []) {
 
 function arPlacar(m) {
   if (m.status === 'anulada') return 'anulada';
-  if (m.status === 'wo' || m.wo) return `WO ${arVencedorLado(m) === 'a' ? '>' : '<'}`;
+  if (m.status === 'wo' || m.wo) return m.vencedor ? `WO, vence ${arDupla(arTeam(m.vencedor))}` : 'WO';
   if (m.games_a == null) return '-';
   return `${m.games_a}x${m.games_b}${m.tb_a != null ? ` (${m.tb_a}-${m.tb_b})` : ''}`;
 }

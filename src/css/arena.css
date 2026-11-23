@@ -182,7 +182,9 @@
 .ar-radio { display:flex; gap:10px; align-items:flex-start; padding:10px; border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:6px; cursor:pointer; font-size:13px; background:rgba(255,255,255,0.03); }
 .ar-radio:has(input:checked) { border-color:rgba(244,192,38,0.6); background:rgba(244,192,38,0.08); }
 .ar-radio input { width:18px; height:18px; margin-top:1px; accent-color:var(--yellow); flex-shrink:0; }
-.ar-radio small { display:block; font-size:11px; color:var(--muted2); margin-top:2px; }
+.ar-radio small { display:block; font-size:11px; color:#fca5a5; margin-top:2px; } /* hoje só o motivo de inaptidão usa */
+.mesa-rede { display:flex; gap:8px; align-items:center; background:rgba(224,92,58,0.18); border:1px solid rgba(224,92,58,0.55); color:#fecaca; font-weight:700; font-size:13px; border-radius:var(--radius-sm); padding:9px 12px; margin-bottom:12px; }
+.mesa-rede .ic { width:16px; height:16px; }
 
 /* ── Mesa de Controle ── */
 .mesa-pausa { background:var(--coral); color:#fff; font-family:'Bebas Neue', sans-serif; font-size:24px; letter-spacing:2px; text-align:center; border-radius:var(--radius-sm); padding:8px; margin-bottom:12px; }
