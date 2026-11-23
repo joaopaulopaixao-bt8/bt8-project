@@ -101,7 +101,7 @@ Regras que o banco garante: atleta não pode estar em duas duplas ativas (não c
 
 `{ "tam_grupo": 4, "classificam": 2, "preset_grupo": "A", "preset_mata": "A" }`. `match_finish` e `match_set_result` validam o placar pelo preset da fase (`preset_grupo` para `grupo`, `preset_mata` para o resto; padrão `A`).
 
-Presets: **A** = 6x0 a 6x4, 7x5 (em 5x5 segue até 7x5), 7x6 com tie-break; **B** = 4x0 a 4x2, 5x3 (em 3x3 segue até 5x3), 5x4 com tie-break. **Tie-break (regra do dono):** vai a 7 pontos; se ficar 6x6 nos pontos, vence quem fizer 8 primeiro (sem vantagem de 2 infinita). Válidos: 7-0 a 7-5, 8-6 e 8-7; o set fica 7x6 (5x4 no B). WO = alvo x 0 (6x0 no A, 4x0 no B).
+Presets: **A** = 6x0 a 6x4, 7x5 (em 5x5 segue até 7x5), 7x6 com tie-break; **B** = 4x0 a 4x2, 5x3 (em 3x3 segue até 5x3), 5x4 com tie-break. **Tie-break (regra do dono):** vai a 7 pontos; se ficar 6x6 nos pontos, vence quem fizer 8 primeiro (sem vantagem de 2 infinita). Válidos: só 7 com o outro em até 5 (7-0 a 7-5), ou 8 com o outro em 6 ou 7 (8-6, 8-7); o set fica 7x6 (5x4 no B). Qualquer outro, como 9-7, 10-8, 8-8 ou 7-6, dá `placar_invalido` em `match_finish` e `match_set_result`. WO = alvo x 0 (6x0 no A, 4x0 no B).
 
 ## 4. RPCs
 
