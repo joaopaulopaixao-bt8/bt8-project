@@ -1,6 +1,7 @@
 // Auxiliares das Functions do Módulo Arena (admin-arena, arena-member, arena-register).
 // A parte pura (validação e normalização) é testada em tests/arena-functions.test.js.
 const crypto = require('crypto');
+const { logError } = require('./_log');
 
 // Mesma versão de BT8_ARENA_LGPD_VERSAO em src/js/legal-pages.js (o teste confere).
 const ARENA_LGPD_VERSAO = '2026-11-22';
@@ -18,6 +19,30 @@ const json = (statusCode, body) => ({
   },
   body: JSON.stringify(body)
 });
+
+// Data AAAA-MM-DD que existe no calendário (2027-02-31 não passa).
+function dataValida(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const d = new Date(v + 'T00:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+// Erro com mensagem própria da função, que pode ir para o usuário.
+function erroPublico(status, mensagem) {
+  const e = new Error(mensagem);
+  e.status = status;
+  e.publico = true;
+  return e;
+}
+
+// Só vão para o usuário as mensagens da própria função e as recusas de negócio da 004/005 (com hint).
+// O resto (mensagens internas do Supabase/GoTrue, em inglês) vira mensagem genérica e vai para o log.
+function respostaDeErro(contexto, e, generica) {
+  if (e?.publico) return json(e.status || 400, { error: e.message });
+  if (e?.code === 'P0001' && e.hint) return json(400, { error: e.message, erro: e.hint });
+  logError(contexto, e);
+  return json(500, { error: generica });
+}
 
 const texto = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
@@ -83,20 +108,21 @@ function validarArena(body) {
   if (!arena.nome) return { erro: 'Informe o nome da arena.' };
   if (!/^[a-z0-9][a-z0-9-]{1,59}$/.test(arena.slug)) return { erro: 'Slug inválido: use letras minúsculas, números e hífen.' };
   if (a.whatsapp && !arena.whatsapp) return { erro: 'WhatsApp da arena inválido.' };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(arena.ativo_ate)) return { erro: 'Data "ativo até" inválida (AAAA-MM-DD).' };
+  if (!dataValida(arena.ativo_ate)) return { erro: 'Data "ativo até" inválida (AAAA-MM-DD).' };
   const gestor = validarPessoa(g);
   if (gestor.erro) return gestor;
   return { arena, gestor };
 }
 
-// Nome, e-mail e senha opcional (exigida só se a conta for criada).
+// Nome, e-mail e senha inicial. A senha é sempre exigida (e ignorada se a conta já existir), para a
+// resposta não revelar se o e-mail tem conta no BT8.
 function validarPessoa(p) {
   const nome = limparNome(p?.nome);
   const email = String(p?.email ?? '').trim().toLowerCase();
-  const senha = p?.senha ? String(p.senha) : null;
+  const senha = String(p?.senha ?? '');
   if (!nome) return { erro: 'Informe o nome.' };
   if (!emailValido(email)) return { erro: 'E-mail inválido.' };
-  if (senha && (senha.length < 8 || senha.length > 72)) return { erro: 'A senha inicial precisa ter de 8 a 72 caracteres.' };
+  if (senha.length < 8 || senha.length > 72) return { erro: 'A senha inicial precisa ter de 8 a 72 caracteres.' };
   return { nome, email, senha };
 }
 
@@ -180,15 +206,13 @@ async function ehAdmin(env, userId) {
   return rows?.[0]?.role === 'admin';
 }
 
-// Conta existente pelo e-mail (profiles.email) ou nova conta já confirmada.
+// Conta existente pelo e-mail em auth.users (RPC só da service role, nunca profiles.email, que é
+// do usuário) ou nova conta já confirmada.
 async function obterOuCriarUsuario(env, { nome, email, senha }) {
-  const rows = await sbFetch(env, `rest/v1/profiles?select=id&email=eq.${encodeURIComponent(email)}&limit=1`);
-  if (rows?.[0]?.id) return { userId: rows[0].id, criada: false };
-  if (!senha) {
-    const err = new Error('Esse e-mail ainda não tem conta: informe a senha inicial.');
-    err.status = 400;
-    throw err;
-  }
+  const existente = await sbFetch(env, 'rest/v1/rpc/arena_conta_por_email', {
+    method: 'POST', body: JSON.stringify({ p_email: email })
+  });
+  if (existente) return { userId: existente, criada: false };
   const user = await sbFetch(env, 'auth/v1/admin/users', {
     method: 'POST',
     body: JSON.stringify({ email, password: senha, email_confirm: true, user_metadata: { full_name: nome } })
@@ -196,8 +220,19 @@ async function obterOuCriarUsuario(env, { nome, email, senha }) {
   return { userId: user.id, criada: true };
 }
 
+// Desfaz uma conta criada nesta chamada quando o resto falhou (sem conta órfã).
+const apagarUsuario = (env, userId) => sbFetch(env, `auth/v1/admin/users/${encodeURIComponent(userId)}`, { method: 'DELETE' })
+  .catch(e => logError('arena-apagar-usuario', e));
+
+// Arena ativa e dentro do prazo do plano?
+async function arenaAtiva(env, arenaId) {
+  const [a] = await sbFetch(env, `rest/v1/arenas?select=status,ativo_ate&id=eq.${encodeURIComponent(arenaId)}&limit=1`);
+  if (!a) return false;
+  return a.status === 'ativa' && (!a.ativo_ate || a.ativo_ate >= new Date().toISOString().slice(0, 10));
+}
+
 module.exports = {
-  ARENA_LGPD_VERSAO, PAPEIS_EQUIPE, json, limparNome, normalizarTelefone, emailValido, uuidValido,
+  ARENA_LGPD_VERSAO, PAPEIS_EQUIPE, json, dataValida, erroPublico, respostaDeErro, apagarUsuario, arenaAtiva, limparNome, normalizarTelefone, emailValido, uuidValido,
   validarInscricao, statusDaRecusa, validarArena, validarPessoa, validarMembro, hashIp, clientIp,
   supabaseEnv, sbFetch, usuarioDoToken, ehAdmin, obterOuCriarUsuario
 };

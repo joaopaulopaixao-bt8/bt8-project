@@ -84,6 +84,40 @@ test('validarMembro: papéis, árbitro sem conta e atualização', () => {
   assert.match(A.validarMembro({ arena_id: 'x', papel: 'scout' }).erro, /Arena/);
 });
 
+test('dataValida: só datas que existem', () => {
+  assert.ok(A.dataValida('2027-03-31'));
+  assert.ok(A.dataValida('2028-02-29'));
+  for (const ruim of ['2027-02-31', '2027-02-29', '2027-13-01', '27-03-31', '', null]) assert.equal(A.dataValida(ruim), false, String(ruim));
+  assert.match(A.validarArena({ arena: { nome: 'X', slug: 'ab', ativo_ate: '2027-02-31' },
+    gestor: { nome: 'Fu', email: 'a@b.co', senha: '12345678' } }).erro, /ativo até/);
+});
+
+test('validarPessoa exige senha sempre (não revela se o e-mail tem conta)', () => {
+  assert.match(A.validarPessoa({ nome: 'Fulano', email: 'a@b.co' }).erro, /senha/);
+  assert.equal(A.validarPessoa({ nome: 'Fulano', email: 'A@B.CO', senha: '12345678' }).email, 'a@b.co');
+});
+
+test('respostaDeErro: só repassa mensagem própria ou recusa de negócio', () => {
+  const logs = [];
+  const orig = console.error;
+  console.error = m => logs.push(m);
+  try {
+    const interno = Object.assign(new Error('duplicate key value violates unique constraint'), { status: 500 });
+    const r1 = A.respostaDeErro('teste', interno, 'Mensagem genérica.');
+    assert.equal(r1.statusCode, 500);
+    assert.equal(JSON.parse(r1.body).error, 'Mensagem genérica.');
+    assert.equal(logs.length, 1);
+    const r2 = A.respostaDeErro('teste', A.erroPublico(409, 'Já existe.'), 'x');
+    assert.deepEqual([r2.statusCode, JSON.parse(r2.body).error], [409, 'Já existe.']);
+    const negocio = Object.assign(new Error('Conta do gestor não encontrada.'), { code: 'P0001', hint: 'nao_encontrado' });
+    assert.equal(JSON.parse(A.respostaDeErro('teste', negocio, 'x').body).erro, 'nao_encontrado');
+    const semHint = Object.assign(new Error('User already registered'), { code: 'email_exists', status: 422 });
+    assert.equal(JSON.parse(A.respostaDeErro('teste', semHint, 'Genérica.').body).error, 'Genérica.');
+  } finally {
+    console.error = orig;
+  }
+});
+
 test('hashIp não expõe o IP e depende do segredo', () => {
   const h = A.hashIp('s1', '1.2.3.4');
   assert.match(h, /^[0-9a-f]{64}$/);

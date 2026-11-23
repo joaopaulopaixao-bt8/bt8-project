@@ -232,6 +232,9 @@ Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `esp
 
 ### 4.7 Só service role
 
+**`arena_conta_por_email(p_email text) → uuid`** (005) — conta pelo e-mail em `auth.users`, sem diferenciar maiúsculas; `null` se não existe. **`arena_criar(p_arena jsonb, p_owner uuid, p_nome text, p_email text)`** (005) — arena + membro `dono` numa transação; slug repetido dá 23505. Desde a 005, `profiles.email` acompanha `auth.users` (o cliente não altera mais).
+
+
 **`arena_inscrever(p_token text, p_ip_hash text, p_dados jsonb, p_limite_hora int default 10)`** — usada só pela Function `arena-register`. Limite por hash de IP por hora, advisory lock por categoria, atleta reaproveitado pelo telefone na arena. Status final: `espera` se a categoria lotou (`confirmada + pendente >= max_duplas`), senão `pendente` se o campeonato tem Pix, senão `confirmada`. Recusas voltam como `{"ok": false, "erro": "limite" | "nao_encontrado" | "status_invalido" | "dados_invalidos" | "atleta_ja_inscrito", "mensagem": "..."}` (sem erro HTTP), para o contador do limite não ser desfeito por rollback; tentativas recusadas também contam.
 
 ## 5. Netlify Functions
@@ -246,7 +249,7 @@ Todas: `POST`, JSON, CORS igual às atuais, erros `{"error": "mensagem em portug
   "gestor": { "nome": "Fulano", "email": "gestor@x.com", "senha": "senha-inicial" } }
 ```
 
-Se o e-mail já tem conta, vincula (a senha é ignorada); senão cria a conta já confirmada (senha obrigatória, 8+ caracteres). Grava a arena com `owner_id` e o membro `dono`. Resposta `201 {"ok": true, "arena": {...}, "gestor": {"user_id", "email", "conta_criada": true}}`. Erros: 401, 403, 400 (dados), 409 (slug já existe).
+Senha inicial sempre obrigatória (8 a 72 caracteres). A conta é procurada pelo e-mail em `auth.users` (RPC `arena_conta_por_email`, só da service role; **nunca por `profiles.email`**). Se existe, vincula e ignora a senha; senão cria a conta já confirmada. Arena e membro `dono` são gravados juntos pela RPC `arena_criar` (005); se falhar, a conta criada nesta chamada é apagada. Resposta `201 {"ok": true, "arena": {...}, "gestor": {"email"}, "mensagem"}` (sem `user_id` e igual com ou sem conta prévia). Erros: 401, 403, 400 (dados, inclusive data inexistente), 409 (slug já existe); erro interno vira mensagem genérica.
 
 ### `POST /.netlify/functions/arena-member` (dono ou gestor da arena, ou admin)
 
@@ -257,7 +260,9 @@ Criar:
   "papel": "scout" }
 ```
 
-`papel` = `gestor`, `arbitro` ou `scout` (nunca `dono`). Árbitro sem app: `{"acao": "criar", "arena_id", "nome", "papel": "arbitro", "sem_conta": true}` (sem e-mail e senha). E-mail com conta existente é vinculado; senão a conta nasce confirmada. Resposta `201 {"ok": true, "member": {...}, "conta_criada": bool}`; `409` se já é da equipe.
+`papel` = `gestor`, `arbitro` ou `scout` (nunca `dono`). Árbitro sem app: `{"acao": "criar", "arena_id", "nome", "papel": "arbitro", "sem_conta": true}` (sem e-mail e senha). Senha inicial sempre obrigatória. E-mail com conta existente (procurado em `auth.users`) é vinculado; senão a conta nasce confirmada. Resposta `201 {"ok": true, "member": {"id", "arena_id", "nome", "email", "papel", "ativo"}, "mensagem"}`, a mesma com ou sem conta prévia e sem `user_id`; `409` se já é da equipe; `403` se a arena está suspensa ou com `ativo_ate` vencido (o admin passa).
+
+**Limitação conhecida:** o vínculo de uma conta que já existe é feito sem o aceite da pessoa (não há convite pendente no MVP). O gestor não ganha acesso aos dados dela, só a coloca na equipe da própria arena; a pessoa vê a arena no próximo login e o gestor pode desativá-la. Convite com aceite fica para depois de 12/12.
 
 Atualizar: `{"acao": "atualizar", "arena_id", "member_id", "papel"?, "ativo"?, "nome"?}`. Recusa mexer no dono e no próprio papel.
 
