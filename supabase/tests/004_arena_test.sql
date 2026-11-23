@@ -166,14 +166,22 @@ select (public.match_score_push(:'m_a1', :v1, 'e0000000-0000-4000-8000-000000000
 select teste.espera_erro(format('select public.match_finish(%L, %s, %L, %L)', :'m_a1', :v2, 'a', 'dddddddd-0000-4000-8000-000000000001'),
   'placar_invalido', 'match_finish recusa 6x5');
 select (public.match_score_push(:'m_a1', :v2, 'e0000000-0000-4000-8000-000000000005', 'dddddddd-0000-4000-8000-000000000001', 6, 2) -> 'match' ->> 'version')::int as v3 \gset
-select teste.ok((public.match_finish(:'m_a1', :v3, 'a', 'dddddddd-0000-4000-8000-000000000001') -> 'match' ->> 'status') = 'encerrada',
-  'match_finish encerra');
+select teste.espera_erro(format('select public.match_finish(%L, %s, %L, %L)', :'m_a1', :v3, 'b', 'dddddddd-0000-4000-8000-000000000001'),
+  'placar_invalido', 'match_finish recusa vencedor que não bate com o placar');
+select teste.ok((public.match_finish(:'m_a1', :v3, null, 'dddddddd-0000-4000-8000-000000000001') -> 'match' ->> 'vencedor') = '7e000000-0000-4000-8000-000000000001',
+  'match_finish sem vencedor calcula pelo placar (6x2 = dupla A)');
 select teste.ok(public.match_score_push(:'m_a1', :v3 + 1, 'e0000000-0000-4000-8000-000000000006', 'dddddddd-0000-4000-8000-000000000001', 6, 3) ->> 'erro' = 'partida_encerrada',
   'push em partida encerrada é recusado');
 select teste.espera_erro($q$select public.match_take('3b000000-0000-4000-8000-0000000000b1', 'dddddddd-0000-4000-8000-000000000001')$q$,
   'sem_permissao', 'scout da arena A não escreve na B');
 select teste.espera_erro(format('select public.match_set_result(%L, 6, 0, null, null, false, %L)', :'m_a6', 'x'),
   'sem_permissao', 'scout não lança placar pela Mesa');
+
+-- ── LGPD: scout não lê atletas nem e-mails da equipe ──
+select teste.ok((select count(*) = 0 from public.athletes), 'scout não lê athletes (telefones)');
+select teste.ok((select count(*) = 1 and bool_and(user_id = '00000000-0000-4000-b000-000000000004') from public.arena_members),
+  'scout vê só a própria linha da equipe');
+select teste.ok((select count(*) > 0 from public.teams), 'scout continua lendo duplas (só ids)');
 
 -- ── Troca depois do primeiro jogo, resto do grupo pela Mesa, WO, fechar grupo ──
 :como_gestor
@@ -184,6 +192,16 @@ select public.match_set_result(id, 6, 3, null, null, false, 'súmula') from publ
 where group_id = :'g_a' and status = 'agendada' and id <> :'m_a6';
 select teste.espera_erro(format('select public.match_wo(%L, %L, %L)', :'m_a6', 'b', ''), 'motivo_obrigatorio', 'WO exige motivo');
 select teste.ok((public.match_wo(:'m_a6', 'b', 'não compareceu') -> 'match' ->> 'games_a') = '6', 'WO grava 6x0');
+select teste.ok((select count(*) > 0 from public.athletes), 'árbitro lê athletes');
+-- Regra do tie-break: 7-0 a 7-5, 8-6 ou 8-7.
+select teste.espera_erro(format('select public.match_set_result(%L, 7, 6, 15, 1, false, %L)', :'m_a6', 'x'), 'placar_invalido', 'tie-break 15-1 é recusado');
+select teste.espera_erro(format('select public.match_set_result(%L, 7, 6, 9, 7, false, %L)', :'m_a6', 'x'), 'placar_invalido', 'tie-break 9-7 é recusado (vence quem faz 8)');
+select teste.espera_erro(format('select public.match_set_result(%L, 7, 6, 7, 6, false, %L)', :'m_a6', 'x'), 'placar_invalido', 'tie-break 7-6 é recusado (vai a 8)');
+reset role;
+select teste.ok(private.placar_valido(6, 7, 6, 8, 7) and private.placar_valido(6, 6, 7, 5, 7) and private.placar_valido(4, 5, 3, null, null)
+                and private.placar_valido(4, 4, 5, 6, 8) and not private.placar_valido(4, 4, 3, null, null) and not private.placar_valido(6, 7, 6, null, null),
+  'placares válidos do preset A e B');
+:como_arbitro
 select teste.espera_erro(format('select public.group_close(%L)', :'g_a'), 'sem_permissao', 'árbitro não fecha grupo');
 :como_gestor
 select public.group_close(:'g_a');
@@ -193,9 +211,15 @@ select teste.espera_erro(format('select public.match_set_result(%L, 6, 4, null, 
 
 -- ── Mata-mata: semear, match_finish propaga, "forçar" marca alerta_origem ──
 :como_gestor
+select teste.espera_erro(format('select public.category_seed_knockout(%L, %L::jsonb)', 'ca000000-0000-4000-8000-000000000001',
+  format('[{"match":"%s","slot":"a","team":"7e000000-0000-4000-8000-000000000001"}]', :'m_f')),
+  'dados_invalidos', 'seed recusa vaga {match} (final)');
+select teste.espera_erro(format('select public.category_seed_knockout(%L, %L::jsonb)', 'ca000000-0000-4000-8000-000000000001',
+  format('[{"match":"%s","slot":"a","team":"7e000000-0000-4000-8000-000000000001"},{"match":"%s","slot":"a","team":"7e000000-0000-4000-8000-000000000001"}]', :'m_sf1', :'m_sf2')),
+  'dados_invalidos', 'seed recusa a mesma dupla em duas vagas');
 select public.category_seed_knockout('ca000000-0000-4000-8000-000000000001', format(
   '[{"match":"%1$s","slot":"a","team":"7e000000-0000-4000-8000-000000000001"},{"match":"%1$s","slot":"b","team":"7e000000-0000-4000-8000-000000000004"},
-    {"match":"%2$s","slot":"a","team":"7e000000-0000-4000-8000-000000000002"},{"match":"%2$s","slot":"b","team":"7e000000-0000-4000-8000-000000000003"}]',
+    {"match":"%2$s","slot":"a","team":"7e000000-0000-4000-8000-000000000002"},{"match":"%2$s","slot":"b","team":"7e000000-0000-4000-8000-000000000003","origem":{"grupo":"A","pos":2}}]',
   :'m_sf1', :'m_sf2')::jsonb);
 :como_arbitro
 select public.match_call(:'m_sf1', 'cccccccc-0000-4000-8000-000000000001');
@@ -203,6 +227,7 @@ select public.match_call(:'m_sf1', 'cccccccc-0000-4000-8000-000000000001');
 select (public.match_take(:'m_sf1', 'dddddddd-0000-4000-8000-000000000001') -> 'match' ->> 'version')::int as s1 \gset
 select (public.match_score_push(:'m_sf1', :s1, gen_random_uuid(), 'dddddddd-0000-4000-8000-000000000001', 7, 6, 7, 4) -> 'match' ->> 'version')::int as s2 \gset
 select public.match_finish(:'m_sf1', :s2, 'a', 'dddddddd-0000-4000-8000-000000000001');
+select teste.ok((select origem_b = '{"grupo":"A","pos":2}' from public.matches where id = :'m_sf2'), 'seed grava a origem trocada do slot');
 select teste.ok((select team_a = '7e000000-0000-4000-8000-000000000001' from public.matches where id = :'m_f'),
   'match_finish propaga o vencedor para a final');
 :como_arbitro
@@ -219,6 +244,10 @@ select teste.ok((select alerta_origem and team_a = '7e000000-0000-4000-8000-0000
   '"forçar" troca o slot e marca alerta_origem');
 select teste.ok((select count(*) = 1 from public.match_events where match_id = :'m_sf1' and tipo = 'forcar'),
   'forçar fica em match_events');
+-- Seguinte já encerrada: o "forçar" é recusado (não deixa vencedor apontando para quem saiu).
+select public.match_set_result(:'m_f', 6, 1, null, null, false, 'final');
+select teste.espera_erro(format('select public.match_set_result(%L, 7, 5, null, null, false, %L, true)', :'m_sf1', 'de novo'),
+  'proxima_encerrada', 'forçar com a seguinte encerrada é recusado');
 
 -- ── Público: anon não lê tabelas; RPCs públicas sem telefone ──
 :como_anon
@@ -227,8 +256,9 @@ select teste.espera_erro('select count(*) from public.matches', '42501', 'anon n
 select teste.espera_erro($q$select public.match_take('3b000000-0000-4000-8000-0000000000b1', gen_random_uuid())$q$,
   '42501', 'anon não chama RPC de partida');
 select teste.ok((public.arena_live('open-a') ->> 'ok')::boolean, 'arena_live responde');
-select teste.ok((select count(*) = 1 from jsonb_array_elements(public.arena_live('open-a') -> 'partidas')),
-  'arena_live traz só a partida em jogo');
+select teste.ok((select count(*) = 0 from jsonb_array_elements(public.arena_live('open-a') -> 'partidas'))
+                and (select count(*) = 1 from jsonb_array_elements(public.arena_live('open-b') -> 'partidas')),
+  'arena_live traz só partidas chamadas ou em jogo');
 select teste.ok(public.arena_live('open-a')::text !~ '\+55' and public.arena_public('open-a')::text !~ '\+55',
   'arena_live e arena_public não devolvem telefone');
 select teste.ok(public.arena_public('open-a')::text !~ 'token-open-a' and public.arena_public('open-a')::text !~ '@bt8',

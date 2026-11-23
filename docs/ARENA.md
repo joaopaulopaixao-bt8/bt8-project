@@ -18,6 +18,7 @@ Migração: `supabase/migrations/004_arena.sql` (idempotente, registrada em `pri
 | `placar_invalido` | placar fora do preset, fora dos limites ou vencedor que não bate |
 | `grupo_fechado` | correção depois de `group_close` |
 | `proxima_iniciada` | correção no mata-mata com a partida seguinte já iniciada, sem `p_forcar` |
+| `proxima_encerrada` | correção que trocaria a dupla de uma partida seguinte já encerrada (corrija ou anule a seguinte antes) |
 | `dupla_ja_jogou` | troca/substituição depois do primeiro jogo da dupla |
 | `sorteio_iniciado` | publicar/refazer sorteio com partida já começada |
 | `grupos_abertos` | gerar mata-mata com grupo ainda aberto |
@@ -62,7 +63,7 @@ Fila global (para o "próximo apto"): partidas `agendada` ou `suspensa` com as d
 
 ## 3. Tabelas (leitura direta pelo PostgREST)
 
-Membros ativos da arena (qualquer papel) e o admin do BT8 leem tudo da arena por `select`. `anon` não tem acesso a nenhuma tabela.
+Membros ativos da arena (qualquer papel) e o admin do BT8 leem tudo da arena por `select`, com duas exceções de LGPD: **`athletes` (telefones) só dono, gestor e árbitro**, e em **`arena_members` o scout vê só a própria linha** (para saber arena e papel). O scout trabalha com `arena_live`, `matches`, `teams` (só ids) e as RPCs. `anon` não tem acesso a nenhuma tabela.
 
 | Tabela | Colunas | Escrita direta (dono/gestor) |
 |---|---|---|
@@ -100,7 +101,7 @@ Regras que o banco garante: atleta não pode estar em duas duplas ativas (não c
 
 `{ "tam_grupo": 4, "classificam": 2, "preset_grupo": "A", "preset_mata": "A" }`. `match_finish` e `match_set_result` validam o placar pelo preset da fase (`preset_grupo` para `grupo`, `preset_mata` para o resto; padrão `A`).
 
-Presets: **A** = 6x0 a 6x4, 7x5, 7x6 com tie-break; **B** = 4x0 a 4x2, 5x3, 5x4 com tie-break. Tie-break válido: vencedor com 7 ou mais e diferença de 2 ou mais. WO = alvo x 0 (6x0 no A, 4x0 no B).
+Presets: **A** = 6x0 a 6x4, 7x5 (em 5x5 segue até 7x5), 7x6 com tie-break; **B** = 4x0 a 4x2, 5x3 (em 3x3 segue até 5x3), 5x4 com tie-break. **Tie-break (regra do dono):** vai a 7 pontos; se ficar 6x6 nos pontos, vence quem fizer 8 primeiro (sem vantagem de 2 infinita). Válidos: 7-0 a 7-5, 8-6 e 8-7; o set fica 7x6 (5x4 no B). WO = alvo x 0 (6x0 no A, 4x0 no B).
 
 ## 4. RPCs
 
@@ -131,7 +132,7 @@ No `conflito` com `por: "mesa"`, o scout mostra "Placar ajustado pela Mesa: 4x3"
 
 ### 4.3 `match_finish(p_match uuid, p_version int, p_vencedor text, p_device uuid default null)` — S \*
 
-`p_vencedor` = `'a'` ou `'b'`. Valida o placar atual contra o preset da fase e se o vencedor bate. Grava `encerrada` e, no mata-mata, coloca o vencedor no slot da partida seguinte. Se quem chama só tem papel de scout, `p_device` precisa ser o `scout_device`. Respostas: `{"ok": true, "match": {...}}` ou as mesmas recusas `{"ok": false, "erro": "conflito" | "outro_aparelho" | "partida_encerrada" | "partida_indisponivel"}` do push. Placar inválido dá erro `placar_invalido`.
+**O scout envia antes o placar final num `match_score_push`** (ex.: `games 7x6` com `tb_a = 8`, `tb_b = 6`) e só depois chama `match_finish` com a versão devolvida. O vencedor é calculado pelo placar gravado; `p_vencedor` (`'a'`, `'b'` ou `null`) é opcional e só confere o que o scout confirmou (se não bater, `placar_invalido`). Valida o placar contra o preset da fase. Grava `encerrada` e, no mata-mata, coloca o vencedor no slot da partida seguinte. Se quem chama só tem papel de scout, `p_device` precisa ser o `scout_device`. Respostas: `{"ok": true, "match": {...}}` ou as mesmas recusas `{"ok": false, "erro": "conflito" | "outro_aparelho" | "partida_encerrada" | "partida_indisponivel"}` do push. Placar inválido dá erro `placar_invalido`.
 
 ### 4.4 Mesa
 
@@ -141,7 +142,7 @@ No `conflito` com `por: "mesa"`, o scout mostra "Placar ajustado pela Mesa: 4x3"
 | `match_start(p_match uuid)` | Á | `chamada` → `em_jogo`, grava `iniciada_em`. |
 | `match_suspend(p_match uuid, p_motivo text)` | Á | `chamada`/`em_jogo` → `suspensa`; guarda o placar, solta a quadra e o aparelho. Volta à fila com prioridade máxima. |
 | `match_wo(p_match uuid, p_ausente text, p_motivo text)` \* | Á | `p_ausente` = `'a'`, `'b'` ou `'duplo'` (quem **não** compareceu). Simples: `wo`, placar alvo x 0 para o presente, propaga no mata-mata. Duplo: `anulada`, sem vencedor. Recusa em grupo fechado. |
-| `match_set_result(p_match uuid, p_games_a int, p_games_b int, p_tb_a int, p_tb_b int, p_wo boolean, p_motivo text, p_forcar boolean default false)` \* | Á (forçar: G) | Lança ou corrige o placar final de qualquer partida (plano B). Motivo obrigatório. Grupo fechado: recusa (`grupo_fechado`). Mata-mata: se a seguinte não começou, troca o slot dela; se começou, só G com `p_forcar = true`, que troca o slot e marca `alerta_origem = true` na seguinte (não propaga em cascata). Grava `correcao` ou `forcar` em `match_events` com `{antes, depois}`. |
+| `match_set_result(p_match uuid, p_games_a int, p_games_b int, p_tb_a int, p_tb_b int, p_wo boolean, p_motivo text, p_forcar boolean default false)` \* | Á (forçar: G) | Lança ou corrige o placar final de qualquer partida (plano B). Motivo obrigatório. Grupo fechado: recusa (`grupo_fechado`). Mata-mata: se a seguinte não começou, troca o slot dela; se começou, só G com `p_forcar = true`, que troca o slot e marca `alerta_origem = true` na seguinte (não propaga em cascata). Se a seguinte já terminou, recusa (`proxima_encerrada`). Grava `correcao` ou `forcar` em `match_events` com `{antes, depois}`. |
 | `team_checkin(p_team uuid, p_posicao int, p_presente boolean)` | Á | Marca `presente1`/`presente2` (posição 1 ou 2). |
 | `championship_pause(p_championship uuid, p_motivo text)` | G | Com motivo: pausa o evento (telão mostra "PAUSA – motivo"). Com `null`: retoma. |
 
@@ -176,7 +177,7 @@ Regras: as duplas dos grupos são da categoria, não estão `cancelada` nem `esp
 
 **`group_close(p_group uuid, p_sorteio jsonb default null)`** \* — exige todas as partidas do grupo em `encerrada`, `wo` ou `anulada`. Grava `fechado_em`, `fechado_por` e o sorteio de desempate (`{"ordem": ["team-uuid", ...], "observacao": "..."}`), se houve. Depois disso nenhuma correção no grupo.
 
-**`category_seed_knockout(p_category uuid, p_slots jsonb)`** \* — exige todos os grupos da categoria fechados. `p_slots` = `[{"match": "uuid", "slot": "a", "team": "team-uuid"}, ...]`, calculado pelo motor (`gerarChave`). Só preenche partidas de mata-mata ainda não iniciadas. Devolve `{"ok": true, "preenchidos": n}`.
+**`category_seed_knockout(p_category uuid, p_slots jsonb)`** \* — exige todos os grupos da categoria fechados. `p_slots` = `[{"match": "uuid", "slot": "a", "team": "team-uuid", "origem": {"grupo": "B", "pos": 2}}, ...]`, calculado pelo motor (`preencherChave` + `slotsMataMata`). `origem` é opcional: quando o motor troca vagas para evitar duelo do mesmo grupo, ela atualiza `origem_a`/`origem_b` para ficar coerente com a dupla. Só preenche a 1ª rodada (vagas de grupo/melhores, nunca vaga `{match}`) de partidas ainda não iniciadas, e recusa a mesma dupla em duas vagas (`dados_invalidos`). Devolve `{"ok": true, "preenchidos": n}`.
 
 ### 4.6 Públicas (anon e authenticated)
 

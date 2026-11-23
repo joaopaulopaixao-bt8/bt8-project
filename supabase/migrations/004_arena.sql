@@ -133,6 +133,8 @@ create table if not exists public.teams (
   check (athlete1_id <> athlete2_id)
 );
 create index if not exists teams_category_status_idx on public.teams (category_id, status);
+create index if not exists teams_athlete1_idx on public.teams (athlete1_id);
+create index if not exists teams_athlete2_idx on public.teams (athlete2_id);
 
 create table if not exists public.category_groups (
   id uuid primary key default gen_random_uuid(),
@@ -195,6 +197,9 @@ create index if not exists matches_champ_status_prio_idx on public.matches (cham
 create index if not exists matches_court_idx on public.matches (court_id);
 create index if not exists matches_category_idx on public.matches (category_id);
 create index if not exists matches_group_idx on public.matches (group_id);
+create index if not exists matches_team_a_idx on public.matches (team_a);
+create index if not exists matches_team_b_idx on public.matches (team_b);
+create index if not exists matches_next_idx on public.matches (next_match_id);
 
 create table if not exists public.match_events (
   id bigserial primary key,
@@ -373,7 +378,9 @@ as $$
   from public.categories k where k.id = m.category_id;
 $$;
 
--- Placar final válido para o alvo: N x 0..N-2, N+1 x N-1, N+1 x N com tie-break (>= 7, diferença >= 2).
+-- Placar final válido para o alvo N (6 no preset A, 4 no B): N x 0..N-2; N+1 x N-1 (em N-1 x N-1 segue
+-- até N+1 x N-1); N+1 x N com tie-break. Regra do dono: tie-break a 7; em 6x6 nos pontos, vence quem
+-- fizer 8 primeiro (sem vantagem de 2 infinita). Tie-break válido: 7-0 a 7-5, 8-6 e 8-7.
 create or replace function private.placar_valido(p_alvo int, ga int, gb int, ta int, tb int)
 returns boolean
 language sql
@@ -385,8 +392,8 @@ as $$
     when greatest(ga, gb) = p_alvo + 1 and least(ga, gb) = p_alvo - 1 then ta is null and tb is null
     when greatest(ga, gb) = p_alvo + 1 and least(ga, gb) = p_alvo then
       ta is not null and tb is not null
-      and (case when ga > gb then ta else tb end) >= 7
-      and (case when ga > gb then ta - tb else tb - ta end) >= 2
+      and case when ga > gb then (ta = 7 and tb between 0 and 5) or (ta = 8 and tb in (6, 7))
+               else (tb = 7 and ta between 0 and 5) or (tb = 8 and ta in (6, 7)) end
     else false
   end;
 $$;
@@ -418,6 +425,10 @@ begin
   if m.next_match_id is null or m.next_slot is null then return; end if;
   select * into n from public.matches where id = m.next_match_id for update;
   if (case m.next_slot when 'a' then n.team_a else n.team_b end) is not distinct from m.vencedor then return; end if;
+  if n.status in ('encerrada', 'wo', 'anulada') then
+    perform private.arena_erro('proxima_encerrada',
+      'A partida seguinte já terminou com a dupla antiga. Corrija ou anule a partida seguinte antes.');
+  end if;
   if n.status not in ('agendada', 'chamada') or n.iniciada_em is not null then
     if not p_forcar then
       perform private.arena_erro('proxima_iniciada',
@@ -580,11 +591,14 @@ drop policy if exists arenas_select on public.arenas;
 create policy arenas_select on public.arenas for select to authenticated
 using (private.arena_tem_papel(id, '{dono,gestor,arbitro,scout}'));
 
+-- LGPD: e-mails da equipe e telefones dos atletas só para dono, gestor e árbitro. O scout vê só a
+-- própria linha da equipe (para saber a arena e o papel) e nenhum atleta: ele trabalha com
+-- arena_live e as RPCs, que trazem os nomes.
 drop policy if exists arena_members_select on public.arena_members;
 create policy arena_members_select on public.arena_members for select to authenticated
-using (private.arena_tem_papel(arena_id, '{dono,gestor,arbitro,scout}'));
+using (user_id = auth.uid() or private.arena_tem_papel(arena_id, '{dono,gestor,arbitro}'));
 
--- Tabelas com arena_id direto: leitura para membros, escrita para dono/gestor.
+-- Tabelas com arena_id direto: leitura para membros (atletas: sem scout), escrita para dono/gestor.
 do $$
 declare t text;
 begin
@@ -592,7 +606,8 @@ begin
   loop
     execute format('drop policy if exists %1$s_select on public.%1$s', t);
     execute format('create policy %1$s_select on public.%1$s for select to authenticated
-                    using (private.arena_tem_papel(arena_id, ''{dono,gestor,arbitro,scout}''))', t);
+                    using (private.arena_tem_papel(arena_id, %2$L))', t,
+                   case when t = 'athletes' then '{dono,gestor,arbitro}' else '{dono,gestor,arbitro,scout}' end);
     execute format('drop policy if exists %1$s_write on public.%1$s', t);
     execute format('create policy %1$s_write on public.%1$s for all to authenticated
                     using (private.arena_tem_papel(arena_id, ''{dono,gestor}''))
@@ -746,19 +761,19 @@ begin
   -- A Mesa (árbitro+) encerra sem ter assumido: a checagem de aparelho vale só para quem é só scout.
   recusa := private.push_recusa(m, p_device, p_version, so_scout);
   if recusa is not null then return recusa; end if;
-  if p_vencedor not in ('a', 'b')
-     or not private.placar_valido(private.match_alvo(m), m.games_a, m.games_b, m.tb_a, m.tb_b)
-     or (p_vencedor = 'a') <> (m.games_a > m.games_b) then
+  -- O vencedor sai do placar gravado; p_vencedor (opcional) só confere o que o scout confirmou.
+  if not private.placar_valido(private.match_alvo(m), m.games_a, m.games_b, m.tb_a, m.tb_b)
+     or (p_vencedor is not null and p_vencedor is distinct from case when m.games_a > m.games_b then 'a' else 'b' end) then
     perform private.arena_erro('placar_invalido', 'Placar final inválido para este formato de jogo.');
   end if;
   update public.matches
   set status = 'encerrada', encerrada_em = now(), iniciada_em = coalesce(iniciada_em, now()),
-      vencedor = case when p_vencedor = 'a' then team_a else team_b end,
+      vencedor = case when games_a > games_b then team_a else team_b end,
       version = version + 1, updated_by = auth.uid()
   where id = m.id returning * into m;
   perform private.match_propagar(m, false);
   perform private.arena_log(m.championship_id, m.id, m.vencedor, 'fim',
-    jsonb_build_object('games_a', m.games_a, 'games_b', m.games_b, 'tb_a', m.tb_a, 'tb_b', m.tb_b, 'vencedor', p_vencedor), null);
+    jsonb_build_object('games_a', m.games_a, 'games_b', m.games_b, 'tb_a', m.tb_a, 'tb_b', m.tb_b, 'vencedor', case when m.games_a > m.games_b then 'a' else 'b' end), null);
   perform private.arena_bump(m.championship_id, true);
   return jsonb_build_object('ok', true, 'match', private.match_json(m));
 end;
@@ -1209,20 +1224,35 @@ begin
   if jsonb_typeof(p_slots) <> 'array' then
     perform private.arena_erro('dados_invalidos', 'Slots inválidos.');
   end if;
+  -- Slot: {match, slot, team, origem?}. Só a 1ª rodada (origem de grupo/melhores), nunca vaga {match}.
+  -- "origem" vem do preencherChave quando ele troca vagas para evitar duelo do mesmo grupo.
   for s in select * from jsonb_array_elements(p_slots) loop
     select * into m from public.matches where id = (s ->> 'match')::uuid and category_id = k.id for update;
     if not found or m.fase = 'grupo' or m.status <> 'agendada' or m.iniciada_em is not null or s ->> 'slot' not in ('a', 'b')
+       or (case when s ->> 'slot' = 'a' then m.origem_a else m.origem_b end) ? 'match'
+       or (s ? 'origem' and (jsonb_typeof(s -> 'origem') <> 'object' or s -> 'origem' ? 'match' or s -> 'origem' ? 'match_ref'))
        or not exists (select 1 from public.group_teams gt join public.category_groups cg on cg.id = gt.group_id
                       where cg.category_id = k.id and gt.team_id = (s ->> 'team')::uuid) then
-      perform private.arena_erro('dados_invalidos', 'Slot de mata-mata inválido ou partida já iniciada.');
+      perform private.arena_erro('dados_invalidos', 'Slot de mata-mata inválido, vaga de outra partida ou partida já iniciada.');
     end if;
     if s ->> 'slot' = 'a' then
-      update public.matches set team_a = (s ->> 'team')::uuid, version = version + 1, updated_by = auth.uid() where id = m.id;
+      update public.matches set team_a = (s ->> 'team')::uuid, origem_a = coalesce(s -> 'origem', origem_a),
+        version = version + 1, updated_by = auth.uid() where id = m.id;
     else
-      update public.matches set team_b = (s ->> 'team')::uuid, version = version + 1, updated_by = auth.uid() where id = m.id;
+      update public.matches set team_b = (s ->> 'team')::uuid, origem_b = coalesce(s -> 'origem', origem_b),
+        version = version + 1, updated_by = auth.uid() where id = m.id;
     end if;
     n := n + 1;
   end loop;
+  -- Mesma dupla em duas vagas da 1ª rodada (do pedido ou somada ao que já estava preenchido).
+  if exists (
+    select t from public.matches x
+    cross join lateral (values (x.team_a, x.origem_a), (x.team_b, x.origem_b)) v(t, o)
+    where x.category_id = k.id and x.fase <> 'grupo' and v.t is not null and not coalesce(v.o ? 'match', false)
+    group by t having count(*) > 1
+  ) then
+    perform private.arena_erro('dados_invalidos', 'A mesma dupla aparece em duas vagas do mata-mata.');
+  end if;
   perform private.arena_log(k.championship_id, null, null, 'mata_mata', jsonb_build_object('category_id', k.id, 'slots', p_slots), null);
   perform private.arena_bump(k.championship_id, true);
   return jsonb_build_object('ok', true, 'preenchidos', n);
