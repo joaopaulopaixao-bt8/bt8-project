@@ -68,8 +68,16 @@ const arRegras = () => ({ ...arRegrasPadrao(ARENA.c?.camp), ...(ARENA.c?.camp?.r
 const arFormato = cat => ({ ...AR_FORMATO_PADRAO, ...(cat?.formato || {}) });
 
 // ── Acesso a dados: Supabase (contrato) ou demo ──────────
+// Recusas com texto fixo no painel, independente da mensagem do banco (docs/ARENA.md, tabela de hints).
+const AR_HINTS = {
+  proxima_encerrada: 'A partida seguinte do mata-mata já terminou. Corrija ou anule a partida seguinte antes de mudar este resultado.',
+  proxima_iniciada: 'A partida seguinte já começou: só o gestor pode corrigir, usando "forçar".',
+  atleta_ja_inscrito: 'Atleta já inscrito em outra dupla desta categoria.',
+  sem_permissao: 'Seu papel nesta arena não permite essa ação.',
+};
+
 function arErro(e) {
-  const err = new Error(e?.message || 'Erro inesperado');
+  const err = new Error(AR_HINTS[e?.hint] || e?.message || 'Erro inesperado');
   err.hint = e?.hint;
   return err;
 }
@@ -185,12 +193,14 @@ async function arenaIniciar() {
     }
   }
   try {
-    ARENA.arenas = await arenaDb().minhasArenas();
-    ARENA_MEMBROS.lista = ARENA.arenas;
+    ARENA_MEMBROS.lista = await arenaDb().minhasArenas();
+    // Scout não lê athletes (LGPD): o painel lista só as arenas em que a pessoa é dono, gestor ou árbitro.
+    ARENA.arenas = ARENA_MEMBROS.lista.filter(m => m.papel !== 'scout');
   } catch (e) {
     return arScreen('screen-arena', 'Minha arena', `<div class="ar-card"><div class="ar-alerta">${icon('alert')} Não foi possível carregar suas arenas. ${arEsc(e.message)}</div></div>`, { voltar: 'arenaSair()' });
   }
   if (!ARENA.arenas.length) {
+    if (ARENA_MEMBROS.lista.length) { location.href = '/scout'; return; }
     return arScreen('screen-arena', 'Minha arena', '<div class="ar-card ar-centro"><p class="ar-txt">Você ainda não faz parte de nenhuma arena. Fale com o BT8 para criar a sua.</p></div>', { voltar: 'arenaSair()' });
   }
   const atual = ARENA.arena && ARENA.arenas.find(m => m.arena.id === ARENA.arena.id);
@@ -1245,28 +1255,8 @@ async function arenaRefazer() {
 // Payload de category_publish_draw (docs/ARENA.md 4.5) a partir da prévia e do motor.
 function arPayloadSorteio(cat, draft) {
   const C = BT8Championship;
-  const f = arFormato(cat);
-  const catOrdem = (cat.ordem || 0) % 20;
-  const partidas = [];
-  draft.grupos.forEach((g, gi) => {
-    const porRodada = {};
-    C.jogosDoGrupo(g.duplas).forEach((j, i) => {
-      const k = porRodada[j.rodada] = (porRodada[j.rodada] || 0) + 1;
-      // Intercala grupos e categorias: rodada, depois posição na rodada, depois grupo e categoria.
-      partidas.push({ ref: `${g.nome}${i + 1}`, fase: 'grupo', grupo: g.nome, rodada: j.rodada, slot: k, team_a: j.a, team_b: j.b, prioridade: j.rodada * 10000 + k * 1000 + gi * 20 + catOrdem });
-    });
-  });
-  const chave = C.gerarChave(draft.grupos.map(g => g.nome), { classificam: f.classificam });
-  const base = { r16: 100000, qf: 200000, sf: 300000, final: 400000 };
-  const origem = o => (o.match ? { match_ref: o.match } : o);
-  for (const p of chave.partidas) {
-    partidas.push({
-      ref: p.id, fase: p.fase, rodada: p.rodada, slot: p.slot, origem_a: origem(p.origem_a), origem_b: origem(p.origem_b),
-      ...(p.next_match_id ? { next_ref: p.next_match_id, next_slot: p.next_slot } : {}),
-      prioridade: base[p.fase] + p.slot * 20 + catOrdem,
-    });
-  }
-  return { semente: String(draft.semente), grupos: draft.grupos.map((g, i) => ({ nome: g.nome, ordem: i + 1, duplas: g.duplas })), partidas };
+  const chave = C.gerarChave(draft.grupos.map(g => g.nome), { classificam: arFormato(cat).classificam });
+  return C.payloadSorteio(draft, chave, { categoriaIndice: Math.max(0, (cat.ordem || 1) - 1) % 10 });
 }
 
 async function arenaPublicar() {
@@ -1310,12 +1300,11 @@ const arVencedorLado = m => (m.vencedor && m.vencedor === m.team_a ? 'a' : m.ven
 const arJogoMotor = m => ({ a: m.team_a, b: m.team_b, status: m.status, games_a: m.games_a, games_b: m.games_b, wo: m.wo || m.status === 'wo', vencedor: arVencedorLado(m) });
 const arFinal = m => ['encerrada', 'wo', 'anulada'].includes(m.status);
 
-// O contrato usa desistencia_modo 'manter_wo'; o motor chama a mesma regra de 'wo'.
 function arClassificar(g, sorteio = g.sorteio_desempate?.ordem || []) {
   const R = arRegras();
   const ids = arDuplasDoGrupo(g.id);
   return BT8Championship.classificarGrupo(ids, ARENA.c.matches.filter(m => m.group_id === g.id).map(arJogoMotor), {
-    desistencia_modo: R.desistencia_modo === 'manter_wo' ? 'wo' : 'anular',
+    desistencia_modo: R.desistencia_modo,
     wo_conta_saldo: R.wo_conta_saldo !== false,
     desistentes: ids.filter(id => arTeam(id)?.desistente_em),
     sorteio,
@@ -1449,22 +1438,20 @@ async function arenaFecharGrupo(gid) {
 async function arenaGerarMata() {
   const cat = ARENA.c.cats.find(c => c.id === ARENA.catId);
   const ko = ARENA.c.matches.filter(m => m.category_id === cat.id && m.fase !== 'grupo');
-  const r1 = m => !!(m.origem_a?.grupo || m.origem_a?.melhor1 || m.origem_a?.melhor2);
   const classificacoes = {};
   for (const g of arGruposCat(cat.id)) classificacoes[g.nome] = arClassificar(g).tabela.filter(l => !l.desistente);
-  let partidas;
+  let slots;
   try {
-    partidas = BT8Championship.preencherChave(
-      { partidas: ko.map(m => ({ id: m.id, rodada: r1(m) ? 1 : 2, origem_a: m.origem_a, origem_b: m.origem_b, team_a: null, team_b: null })) },
-      classificacoes,
-    ).filter(p => p.rodada === 1);
+    // Slots com a origem de cada vaga (o motor pode trocar vagas para evitar duelo do mesmo grupo).
+    slots = BT8Championship.slotsMataMata(BT8Championship.preencherChave(ko, classificacoes));
   } catch (e) {
     return arToast(e.message, 'erro');
   }
   const porId = Object.fromEntries(ko.map(m => [m.id, m]));
-  const previa = `<ul class="ar-ul">${partidas.map(p => `<li><b>${arEsc(arJogoNome(porId[p.id]))}:</b> ${arEsc(arDupla(arTeam(p.team_a)))} x ${arEsc(arDupla(arTeam(p.team_b)))}</li>`).join('')}</ul>`;
+  const pares = [];
+  for (let i = 0; i < slots.length; i += 2) pares.push([slots[i].match, slots[i].team, slots[i + 1].team]);
+  const previa = `<ul class="ar-ul">${pares.map(([id, a, b]) => `<li><b>${arEsc(arJogoNome(porId[id]))}:</b> ${arEsc(arDupla(arTeam(a)))} x ${arEsc(arDupla(arTeam(b)))}</li>`).join('')}</ul>`;
   if (!(await arConfirm('Gerar mata-mata', previa, 'Gerar'))) return;
-  const slots = partidas.flatMap(p => [{ match: p.id, slot: 'a', team: p.team_a }, { match: p.id, slot: 'b', team: p.team_b }]);
   await arAcao(async () => {
     await arenaDb().rpc('category_seed_knockout', { p_category: cat.id, p_slots: slots });
     await arenaRecarregar(arenaRenderChave);
@@ -1647,10 +1634,16 @@ const AR_DEMO_RPC = {
   },
   category_seed_knockout(db, { p_category, p_slots }) {
     if (db.category_groups.some(g => g.category_id === p_category && !g.fechado_em)) throw arDemoErro('Feche todos os grupos antes de gerar o mata-mata.', 'grupos_abertos');
+    const times = p_slots.map(s => s.team);
+    if (new Set(times).size !== times.length) throw arDemoErro('A mesma dupla aparece em duas vagas do mata-mata.', 'dados_invalidos');
     let n = 0;
     for (const s of p_slots) {
-      const m = db.matches.find(x => x.id === s.match);
-      if (m && m.status === 'agendada') { m[`team_${s.slot}`] = s.team; n++; }
+      const m = db.matches.find(x => x.id === s.match && x.category_id === p_category);
+      if (!m || m[`origem_${s.slot}`]?.match) throw arDemoErro('Só a 1ª rodada do mata-mata pode ser preenchida.', 'dados_invalidos');
+      if (m.status !== 'agendada') continue;
+      m[`team_${s.slot}`] = s.team;
+      if (s.origem) m[`origem_${s.slot}`] = s.origem;
+      n++;
     }
     return { ok: true, preenchidos: n };
   },
