@@ -349,8 +349,10 @@
   }
 
   // p_slots do category_seed_knockout a partir de preencherChave().
+  // Leva a origem de cada vaga (já trocada pelo preencherChave) para o banco gravar em origem_a/origem_b.
   const slotsMataMata = partidas => primeiraRodada(partidas).flatMap(p => [
-    { match: p.id, slot: 'a', team: p.team_a }, { match: p.id, slot: 'b', team: p.team_b },
+    { match: p.id, slot: 'a', team: p.team_a, origem: p.origem_a },
+    { match: p.id, slot: 'b', team: p.team_b, origem: p.origem_b },
   ]);
 
   // p_payload do category_publish_draw: grupos, jogos de grupo e mata-mata com as vagas.
