@@ -17,9 +17,11 @@ const arEsc = v => escapeHtml(v);
 const arClone = v => JSON.parse(JSON.stringify(v));
 const arG = () => ['dono', 'gestor', 'admin'].includes(ARENA.papel);
 const arData = d => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '-');
+// timestamptz vem em UTC (23:59 de SP = 02:59Z do dia seguinte): o dia do prazo é lido no fuso de São Paulo.
+const arDiaSP = ts => (ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' }) : '');
 const arAtiva = t => t.status === 'confirmada' || t.status === 'pendente';
 
-function arenaDemo() {
+function arenaPainelDemo() {
   try {
     const h = location.hostname;
     const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(h) || /\.(localhost|test)$/.test(h);
@@ -76,8 +78,27 @@ const AR_HINTS = {
   sem_permissao: 'Seu papel nesta arena não permite essa ação.',
 };
 
+// Erros do Postgres/PostgREST sem hint (constraints, RLS, rede) viram texto em português.
+function arMensagemBanco(e) {
+  const msg = String(e?.message || '');
+  const det = `${msg} ${e?.details || ''}`.toLowerCase();
+  if (e?.code === '23505') {
+    if (det.includes('telefone')) return 'Já existe um atleta com esse telefone nesta arena.';
+    if (det.includes('slug')) return 'Esse endereço público já está em uso. Escolha outro.';
+    if (det.includes('token')) return 'Não foi possível gerar o link. Tente de novo.';
+    return 'Esse registro já existe.';
+  }
+  if (e?.code === '23503') return 'Este registro está em uso por outro e não pode ser removido ou alterado.';
+  if (e?.code === '23514' || e?.code === '22P02' || e?.code === '22007') return 'Algum dado está fora do formato aceito. Confira os campos.';
+  if (e?.code === '42501') return AR_HINTS.sem_permissao;
+  if (e?.code === 'PGRST116') return 'Registro não encontrado ou sem permissão para alterá-lo.';
+  if (/failed to fetch|networkerror|load failed/i.test(msg)) return 'Sem conexão com o servidor. Confira a internet e tente de novo.';
+  if (/jwt|token is expired/i.test(msg)) return 'Sua sessão expirou. Entre de novo.';
+  return msg || 'Erro inesperado';
+}
+
 function arErro(e) {
-  const err = new Error(AR_HINTS[e?.hint] || e?.message || 'Erro inesperado');
+  const err = new Error(AR_HINTS[e?.hint] || (e?.hint ? e.message : arMensagemBanco(e)));
   err.hint = e?.hint;
   return err;
 }
@@ -135,11 +156,11 @@ const ARENA_REAL = {
   },
 };
 
-const arenaDb = () => (arenaDemo() ? ARENA_DEMO : ARENA_REAL);
+const arenaDb = () => (arenaPainelDemo() ? ARENA_DEMO : ARENA_REAL);
 
 // ── Entrada: menu, rota /arena e checagem de membro ──────
 function isArenaMember() {
-  if (arenaDemo()) return true;
+  if (arenaPainelDemo()) return true;
   const uid = typeof SUPA_USER !== 'undefined' ? SUPA_USER?.id : null;
   if (!uid || !SUPA) return false;
   if (ARENA_MEMBROS.uid !== uid) {
@@ -158,7 +179,7 @@ function isArenaMember() {
 function openMinhaArena() {
   closeUserMenu();
   const l = ARENA_MEMBROS.lista;
-  if (!arenaDemo() && l.length && l.every(m => m.papel === 'scout')) { location.href = '/scout'; return; }
+  if (!arenaPainelDemo() && l.length && l.every(m => m.papel === 'scout')) { location.href = '/scout'; return; }
   goTo('screen-arena');
   arenaIniciar();
 }
@@ -181,7 +202,7 @@ async function arEsperarSessao() {
 
 async function arenaIniciar() {
   arScreen('screen-arena', 'Minha arena', '<div class="ar-vazio">Carregando...</div>', { voltar: 'arenaSair()' });
-  if (!arenaDemo()) {
+  if (!arenaPainelDemo()) {
     await arEsperarSessao();
     if (!SUPA_USER) {
       return arScreen('screen-arena', 'Minha arena', `
@@ -241,7 +262,7 @@ function arScreen(id, titulo, corpo, { voltar = 'goBack()' } = {}) {
       <span class="topbar-title">${arEsc(titulo)}</span>
     </div>
     <div class="scroll-content"><div class="ar-wrap">
-      ${arenaDemo() ? '<div class="ar-demo">Modo demonstração: dados simulados neste navegador, nada vai para o banco. <button class="ar-link-btn" onclick="arenaDemoReset()">Recomeçar demo</button></div>' : ''}
+      ${arenaPainelDemo() ? '<div class="ar-demo">Modo demonstração: dados simulados neste navegador, nada vai para o banco. <button class="ar-link-btn" onclick="arenaDemoReset()">Recomeçar demo</button></div>' : ''}
       ${corpo}
     </div></div>`;
   el.querySelector('.scroll-content').scrollTop = scroll;
@@ -587,7 +608,7 @@ function arenaRenderCamp() {
         <div class="ar-card-h"><div class="ar-h">Dados</div>${g ? `<button class="btn btn-ghost btn-sm" onclick="arenaEditarCamp()">${icon('pencil')} Editar</button>` : ''}</div>
         <dl class="ar-dl">
           <dt>Datas</dt><dd>${arData(camp.data_inicio)} a ${arData(camp.data_fim)}</dd>
-          <dt>Inscrições até</dt><dd>${arData(camp.inscricoes_ate)}</dd>
+          <dt>Inscrições até</dt><dd>${arData(arDiaSP(camp.inscricoes_ate))}</dd>
           <dt>Endereço público</dt><dd>/c/${arEsc(camp.slug)}</dd>
         </dl>
       </div>
@@ -640,13 +661,16 @@ async function arenaSalvarCamp(patch, ok) {
     ARENA.c.camp = await arenaDb().update('championships', ARENA.c.camp.id, patch);
     const i = ARENA.camps.findIndex(c => c.id === ARENA.c.camp.id);
     if (i >= 0) ARENA.camps[i] = ARENA.c.camp;
-    arenaRenderCamp();
   }, ok);
+  arenaRenderCamp(); // também em caso de erro: os campos voltam ao valor gravado
 }
 
-function arenaStatusCamp(status) {
+async function arenaStatusCamp(status) {
   const semRegulamento = status === 'inscricoes' && !arRegras().regulamento;
-  arenaSalvarCamp({ status }, semRegulamento ? 'Status atualizado. Falta publicar o regulamento resumido.' : 'Status atualizado.');
+  const ok = await arConfirm('Mudar status', `Mudar o campeonato de <b>${arEsc(AR_STATUS_CAMP[ARENA.c.camp.status])}</b> para <b>${arEsc(AR_STATUS_CAMP[status])}</b>?
+    ${semRegulamento ? `<p class="ar-aviso">${icon('alert')} O regulamento resumido ainda não foi publicado.</p>` : ''}`, 'Mudar');
+  if (!ok) return arenaRenderCamp();
+  arenaSalvarCamp({ status }, 'Status atualizado.');
 }
 
 async function arenaEditarCamp() {
@@ -658,7 +682,7 @@ async function arenaEditarCamp() {
       { nome: 'slug', rotulo: 'Endereço público (/c/...)', obrigatorio: true, valor: c.slug },
       { nome: 'data_inicio', rotulo: 'Primeiro dia', tipo: 'date', obrigatorio: true, valor: c.data_inicio, meio: true },
       { nome: 'data_fim', rotulo: 'Último dia', tipo: 'date', obrigatorio: true, valor: c.data_fim, meio: true },
-      { nome: 'inscricoes_ate', rotulo: 'Inscrições até', tipo: 'date', valor: String(c.inscricoes_ate || '').slice(0, 10) },
+      { nome: 'inscricoes_ate', rotulo: 'Inscrições até', tipo: 'date', valor: arDiaSP(c.inscricoes_ate) },
     ],
   });
   if (!v) return;
@@ -800,10 +824,12 @@ function arenaCapacidadeHtml() {
   const quadras = ARENA.quadras.filter(q => q.ativa !== false).length;
   let r;
   try {
-    // shortcut: usa 2 classificados para todas as categorias; trocar por soma por categoria se alguma usar só o 1º.
     r = C.capacidade({
-      categorias: ARENA.c.cats.map(c => ({ nome: c.nome, duplas: limite ? c.max_duplas || 0 : arTeamsCat(c.id).filter(arAtiva).length })),
-      quadras, dias: R.dias?.length ? R.dias : undefined, duracaoMin: R.duracao_media_min, intervaloMin: R.intervalo_min,
+      ...R, dias: R.dias?.length ? R.dias : undefined, quadras,
+      categorias: ARENA.c.cats.map(c => {
+        const f = arFormato(c);
+        return { nome: c.nome, duplas: limite ? c.max_duplas || 0 : arTeamsCat(c.id).filter(arAtiva).length, tam_grupo: f.tam_grupo, classificam: f.classificam };
+      }),
     });
   } catch (e) {
     return `<div class="ar-card"><div class="ar-h">Conta de capacidade</div><div class="ar-alerta">${arEsc(e.message)}</div></div>`;
@@ -1124,11 +1150,27 @@ async function arenaCancelarDupla(id) {
 
 async function arenaDesistencia(id) {
   const t = arTeam(id);
-  const modo = arRegras().desistencia_modo === 'manter_wo' ? 'Os jogos já feitos valem e os restantes contam como WO.' : 'Todos os jogos da dupla no grupo são anulados.';
-  if (!(await arConfirm('Registrar desistência', `<b>${arEsc(arDupla(t))}</b> desiste do campeonato. ${modo}`, 'Registrar', true))) return;
+  const manter = arRegras().desistencia_modo === 'manter_wo';
+  const fechados = new Set(ARENA.c.groups.filter(g => g.fechado_em).map(g => g.id));
+  // Jogos ainda sem resultado: no grupo aberto, WO (manter_wo) ou anulação (anular); no mata-mata, sempre WO para o adversário.
+  const restantes = ARENA.c.matches.filter(m => (m.team_a === id || m.team_b === id) && m.team_a && m.team_b && !arFinal(m)
+    && !(m.group_id && fechados.has(m.group_id)));
+  const modo = manter ? 'Os jogos já feitos valem e os restantes contam como WO.' : 'Todos os jogos da dupla no grupo são anulados (os ainda não jogados ficam como anulados).';
+  if (!(await arConfirm('Registrar desistência', `<b>${arEsc(arDupla(t))}</b> desiste do campeonato. ${modo}
+    ${restantes.length ? `<p>${restantes.length} jogo(s) restante(s) serão encerrados agora.</p>` : ''}`, 'Registrar', true))) return;
   await arAcao(async () => {
     Object.assign(t, await arenaDb().update('teams', id, { desistente_em: new Date().toISOString() }));
-    arenaRenderInscritos();
+    const erros = [];
+    for (const m of restantes) {
+      const lado = m.team_a === id ? 'a' : 'b';
+      try {
+        await arenaDb().rpc('match_wo', { p_match: m.id, p_ausente: m.fase === 'grupo' && !manter ? 'duplo' : lado, p_motivo: 'Desistência da dupla' });
+      } catch (e) {
+        erros.push(`${arJogoNome(m)} ${m.fase === 'grupo' ? `R${m.rodada}` : ''}: ${e.message}`);
+      }
+    }
+    await arenaRecarregar(arenaRenderInscritos);
+    if (erros.length) throw new Error(`Desistência registrada, mas ${erros.length} jogo(s) não foram encerrados: ${erros.join('; ')}`);
   }, 'Desistência registrada.');
 }
 
@@ -1169,7 +1211,7 @@ function arenaRenderSorteio() {
   const elig = arElegiveis(cat.id).sort((a, b) => (a.seed || 99) - (b.seed || 99) || arDupla(a).localeCompare(arDupla(b), 'pt-BR'));
   const publicados = arGruposCat(cat.id).map(x => ({ nome: x.nome, duplas: arDuplasDoGrupo(x.id) }));
   const draft = ARENA.draft[cat.id];
-  const nGrupos = elig.length >= 3 ? BT8Championship.tamanhosGrupos(elig.length).length : 0;
+  const nGrupos = elig.length >= 3 ? BT8Championship.tamanhosGrupos(elig.length, arFormato(cat).tam_grupo).length : 0;
   const maxSeed = Math.max(nGrupos, 1);
   const iniciado = ARENA.c.matches.some(m => m.category_id === cat.id && (m.status !== 'agendada' || m.games_a != null));
 
@@ -1232,8 +1274,9 @@ async function arenaSeed(teamId, valor) {
 
 function arenaSortear() {
   const elig = arElegiveis(ARENA.catId);
-  const nGrupos = BT8Championship.tamanhosGrupos(elig.length).length;
-  const r = BT8Championship.montarGrupos(elig.map(t => ({ id: t.id, seed: t.seed && t.seed <= nGrupos ? t.seed : null })));
+  const tam = arFormato(ARENA.c.cats.find(c => c.id === ARENA.catId)).tam_grupo;
+  const nGrupos = BT8Championship.tamanhosGrupos(elig.length, tam).length;
+  const r = BT8Championship.montarGrupos(elig.map(t => ({ id: t.id, seed: t.seed && t.seed <= nGrupos ? t.seed : null })), { tam_grupo: tam });
   ARENA.draft[ARENA.catId] = { semente: r.semente, grupos: r.grupos };
   arenaRenderSorteio();
 }
@@ -1398,7 +1441,7 @@ function arenaRenderChave() {
     <p class="ar-txt">Desempate: vitórias, confronto direto (2 duplas) ou saldo entre as empatadas (3+), saldo no grupo, games pró e sorteio. Atualiza a cada 10 s.</p>
     ${g && todosFechados && chaveVazia ? `<div class="ar-card ar-centro"><p class="ar-txt">Todos os grupos fechados.</p>
       <button class="btn btn-yellow" onclick="arenaGerarMata()">${icon('trophy')} Gerar mata-mata</button></div>` : ''}
-    ${arenaDemo() && grupos.some(x => !x.fechado_em) ? `<div class="ar-botoes"><button class="btn btn-ghost btn-sm" onclick="arenaDemoResultados()">Demo: lançar resultados dos grupos</button></div>` : ''}
+    ${arenaPainelDemo() && grupos.some(x => !x.fechado_em) ? `<div class="ar-botoes"><button class="btn btn-ghost btn-sm" onclick="arenaDemoResultados()">Demo: lançar resultados dos grupos</button></div>` : ''}
     <div class="ar-grupos">${grupos.map(x => arenaGrupoHtml(x, cat, g)).join('')}</div>
     ${arenaMataHtml(cat)}`);
 }
@@ -1646,6 +1689,24 @@ const AR_DEMO_RPC = {
       n++;
     }
     return { ok: true, preenchidos: n };
+  },
+  match_wo(db, { p_match, p_ausente, p_motivo }) {
+    const m = db.matches.find(x => x.id === p_match);
+    if (!p_motivo) throw arDemoErro('Informe o motivo.', 'motivo_obrigatorio');
+    if (arFinal(m)) throw arDemoErro('A partida já terminou.', 'status_invalido');
+    if (m.group_id && db.category_groups.find(g => g.id === m.group_id)?.fechado_em) throw arDemoErro('O grupo já foi fechado.', 'grupo_fechado');
+    if (p_ausente === 'duplo') {
+      Object.assign(m, { status: 'anulada', vencedor: null, wo: true, encerrada_em: new Date().toISOString() });
+      return { ok: true, match: m };
+    }
+    const cat = db.categories.find(c => c.id === m.category_id);
+    const f = { ...AR_FORMATO_PADRAO, ...(cat.formato || {}) };
+    const alvo = (m.fase === 'grupo' ? f.preset_grupo : f.preset_mata) === 'B' ? 4 : 6;
+    const presente = p_ausente === 'a' ? 'b' : 'a';
+    Object.assign(m, { status: 'wo', wo: true, vencedor: m[`team_${presente}`], games_a: presente === 'a' ? alvo : 0, games_b: presente === 'b' ? alvo : 0, encerrada_em: new Date().toISOString() });
+    const prox = m.next_match_id && db.matches.find(x => x.id === m.next_match_id);
+    if (prox && prox.status === 'agendada') prox[`team_${m.next_slot}`] = m.vencedor;
+    return { ok: true, match: m };
   },
   team_swap_athlete(db, { p_team, p_posicao, p_athlete }) {
     const t = db.teams.find(x => x.id === p_team);
