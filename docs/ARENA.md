@@ -295,5 +295,6 @@ Texto e versão em `src/js/legal-pages.js`: `BT8_ARENA_LGPD_VERSAO` e `arenaLgpd
 ## 8. Operação
 
 - Aplicar no staging local: `docker exec -i supabase_db_bt8 psql -U postgres -d postgres -v ON_ERROR_STOP=1 --single-transaction -f - < supabase/migrations/004_arena.sql`, depois o teste: `... -f - < supabase/tests/004_arena_test.sql`.
+- Simulação completa (seção 8 do plano) contra o staging local: `node scripts/simular-campeonato.js` (`--manter` deixa a arena para ver o telão; `--semente=N` repete a mesma sequência). Precisa do motor em `src/js/championship.js`. Fora de localhost só com `--remoto`, para a arena TESTE.
 - Apagar uma arena de teste (como `postgres`, apaga tudo em cascata): `delete from public.arenas where slug = 'teste';`
 - Métricas depois do evento: SQL sobre `match_events` (tipos: `placar`, `inicio`, `fim`, `wo`, `correcao`, `forcar`, `chamar`, `suspender`, `assumir`, `troca_atleta`, `substituicao`, `fechar_grupo`, `pausa`, `sorteio`, `mata_mata`, `checkin`).
