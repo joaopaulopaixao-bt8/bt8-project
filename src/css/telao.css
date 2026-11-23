@@ -91,6 +91,12 @@
 .sc-mais:disabled { opacity:.35; }
 .sc-menos { background:transparent; color:var(--muted2); border:1px solid var(--border2); border-radius:var(--radius-sm); font-size:20px; min-height:48px; cursor:pointer; touch-action:manipulation; }
 .sc-fim { background:#3ecf72; font-size:26px; min-height:64px; }
+.sc-sacando { outline:3px solid var(--yellow); }
+.sc-saque { color:var(--yellow-l); font-weight:700; font-size:16px; min-height:1.2em; }
+.sc-saque-escolha { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:14px; color:var(--muted2); }
+.sc-saque-escolha button { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border2); color:var(--white); border-radius:var(--radius-sm);
+  padding:8px; min-height:44px; font:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.sc-saque-escolha button.on { background:var(--yellow); color:#0a0a0a; border-color:var(--yellow); font-weight:700; }
 
 /* ══ PÁGINA PÚBLICA E INSCRIÇÃO ══ */
 #screen-publico, #screen-inscricao { overflow-y:auto; }

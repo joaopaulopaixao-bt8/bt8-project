@@ -39,6 +39,31 @@ test('preset A: tie-break no 6x6 até 7 com 2 de diferença e placar final 7x6',
   assert.ok(validarPlacar(final, 'A').ok);
 });
 
+test('tie-break: 7-5 acaba, 7-6 não, no 6-6 vence quem fizer 8 e não passa de 8', () => {
+  const tb = (ta, tbb) => ({ games_a: 6, games_b: 6, tb_a: ta, tb_b: tbb });
+  assert.equal(S.fim(tb(7, 5)), 'a');
+  assert.equal(S.fim(tb(7, 6)), null);
+  assert.equal(S.fim(tb(7, 7)), null);
+  assert.equal(S.fim(tb(8, 7)), 'a');
+  assert.equal(S.fim(tb(6, 8)), 'b');
+  assert.deepEqual(S.marcar(tb(8, 6), 'a', 1), tb(8, 6));
+  assert.deepEqual(S.marcar(tb(8, 7), 'b', 1), tb(8, 7));
+  assert.deepEqual(S.marcar(tb(7, 7), 'b', 1), tb(7, 8));
+  assert.equal(S.fim(tb(4, 7), 'A'), 'b');
+  // preset B: mesma regra no 4x4
+  assert.equal(S.fim({ games_a: 4, games_b: 4, tb_a: 7, tb_b: 6 }, 'B'), null);
+  assert.equal(S.fim({ games_a: 4, games_b: 4, tb_a: 8, tb_b: 6 }, 'B'), 'a');
+});
+
+test('saque no tie-break pela sequência 1-2-2', () => {
+  let e = { games_a: 6, games_b: 6, tb_a: 0, tb_b: 0 };
+  const seq = [];
+  for (let i = 0; i < 9; i++) { seq.push(S.sacaNoTieBreak(e)); e = S.marcar(e, i % 2 ? 'a' : 'b', 1); }
+  assert.deepEqual(seq.join(''), 'abbaabbaa');
+  assert.equal(S.sacaNoTieBreak({ games_a: 6, games_b: 6, tb_a: 0, tb_b: 0 }, 'b'), 'b');
+  assert.equal(S.sacaNoTieBreak({ games_a: 6, games_b: 6, tb_a: 1, tb_b: 0 }, 'b'), 'a');
+});
+
 test('−1 com tie-break zerado volta para 6x5', () => {
   const e = S.marcar(toques('aaaaabbbbbab'), 'b', -1);
   assert.deepEqual(e, { games_a: 6, games_b: 5, tb_a: null, tb_b: null });

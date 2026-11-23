@@ -482,7 +482,8 @@
   const ALVO = { A: 6, B: 4 };
 
   // placar: { games_a, games_b, tb_a, tb_b }. Preset A: 6x0–6x4, 7x5, 7x6 com tie-break a 7.
-  // Preset B: 4x0–4x2, 5x3, 5x4 com tie-break a 7. Devolve { ok, vencedor, erro }.
+  // Preset B: 4x0–4x2, 5x3, 5x4 com tie-break a 7. Tie-break válido: 7-0 a 7-5, 8-6 ou 8-7.
+  // Devolve { ok, vencedor, erro }.
   function validarPlacar(placar, preset = 'A') {
     const alvo = ALVO[preset];
     if (!alvo) return { ok: false, erro: 'Preset desconhecido: ' + preset };
@@ -499,7 +500,8 @@
       const tw = vencedor === 'a' ? placar.tb_a : placar.tb_b;
       const tl = vencedor === 'a' ? placar.tb_b : placar.tb_a;
       if (!Number.isInteger(tw) || !Number.isInteger(tl) || tl < 0) return erro('Registre o placar do tie-break');
-      if (tw < 7 || tw - tl < 2 || (tw > 7 && tw - tl !== 2)) return erro('Tie-break inválido: ' + tw + '-' + tl);
+      // Tie-break a 7 (7-0 a 7-5); do 6-6 em diante vence quem fizer 8 (8-6 ou 8-7).
+      if (!((tw === 7 && tl <= 5) || (tw === 8 && (tl === 6 || tl === 7)))) return erro('Tie-break inválido: ' + tw + '-' + tl);
       return { ok: true, vencedor, erro: null };
     }
     return erro('Placar inválido para o preset ' + preset + ': ' + a + 'x' + b);

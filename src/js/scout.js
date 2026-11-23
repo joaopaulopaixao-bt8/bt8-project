@@ -217,19 +217,37 @@ function scoutRenderJogo() {
   const tb = BT8Scoring.emTieBreak(e, SC.preset);
   const fim = BT8Scoring.fim(e, SC.preset);
   const final = fim ? BT8Scoring.paraPlacarFinal(e, SC.preset) : null;
-  const lado = (l, nome) => `<div class="sc-lado">
+  // Saque no tie-break: 1 de quem abre, depois 2 de cada (1-2-2). O scout marca quem sacou o 1º ponto.
+  const primeiro = scoutPrimeiroSaque(p.id);
+  const saca = tb && !fim ? BT8Scoring.sacaNoTieBreak(e, primeiro) : null;
+  const lado = (l, nome) => `<div class="sc-lado${saca === l ? ' sc-sacando' : ''}">
     <div class="sc-nome">${escapeHtml(nome)}</div>
     <div class="sc-games">${e['games_' + l]}</div>
     ${tb ? `<div class="sc-tb">Tie-break <b>${e['tb_' + l] ?? 0}</b></div>` : ''}
+    ${saca ? `<div class="sc-saque">${saca === l ? '● Saca agora' : '&nbsp;'}</div>` : ''}
     <button class="sc-mais" onclick="scoutTocar('${l}', 1)" ${fim ? 'disabled' : ''} aria-label="Mais um ${tb ? 'ponto de tie-break' : 'game'} para ${escapeHtml(nome)}">+1 ${tb ? 'ponto' : 'game'}</button>
     <button class="sc-menos" onclick="scoutTocar('${l}', -1)" aria-label="Tirar um ${tb ? 'ponto' : 'game'} de ${escapeHtml(nome)}">−1</button>
   </div>`;
   el.innerHTML = `
     <div class="sc-jogo-meta">${escapeHtml(p.quadra)} · ${escapeHtml(p.categoria)} · preset ${SC.preset}</div>
     ${SC.aviso ? `<div class="sc-alerta">${escapeHtml(SC.aviso)} <button onclick="SC.aviso=null;scoutRenderJogo()">Continuar daqui</button></div>` : ''}
+    ${tb && !fim ? `<div class="sc-saque-escolha" role="group" aria-label="Quem sacou o primeiro ponto do tie-break">
+      <span>1º saque do tie-break:</span>
+      <button class="${primeiro === 'a' ? 'on' : ''}" aria-pressed="${primeiro === 'a'}" onclick="scoutDefinirSaque('a')">${escapeHtml(p.nome_a)}</button>
+      <button class="${primeiro === 'b' ? 'on' : ''}" aria-pressed="${primeiro === 'b'}" onclick="scoutDefinirSaque('b')">${escapeHtml(p.nome_b)}</button>
+    </div>` : ''}
     <div class="sc-placar">${lado('a', p.nome_a)}${lado('b', p.nome_b)}</div>
     ${final ? `<button class="sc-btn sc-fim" onclick="scoutEncerrar()">Confirmar ${final.games_a}x${final.games_b}${final.tb_a != null ? ` (${final.tb_a}-${final.tb_b})` : ''}?</button>` : ''}
     <button class="sc-sair" onclick="scoutVoltarLista()">Voltar às quadras</button>`;
+}
+
+// Quem sacou o 1º ponto do tie-break, por partida (padrão: dupla A). Fica no aparelho.
+function scoutPrimeiroSaque(id) { return scoutLer('bt8_scout_saque', {})[id] || 'a'; }
+function scoutDefinirSaque(lado) {
+  const mapa = scoutLer('bt8_scout_saque', {});
+  mapa[SC.partida.id] = lado;
+  scoutGravar('bt8_scout_saque', mapa);
+  scoutRenderJogo();
 }
 
 function scoutTocar(lado, delta) {
